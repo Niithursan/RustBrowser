@@ -1,5 +1,81 @@
 # Validation
 
+## Version 0.3.0
+
+Preservation baseline: PR #5 was verified squash-merged into `main` at `7c9c152`.
+The merged commit's [Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42326479368)
+and [dependency security](https://github.com/Niithursan/RustBrowser/actions/runs/42326479361)
+completed successfully; its 11 baseline tests passed locally. No v0.2.0 tag or release
+existed. The owner requested that v0.2.0 remain unpublished. No existing release was modified.
+
+Local validation uses Windows x64, Rust 1.99.1/MSVC and the installed WebView2 Runtime.
+Final local formatting, strict Clippy (`-D warnings`), all 21 automated tests,
+debug/release builds, and `cargo audit --deny warnings` passed. The audit scanned
+369 locked dependencies using the existing reviewed exceptions; no new exception
+was added.
+Automated coverage includes the existing v0.2 tests plus SQLite bookmarks/folders,
+edit/search/remove/restart behavior, transactional v1→v2 migration, corrupt-file
+preservation/recovery, newer-schema refusal, invalid inputs and SQL text, visit
+deduplication, date ranges, query/credential exclusion, clear confirmation enforcement,
+Windows filename/device/stream/traversal handling, atomic collision protection,
+simultaneous finalization, partial cleanup, stalled-transfer tracking, and legacy
+settings compatibility with the persisted recording toggle. CI results for the final
+revision are recorded on the pull request, not assumed from local checks.
+
+Actual Windows GUI checks performed using an isolated profile:
+
+- Ctrl+D saved a bookmark; Ctrl+Shift+O opened its manager. A Research folder was
+  created, the bookmark title was edited and assigned to it, and both survived restart.
+  The saved bookmark opened in a new independent tab.
+- Ctrl+H displayed recorded visits with titles and local timestamps. A nonmatching
+  query produced an empty result. Clear history displayed a confirmation dialog;
+  cancelling it preserved entries. Actual clearing/removal and date-boundary behavior
+  are covered by automated tests rather than claimed as manually verified.
+- A loopback HTTP fixture sent a traversal-style suggested name. Native folder
+  selection, live byte/percentage progress, completion and a second collision-safe
+  suffixed file were verified without altering the first file.
+- Cancelling a slow transfer produced Cancelled status and removed its partial output.
+  A truncated response exposed WebView2 retry behavior. The final implementation
+  captured terminal state events, rejected duplicate active requests, and displayed
+  Failed after the two-minute no-forward-progress safeguard. No current staging
+  file remained for that failed transfer. Earlier forcibly stopped development runs
+  left staging directories, consistent with the abrupt-exit limitation below.
+- A real HTTPS Wry source archive from GitHub completed (2,303,056 bytes during this
+  check). ZIP integrity passed, and Windows Zone.Identifier metadata was present
+  after finalization. The archive was not executed. Open folder opened its destination
+  in Explorer.
+- Existing tab switching, separate addresses, native Back/Forward, search provider
+  selection and address-bar DuckDuckGo search were exercised. Query-bearing search
+  URLs were absent from the SQLite history.
+- A final normal restart restored both tabs, their order, the active DuckDuckGo
+  results page and the DuckDuckGo setting. Ctrl+J opened the empty downloads manager
+  in the new session, as expected for session-only download records.
+- With a separate library at unsupported schema version 99, the browser rendered
+  its HTTPS home page and displayed an unavailable-library notice. Normal shutdown
+  succeeded and the database remained at version 99.
+
+GUI testing found and corrected Windows extended-path handling at the WebView2
+download boundary, parent-window ownership for the destination dialog, transient
+interruption handling, and stable progress-row rendering. The browser adapter keeps
+native COM operations on the UI apartment; database and finalization work run off it.
+
+Limits: flat folders; 200 results per query; 5000 bookmarks; 200 folders; latest 10,000
+visits. History query matching has SQLite's default Unicode/case-folding limitations.
+Date filters use UTC days while timestamps display locally. Titles/paths/bookmarks
+and full session URLs can still contain sensitive data; storage is local plaintext.
+Library history clearing does not clear native back/forward, cookies, cache, session
+URLs or recovery backups. No private mode, encryption, history import/export, nested
+folders or full compatibility/security audit was implemented.
+
+Downloads: HTTP(S) only; 16 active transfers, one per source URL; 256 in-memory records.
+Records and transfers are not restored after restart. No pause/resume, execution,
+malware-scanner integration or certificate-policy bypass. Unknown lengths have no
+percentage. Two minutes without forward progress cancels even a legitimately stalled
+server. Closing/terminating during a transfer or failed finalization may leave staging
+data. Native runtime security-policy behavior, mixed DPI, screen-reader operation and
+long-running resource use were not comprehensively validated. Release packaging was
+inspected but no tag/release was published.
+
 ## Version 0.2.0
 
 Local Windows x64 validation with Rust 1.99.1/MSVC and the installed WebView2 Runtime:
