@@ -32,7 +32,9 @@ permission behavior, screen-reader review, mixed-DPI/multi-monitor testing, pers
 site-storage restart testing, Windows ARM64 testing or clean-machine installation
 testing was performed. Stop, Alt+D, F6, Ctrl+R and Ctrl+Tab are implemented but were
 not separately exercised in this smoke test. Successful-page reload was not separately
-verified. The GitHub Actions workflow is supplied but has not run remotely.
+verified. Current remote CI results are available in the repository's
+[Actions history](https://github.com/Niithursan/RustBrowser/actions).
 
-The included executable is a development build from the supplied source, not a signed
-release or installer. Tabs, bookmarks, privacy controls and Servo are future work.
+CI produces an unsigned Windows executable. Version tags configure portable ZIP
+packaging and checksums; this is not a signed installer. Tabs, bookmarks, privacy
+controls and Servo are future work.
