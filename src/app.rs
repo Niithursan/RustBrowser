@@ -1,29 +1,44 @@
 use crate::{
     engine::{self, Engine},
-    ui::{self, Command, State, TabState, ToolbarState},
+    library_worker::{self, Worker},
+    native_downloads,
+    ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
 use rust_browser::{
+    library::{Action, Data, Filter},
     navigation,
     settings::Settings,
     storage::{self, Snapshot, Store},
     tabs::{MAX_TABS, TabId, Tabs},
 };
+use std::{
+    cell::RefCell,
+    path::PathBuf,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     keyboard::{Key, ModifiersState, NamedKey},
     window::{Window, WindowId},
 };
+use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 
 #[derive(Debug)]
 pub enum PageEvent {
     Loading,
     Changed,
-    Completed(Option<String>),
+    Completed {
+        error: Option<String>,
+        navigation_id: u64,
+        url: String,
+        title: String,
+    },
     Error(String),
     Title(String),
 }
@@ -33,6 +48,13 @@ pub enum Event {
     Page(TabId, PageEvent),
     OpenTab(TabId, String),
     StorageError,
+    Library(library_worker::Reply),
+    DownloadRequested(u64, TabId),
+    DownloadStopped(u64, i32),
+    DownloadTick,
+    DownloadRejected,
+    DownloadDestination(u64, Result<Option<PathBuf>, String>),
+    DownloadFinished(u64, Result<PathBuf, String>),
 }
 
 struct Page {
@@ -50,7 +72,20 @@ struct Session {
     proxy: EventLoopProxy<Event>,
     settings: Settings,
     notice: String,
+    panel: Option<Panel>,
+    library_data: Data,
+    filter: Filter,
+    revision: u64,
+    run_id: String,
+    downloads: native_downloads::Shared,
+    library: Worker,
     store: Store,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.downloads.borrow_mut().shutdown();
+    }
 }
 
 impl Session {
@@ -63,9 +98,10 @@ impl Session {
         let (store, snapshot, recovered) = Store::open(&profile, move || {
             let _ = error_proxy.send_event(Event::StorageError);
         })?;
+        let library = Worker::start(profile.join("library.sqlite"), proxy.clone())?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.2.0")
+                .with_title("Rust Browser 0.3.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -105,6 +141,17 @@ impl Session {
             } else {
                 String::new()
             },
+            panel: None,
+            library_data: Data::default(),
+            filter: Filter::default(),
+            revision: 0,
+            run_id: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+                .to_string(),
+            downloads: Rc::new(RefCell::new(native_downloads::Manager::default())),
+            library,
             store,
         };
         for url in snapshot.tabs {
@@ -127,6 +174,9 @@ impl Session {
         }
         session.activate()?;
         session.persist();
+        if session.library_action(Action::Refresh).is_err() {
+            session.notice="Library database is unavailable. Browsing remains available; check profile access or use the browser version that created this library.".into();
+        }
         Ok(session)
     }
 
@@ -144,6 +194,7 @@ impl Session {
             &mut self.content_context,
             self.proxy.clone(),
             id,
+            self.downloads.clone(),
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
         engine.view.load_url(&url)?;
@@ -164,7 +215,15 @@ impl Session {
             .to_logical::<f64>(self.window.scale_factor());
         self.toolbar.set_bounds(Rect {
             position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(size.width, ui::HEIGHT).into(),
+            size: LogicalSize::new(
+                size.width,
+                if self.panel.is_some() {
+                    size.height
+                } else {
+                    ui::HEIGHT
+                },
+            )
+            .into(),
         })?;
         if let Some(tab) = self.tabs.active() {
             tab.content.engine.view.set_bounds(Rect {
@@ -178,10 +237,15 @@ impl Session {
     fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let active = self.tabs.active_index();
         for (index, tab) in self.tabs.items.iter().enumerate() {
-            tab.content.engine.view.set_visible(index == active)?;
+            tab.content
+                .engine
+                .view
+                .set_visible(index == active && self.panel.is_none())?;
         }
         self.resize()?;
-        if let Some(tab) = self.tabs.active() {
+        if self.panel.is_some() {
+            self.toolbar.focus()?;
+        } else if let Some(tab) = self.tabs.active() {
             tab.content.engine.view.focus()?;
         }
         Ok(())
@@ -205,6 +269,10 @@ impl Session {
             active_id: active.id,
             search_engine: self.settings.search_engine,
             notice: &self.notice,
+            panel: self.panel,
+            library: &self.library_data,
+            history_enabled: self.settings.history_enabled,
+            downloads: self.downloads.borrow().records(),
             tabs: self
                 .tabs
                 .items
@@ -229,9 +297,9 @@ impl Session {
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
         self.window.set_title(if active.content.state.loading {
-            "Loading… — Rust Browser 0.2.0"
+            "Loading… — Rust Browser 0.3.0"
         } else {
-            "Rust Browser 0.2.0"
+            "Rust Browser 0.3.0"
         });
     }
 
@@ -246,17 +314,81 @@ impl Session {
 
     fn command(&mut self, command: Command) -> Result<(), Box<dyn std::error::Error>> {
         match command {
+            Command::ShowPanel(panel) => {
+                self.panel = Some(panel);
+                self.filter = Filter::default();
+                self.activate()?;
+                self.library_action(Action::Refresh)?;
+            }
+            Command::ClosePanel => {
+                self.panel = None;
+                self.activate()?;
+            }
+            Command::QueryLibrary(filter) => {
+                self.filter = filter;
+                self.library_action(Action::Refresh)?;
+            }
+            Command::Library(action) => {
+                if matches!(&action,Action::RemoveFolder{id} if self.filter.folder==Some(*id)) {
+                    self.filter.folder = None;
+                }
+                self.library_action(action)?;
+            }
+            Command::BookmarkCurrent => {
+                if let Some(tab) = self.tabs.active() {
+                    let title = if tab.title == "New tab" {
+                        tab.url.clone()
+                    } else {
+                        tab.title.clone()
+                    };
+                    let action = Action::SaveBookmark {
+                        id: None,
+                        title,
+                        url: tab.url.clone(),
+                        folder: None,
+                    };
+                    self.panel = Some(Panel::Bookmarks);
+                    self.filter = Filter::default();
+                    self.activate()?;
+                    self.library_action(action)?;
+                }
+            }
+            Command::OpenSaved { url, new_tab } => {
+                let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
+                self.panel = None;
+                if new_tab {
+                    self.open_tab(url)?;
+                    self.activate()?;
+                } else {
+                    self.activate()?;
+                    self.command(Command::Navigate(url))?;
+                }
+            }
+            Command::SetHistoryEnabled(value) => {
+                self.settings.history_enabled = value;
+            }
+            Command::CancelDownload(id) => {
+                self.downloads.borrow_mut().cancel(id)?;
+            }
+            Command::OpenDownloadFolder(id) => {
+                if let Some(folder) = self.downloads.borrow().folder(id) {
+                    native_downloads::open_folder(&folder)?;
+                }
+            }
             Command::NewTab => {
+                self.panel = None;
                 self.open_tab(navigation::HOME.into())?;
                 self.activate()?;
                 self.command(Command::FocusAddress)?;
             }
             Command::SelectTab(id) => {
+                self.panel = None;
                 if self.tabs.select(id) {
                     self.activate()?;
                 }
             }
             Command::CycleTab(backwards) => {
+                self.panel = None;
                 self.tabs.cycle(backwards);
                 self.activate()?;
             }
@@ -271,6 +403,10 @@ impl Session {
             }
             Command::Navigate(input) => {
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
+                self.notice.clear();
+                if self.panel.take().is_some() {
+                    self.activate()?;
+                }
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.content.engine.view.load_url(&url)?;
                     tab.url = url.clone();
@@ -287,6 +423,8 @@ impl Session {
                 self.toolbar.evaluate_script("window.focusAddress()")?;
             }
             Command::FocusPage => {
+                self.panel = None;
+                self.activate()?;
                 if let Some(tab) = self.tabs.active() {
                     tab.content.engine.view.focus()?;
                 }
@@ -321,7 +459,27 @@ impl Session {
             }
             PageEvent::Changed => {}
             PageEvent::Title(title) => tab.title = title.chars().take(120).collect(),
-            PageEvent::Completed(error) => {
+            PageEvent::Completed {
+                error,
+                navigation_id,
+                url,
+                title,
+            } => {
+                if error.is_none() && self.settings.history_enabled {
+                    let action = Action::Record {
+                        key: format!("{}-{id}-{navigation_id}", self.run_id),
+                        url,
+                        title,
+                        timestamp: rust_browser::library::now(),
+                    };
+                    if let Err(message) = self.library.submit(library_worker::Job {
+                        revision: 0,
+                        action,
+                        filter: Filter::default(),
+                    }) {
+                        self.notice = message.into();
+                    }
+                }
                 tab.content.state.loading = false;
                 tab.content.state.message =
                     error.map(|e| format!("Error: {e}")).unwrap_or_else(|| {
@@ -339,6 +497,16 @@ impl Session {
         }
         (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
         self.persist();
+    }
+
+    fn library_action(&mut self, action: Action) -> Result<(), Box<dyn std::error::Error>> {
+        self.revision += 1;
+        self.library.submit(library_worker::Job {
+            revision: self.revision,
+            action,
+            filter: self.filter.clone(),
+        })?;
+        Ok(())
     }
 }
 
@@ -419,6 +587,56 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            Event::Library(reply) => {
+                if let Some(message) = reply.message {
+                    session.notice = message;
+                }
+                if reply.revision == session.revision
+                    && let Some(data) = reply.data
+                {
+                    session.library_data = data;
+                }
+            }
+            Event::DownloadStopped(id, reason) => {
+                session.downloads.borrow_mut().stopped(id, reason)
+            }
+            Event::DownloadTick => {
+                session.downloads.borrow_mut().poll(&session.proxy);
+            }
+            Event::DownloadRequested(id, tab_id) => {
+                session.notice.clear();
+                if let Some(tab) = session.tabs.get_mut(tab_id) {
+                    tab.content.state.loading = false;
+                    tab.content.state.message = "Download handed to manager.".into();
+                }
+                let owner=match session.window.window_handle().map(|handle|handle.as_raw()){
+                    Ok(RawWindowHandle::Win32(handle))=>handle.hwnd.get(),
+                    _=>{session.downloads.borrow_mut().destination(id,Err("Could not identify the browser window for destination selection.".into()));return;}
+                };
+                let proxy = session.proxy.clone();
+                if std::thread::Builder::new()
+                    .name("download-folder-picker".into())
+                    .spawn(move || {
+                        let result = native_downloads::choose_folder(owner);
+                        let _ = proxy.send_event(Event::DownloadDestination(id, result));
+                    })
+                    .is_err()
+                {
+                    session
+                        .downloads
+                        .borrow_mut()
+                        .destination(id, Err("Could not start the folder picker.".into()));
+                }
+                session.panel = Some(Panel::Downloads);
+                let _ = session.activate();
+            }
+            Event::DownloadDestination(id, result) => {
+                session.downloads.borrow_mut().destination(id, result)
+            }
+            Event::DownloadRejected=>session.notice="A download from this address is already active, or the download limit was reached.".into(),
+            Event::DownloadFinished(id, result) => {
+                session.downloads.borrow_mut().finished(id, result)
+            }
             Event::Command(command) => {
                 if let Err(error) = session.command(command) {
                     session.notice = format!("Error: {error}");
@@ -440,6 +658,21 @@ impl ApplicationHandler<Event> for App {
             }
         }
         session.render();
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(session) = &self.session {
+            if session.downloads.borrow_mut().poll(&session.proxy) {
+                session.render();
+            }
+            if session.downloads.borrow().active_count() > 0 {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(
+                    Instant::now() + Duration::from_millis(250),
+                ));
+            } else {
+                event_loop.set_control_flow(ControlFlow::Wait);
+            }
+        }
     }
 }
 

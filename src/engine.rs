@@ -24,6 +24,7 @@ impl Engine {
         context: &mut WebContext,
         proxy: EventLoopProxy<Event>,
         id: TabId,
+        downloads: crate::native_downloads::Shared,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let nav_proxy = proxy.clone();
         let popup_proxy = proxy.clone();
@@ -48,7 +49,6 @@ impl Engine {
                 wry::NewWindowResponse::Deny
             })
             .with_permission_handler(|_| wry::PermissionResponse::Deny)
-            .with_download_started_handler(|_, _| false)
             .with_on_page_load_handler(move |event, _| {
                 if matches!(event, wry::PageLoadEvent::Started) {
                     let _ = load_proxy.send_event(Event::Page(id, PageEvent::Loading));
@@ -62,6 +62,7 @@ impl Engine {
                 }
             })
             .build_as_child(window)?;
+        crate::native_downloads::install(&view, downloads, proxy.clone(), id)?;
         // SAFETY: handlers are registered against live WebView2 objects on the UI/COM
         // apartment thread. They enqueue owned events; no COM object crosses threads.
         unsafe {
@@ -83,7 +84,7 @@ impl Engine {
                 })),
                 &mut token,
             )?;
-            core.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+            core.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                 if let Some(args) = args {
                     let mut success = BOOL::default();
                     args.IsSuccess(&mut success)?;
@@ -92,7 +93,13 @@ impl Engine {
                         args.WebErrorStatus(&mut status)?;
                         Some(format!("Navigation failed (WebView2 status {}). Check the address or connection and retry.", status.0))
                     };
-                    let _ = proxy.send_event(Event::Page(id, PageEvent::Completed(error)));
+                    let mut navigation_id=0;args.NavigationId(&mut navigation_id)?;
+                    let mut url=String::new();let mut title=String::new();
+                    if let Some(sender)=sender {
+                        let mut source=windows::core::PWSTR::null();sender.Source(&mut source)?;url=webview2_com::take_pwstr(source);
+                        let mut value=windows::core::PWSTR::null();sender.DocumentTitle(&mut value)?;title=webview2_com::take_pwstr(value);
+                    }
+                    let _ = proxy.send_event(Event::Page(id, PageEvent::Completed { error,navigation_id,url,title }));
                 }
                 Ok(())
             })), &mut token)?;

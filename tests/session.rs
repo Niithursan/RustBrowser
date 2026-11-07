@@ -11,6 +11,22 @@ use std::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn v02_settings_load_with_history_default_and_pause_persists() {
+    let settings: Settings = serde_json::from_str(r#"{"search_engine":"bing"}"#).unwrap();
+    assert!(settings.history_enabled);
+    assert_eq!(settings.search_engine, SearchEngine::Bing);
+    let paused = Settings {
+        history_enabled: false,
+        ..settings
+    };
+    assert!(
+        !serde_json::from_str::<Settings>(&serde_json::to_string(&paused).unwrap())
+            .unwrap()
+            .history_enabled
+    );
+}
 struct Profile(PathBuf);
 impl Profile {
     fn new() -> Self {
@@ -53,6 +69,7 @@ fn tabs_search_settings_and_active_session_roundtrip() {
         active: tabs.active_index(),
         settings: Settings {
             search_engine: SearchEngine::DuckDuckGo,
+            ..Settings::default()
         },
     };
     store.queue(snapshot.clone());
@@ -90,6 +107,7 @@ fn atomic_replacement_and_corruption_recovery() {
     let changed = Snapshot {
         settings: Settings {
             search_engine: SearchEngine::Bing,
+            ..Settings::default()
         },
         ..Snapshot::default()
     };

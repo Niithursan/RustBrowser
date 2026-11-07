@@ -1,5 +1,14 @@
+use rust_browser::library::{Action, Data, Filter};
 use rust_browser::{settings::SearchEngine, tabs::TabId};
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Panel {
+    Bookmarks,
+    History,
+    Downloads,
+}
 
 pub const HEIGHT: f64 = 136.0;
 pub const HTML: &str = include_str!("toolbar.html");
@@ -22,6 +31,15 @@ pub enum Command {
     SelectTab(TabId),
     CycleTab(bool),
     SetSearchEngine(SearchEngine),
+    BookmarkCurrent,
+    ShowPanel(Panel),
+    ClosePanel,
+    QueryLibrary(Filter),
+    Library(Action),
+    OpenSaved { url: String, new_tab: bool },
+    SetHistoryEnabled(bool),
+    CancelDownload(u64),
+    OpenDownloadFolder(u64),
 }
 
 #[derive(Default, Serialize)]
@@ -48,11 +66,19 @@ pub struct ToolbarState<'a> {
     pub active_id: TabId,
     pub search_engine: SearchEngine,
     pub notice: &'a str,
+    pub panel: Option<Panel>,
+    pub library: &'a Data,
+    pub history_enabled: bool,
+    pub downloads: Vec<crate::native_downloads::Record>,
 }
 
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.
 pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
     match (key, ctrl, alt) {
+        (0x44, true, _) => Some(Command::BookmarkCurrent),
+        (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
+        (0x4a, true, _) => Some(Command::ShowPanel(Panel::Downloads)),
+        (0x4f, true, _) if shift => Some(Command::ShowPanel(Panel::Bookmarks)),
         (0x4c, true, _) | (0x44, _, true) | (0x75, _, _) => Some(Command::FocusAddress),
         (0x52, true, _) | (0x74, _, _) => Some(Command::Reload),
         (0x25, _, true) => Some(Command::Back),
