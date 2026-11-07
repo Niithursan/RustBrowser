@@ -39,6 +39,9 @@ pub fn persistent_snapshot(
     if !snapshot.settings.restore_session {
         snapshot.tabs = vec![crate::navigation::HOME.into()];
         snapshot.active = 0;
+        snapshot.pinned.clear();
+        snapshot.titles.clear();
+        snapshot.keep_awake.clear();
     }
     Some(snapshot)
 }

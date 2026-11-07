@@ -1,6 +1,7 @@
 use url::Url;
 
-pub const HOME: &str = "https://example.com/";
+/// Internal model identity only. Never passed to a remote view or accepted as a website URL.
+pub const HOME: &str = "rust-browser:new-tab";
 
 /// Resolve explicit URLs, host-like input, or a percent-encoded search query.
 pub fn resolve(input: &str, engine: crate::settings::SearchEngine) -> Result<String, String> {
@@ -86,7 +87,7 @@ mod tests {
     use super::*;
     #[test]
     fn normalizes_addresses() {
-        assert_eq!(address(" example.com ").unwrap(), HOME);
+        assert_eq!(address(" example.com ").unwrap(), "https://example.com/");
         assert_eq!(
             address("localhost:8080/a").unwrap(),
             "https://localhost:8080/a"
@@ -115,6 +116,7 @@ mod tests {
             assert!(address(value).is_err(), "{value}");
         }
         assert!(!allowed("javascript:alert(1)"));
-        assert!(allowed(HOME));
+        assert!(allowed("https://example.com/"));
+        assert!(!allowed(HOME)); // Internal tabs never enter the remote URL policy.
     }
 }

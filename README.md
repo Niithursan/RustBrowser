@@ -1,4 +1,4 @@
-# Rust Browser 0.4.0
+# Rust Browser 0.5.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
@@ -49,12 +49,17 @@ The console remains available intentionally for diagnostics in this initial vers
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
 | Stop | × button or Escape |
-| Home | Home button → https://example.com/ |
+| Home | Home button → local new-tab page |
 | New tab | + button or Ctrl+T |
 | Close active tab | Ctrl+W (last normal tab opens Home; last private tab closes its window) |
 | Close a specific tab | Its × button |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab (wraps around) |
 | Select a tab | Click its title |
+| Reorder tabs | Drag a tab, Move left/right, or Ctrl+Shift+PageUp/PageDown |
+| Pin/unpin active tab | Pin tab button or Ctrl+Shift+P |
+| Navigate focused tab strip | Left/Right, Home/End; Tab reaches the selected tab |
+| Find an overflowed tab | All-tabs selector or tab-strip scroll buttons |
+| Prevent active tab sleeping | Keep awake button (saved per normal tab) |
 | Focus webpage from toolbar | F7 |
 | Bookmark current page | Ctrl+D |
 | Bookmark manager | Bookmarks button or Ctrl+Shift+O |
@@ -91,7 +96,8 @@ to preserve normal cookies and data on upgrade. There is no password manager or
 general profile manager. Private windows use separate temporary storage.
 Close every instance before manually removing a profile folder.
 
-`session.json` stores tab URLs, order, active tab and search settings in **plain text**
+`session.json` stores tab URLs, bounded titles, order, pinned/keep-awake state,
+active tab, favorites, theme and search/performance settings in **plain text**
 inside this profile. URLs may contain sensitive paths, queries or tokens. No URL log
 or page content is saved by the Rust session layer. Keep the profile private and out
 of Git; OS account permissions protect it, not application encryption. Session saves
@@ -102,9 +108,9 @@ Do not run v0.1 against the same profile simultaneously.
 By default, restart restores normal tab URLs and the active tab. The Privacy & security
 panel can disable URL retention while preserving search and history preferences. An optional command
 line URL opens an additional tab. Back/forward history, form data, scroll position and
-page JavaScript state are not restored. Up to 64 live tabs are supported; hidden tabs
-retain their engines and may continue loading, playing media or using resources.
-There is no tab suspension yet. Invalid, oversized or unsupported session files are
+page JavaScript state are not restored after restarting the application. Up to 64 live
+tabs are supported. Hidden tabs retain their engines; eligible tabs can sleep as
+described below. Invalid, oversized or unsupported session files are
 backed up as `session-invalid-*.json`, with a visible recovery notice. Disk-write
 failures show a notice; check disk space and profile permissions before exiting.
 
@@ -119,7 +125,7 @@ The toolbar is local embedded HTML in a separate child webview. Only it receives
 Rust IPC command bridge. Remote sites receive **no application IPC bridge or injected
 application scripts**. Toolbar navigation is restricted to its exact bundled data
 URL; remote content navigation is limited to HTTP(S) and a neutral `about:blank`
-page used when clearing data. The native external-scheme handler blocks OS app launches. Address entry rejects
+page used for the local new-tab content surface and data clearing. The native external-scheme handler blocks OS app launches. Address entry rejects
 embedded credentials and active schemes such as `javascript:`, `data:` and `file:`.
 Unsupported permissions are denied. HTTP(S) downloads require destination selection.
 Wry's default extra browser arguments are replaced with an empty argument string to
@@ -131,6 +137,42 @@ extensions, printing UI, sync, full crash recovery or default-browser
 registration. Threat protections and compatibility
 need a dedicated review before everyday browsing. Runtime behavior remains dependent
 on Microsoft's installed WebView2 version and policy.
+
+## Sleeping tabs and local new-tab page
+
+Eligible background tabs use WebView2's optional `TrySuspend` API after two minutes.
+Select a sleeping tab to resume its existing view and JavaScript document. Sleep does
+not discard/reload views, and a runtime refusal leaves the tab awake. A failed resume
+shows a notice and a **Wake tab** retry; unsupported APIs disable sleeping for that
+view. The runtime chooses how much memory it can release; shared renderer processes
+and storage remain. Sleeping is not a privacy boundary.
+
+Active, pinned, Keep awake, loading and granted-permission tabs are protected. Any
+active download, pending permission prompt or data-clearing operation blocks automatic
+sleeping across the window. Audio is queried through WebView2; its own suspension
+heuristics also apply. Grants conservatively protect a document until navigation.
+Arbitrary live-site work cannot be completely inferred: use **Keep awake** for live
+dashboards, calls, uploads or other important background work. In **Privacy & security**,
+turn off **Let inactive tabs sleep** to resume sleeping tabs and
+disable automation, or change the delay. Pinning also protects a tab. Performance
+preferences are separate from permission and privacy decisions.
+
+Home and new tabs show bundled local UI with search, up to twelve named HTTP(S)
+favorites, Dark/Slate/Plum themes and quick access to bookmarks. Recent history is
+**off by default**; enabling it displays up to six eligible cached library entries.
+It follows history recording/filtering rules and is unavailable in private windows.
+Favorite titles/URLs and themes are saved in normal settings independently of session
+URL retention. Private favorites, themes, pins and tab order last only for that window
+and never read the normal session. No background image is fetched.
+
+The local page lives in the trusted toolbar view, separately from the ordinary content
+view. Its internal `rust-browser:new-tab` marker is never accepted as a website URL;
+remote sites still receive no privileged IPC. The connection indicator says **LOCAL**
+there because no website connection is established.
+
+See [benchmarks/README.md](benchmarks/README.md) for reproducible Windows measurement
+instructions, measured results and their limits. Performance results describe the
+documented synthetic workload, not general website or everyday-browser performance.
 
 ## Private browsing
 
@@ -257,6 +299,8 @@ src/main.rs           Entry point and Windows platform gate
 src/app.rs            Event loop, session lifetime, layout, profile and state
 src/navigation.rs     URL normalization and scheme policy, with unit tests
 src/tabs.rs           Engine-independent tab IDs, ordering and selection
+src/background.rs     Engine-independent sleeping eligibility and callback generations
+src/native_background.rs Optional WebView2 suspend/resume/audio adapter
 src/settings.rs       Search provider settings and query encoding
 src/storage.rs        Validated snapshots, profile lock and background persistence
 src/privacy.rs        Private profile leases and clearing/retention policy
@@ -278,7 +322,7 @@ carry stable tab IDs, including background callbacks; late events from closed ta
 are ignored. Switching hides/shows views without recreation. The generic tab model,
 settings, library model and persistence do not depend on WebView2. Native download
 operations stay in the Windows adapter; UI rendering uses plain serializable records.
-Privacy/profile services are future work. Add an engine
+Multiple named normal profiles remain future work. Add an engine
 trait only when a second backend's actual requirements are known. Servo would need
 its own embedding, rendering/input integration and compatibility testing; it cannot
 simply be substituted into Wry. No Servo dependency is included.
@@ -287,9 +331,11 @@ simply be substituted into Wry. No Servo dependency is included.
 
 ```powershell
 rustup component add rustfmt clippy
-cargo fmt --check
-cargo test --locked
-cargo clippy --locked -- -D warnings
+cargo fmt --all -- --check
+cargo test --locked --all-targets --all-features
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo build --locked
+cargo build --locked --release
 ```
 
 See [VALIDATION.md](VALIDATION.md) for checks actually performed and known gaps.
@@ -314,6 +360,7 @@ Manual smoke checklist:
 ## Upstream references
 
 - [Wry documentation](https://docs.rs/wry/0.57.1/wry/)
+- [WebView2 best-effort suspension and resume](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_3)
 - [Wry Windows extension](https://docs.rs/wry/0.57.1/x86_64-pc-windows-msvc/wry/trait.WebViewExtWindows.html)
 - [winit documentation](https://docs.rs/winit/0.30.13/winit/)
 - [WebView2 documentation](https://learn.microsoft.com/en-us/microsoft-edge/webview2/)

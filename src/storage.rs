@@ -24,6 +24,12 @@ pub struct Snapshot {
     pub active: usize,
     #[serde(default)]
     pub settings: Settings,
+    #[serde(default)]
+    pub pinned: Vec<bool>,
+    #[serde(default)]
+    pub titles: Vec<String>,
+    #[serde(default)]
+    pub keep_awake: Vec<bool>,
 }
 
 impl Default for Snapshot {
@@ -33,6 +39,9 @@ impl Default for Snapshot {
             tabs: vec![navigation::HOME.into()],
             active: 0,
             settings: Settings::default(),
+            pinned: Vec::new(),
+            titles: Vec::new(),
+            keep_awake: Vec::new(),
         }
     }
 }
@@ -44,8 +53,19 @@ impl Snapshot {
             || self.tabs.len() > MAX_TABS
             || self.active >= self.tabs.len()
             || self.tabs.iter().any(|url| {
-                url.len() > 8192 || navigation::address(url).as_deref() != Ok(url.as_str())
+                url != navigation::HOME
+                    && (url.len() > 8192 || navigation::address(url).as_deref() != Ok(url.as_str()))
             })
+            || (!self.pinned.is_empty()
+                && (self.pinned.len() != self.tabs.len()
+                    || self.pinned.windows(2).any(|pair| !pair[0] && pair[1])))
+            || (!self.keep_awake.is_empty() && self.keep_awake.len() != self.tabs.len())
+            || (!self.titles.is_empty()
+                && (self.titles.len() != self.tabs.len()
+                    || self.titles.iter().any(|title| {
+                        title.chars().count() > 120 || title.chars().any(char::is_control)
+                    })))
+            || self.settings.validate().is_err()
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

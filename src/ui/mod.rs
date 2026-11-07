@@ -9,6 +9,7 @@ pub enum Panel {
     History,
     Downloads,
     Settings,
+    NewTab,
 }
 
 pub const HEIGHT: f64 = 136.0;
@@ -17,6 +18,24 @@ pub const HTML: &str = include_str!("toolbar.html");
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
+    MoveTab {
+        id: TabId,
+        to: usize,
+    },
+    MoveActive(bool),
+    PinActive,
+    KeepAwake,
+    WakeTab,
+    SetAutomaticSuspension(bool),
+    SetSuspendDelay(u64),
+    SetTheme(rust_browser::settings::Theme),
+    SetShowRecent(bool),
+    AddFavorite {
+        title: String,
+        url: String,
+    },
+    RemoveFavorite(usize),
+    ToolbarHeight(f64),
     RevokePermission {
         origin: String,
         capability: rust_browser::security::Capability,
@@ -36,6 +55,7 @@ pub enum Command {
     Reload,
     Stop,
     FocusAddress,
+    FocusTabs,
     FocusPage,
     Home,
     Ready,
@@ -74,10 +94,15 @@ pub struct TabState<'a> {
     pub id: TabId,
     pub title: &'a str,
     pub active: bool,
+    pub pinned: bool,
+    pub keep_awake: bool,
+    pub phase: rust_browser::background::Phase,
+    pub loading: bool,
 }
 
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
+    pub settings: &'a rust_browser::settings::Settings,
     pub private: bool,
     pub restore_session: bool,
     pub security: rust_browser::security::Indicator,
@@ -98,6 +123,9 @@ pub struct ToolbarState<'a> {
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.
 pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
     match (key, ctrl, alt) {
+        (0x21, true, _) if shift => Some(Command::MoveActive(true)),
+        (0x22, true, _) if shift => Some(Command::MoveActive(false)),
+        (0x50, true, _) if shift => Some(Command::PinActive),
         (0x4e, true, _) if shift => Some(Command::NewPrivateWindow),
         (0x44, true, _) => Some(Command::BookmarkCurrent),
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),

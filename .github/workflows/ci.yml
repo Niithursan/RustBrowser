@@ -28,6 +28,10 @@ jobs:
         run: cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
       - name: Native application clearing
         run: cargo test --locked --bin rust-browser native_application_clear -- --ignored --test-threads=1
+      - name: Native sleeping tabs and local new-tab boundary
+        run: cargo test --locked --bin rust-browser native_tab_sleep_resume_and_local_page_security -- --ignored --test-threads=1
+      - name: Private new-tab isolation
+        run: cargo test --locked --bin rust-browser native_private_newtab_settings_are_ephemeral -- --ignored --test-threads=1
       - run: cargo build --locked
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

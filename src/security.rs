@@ -47,6 +47,13 @@ pub struct Indicator {
     pub message: String,
 }
 pub fn indicator(value: &str, loading: bool, failed: bool) -> Indicator {
+    if value == crate::navigation::HOME {
+        return Indicator {
+            origin: "New tab".into(),
+            scheme: "local".into(),
+            message: "Local browser page. No website connection.".into(),
+        };
+    }
     let Some(origin) = origin(value) else {
         return Indicator {
             origin: "No website origin".into(),

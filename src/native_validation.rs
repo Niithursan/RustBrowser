@@ -311,6 +311,11 @@ impl ApplicationHandler<Event> for Harness {
                     }
                     if matches!(self.phase, 7 | 8) {
                         self.permissions.borrow_mut().cancel_tab(1);
+                        if self.permissions.borrow().protected(1) {
+                            self.failure =
+                                Some("Cancelled permission retained sleep protection".into());
+                            event_loop.exit();
+                        }
                     } else if matches!(self.phase, 10 | 11) {
                         if self
                             .permissions
@@ -319,6 +324,10 @@ impl ApplicationHandler<Event> for Harness {
                             .is_err()
                         {
                             self.failure = Some("Explicit native decision failed".into());
+                            event_loop.exit();
+                        }
+                        if !self.permissions.borrow().protected(1) {
+                            self.failure = Some("Granted document lost sleep protection".into());
                             event_loop.exit();
                         }
                     } else {
