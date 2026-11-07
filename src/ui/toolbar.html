@@ -1,19 +1,44 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8"><title>Browser controls</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
 <style>
-*{box-sizing:border-box}body{margin:0;background:#17212f;color:#e8eef7;font:14px 'Segoe UI',sans-serif;overflow:hidden}form{display:flex;gap:6px;padding:12px 12px 6px;align-items:center}button{height:34px;min-width:36px;border:1px solid #425169;border-radius:6px;background:#243247;color:inherit;cursor:pointer}button:disabled{opacity:.35;cursor:default}button:focus-visible,input:focus{outline:2px solid #69b8ff}input{flex:1;min-width:50px;height:34px;border:1px solid #536882;border-radius:6px;background:#0d1623;color:white;padding:0 12px;font:inherit}#status{padding:0 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#bacce0}#status.error{color:#ffb4a8}.hint{opacity:.65;margin-left:10px;font-size:11px}
+*{box-sizing:border-box}body{margin:0;background:#17212f;color:#e8eef7;font:14px 'Segoe UI',sans-serif;overflow:hidden}
+#tabrow{display:flex;align-items:center;gap:6px;padding:6px 12px 0;height:38px}#tabs{display:flex;gap:4px;overflow-x:auto;flex:1;scrollbar-width:thin}
+.tab{display:flex;flex-shrink:0;max-width:210px}.tab button{height:28px;border-radius:0}.tab .select{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}.tab.active .select{background:#385477}
+form{display:flex;gap:6px;padding:8px 12px 6px;align-items:center}button,select{height:34px;min-width:34px;border:1px solid #425169;border-radius:6px;background:#243247;color:inherit;cursor:pointer}
+button:disabled{opacity:.35;cursor:default}button:focus-visible,input:focus,select:focus{outline:2px solid #69b8ff}input{flex:1;min-width:50px;height:34px;border:1px solid #536882;border-radius:6px;background:#0d1623;color:white;padding:0 12px;font:inherit}
+#status,#notice{padding:0 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#bacce0}#notice{color:#ffb4a8;height:17px}#status.error{color:#ffb4a8}select{max-width:112px;font:inherit}
 </style></head><body>
-<form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><input id="address" aria-label="Website address" placeholder="Enter a website address" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form>
-<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div>
+<div id="tabrow"><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab">+</button></div>
+<form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><input id="address" aria-label="Website address or search" placeholder="Search or enter address" autocomplete="off" spellcheck="false"><select id="search" aria-label="Default search engine"><option value="google">Google</option><option value="duck_duck_go">DuckDuckGo</option><option value="bing">Bing</option></select><button type="submit">Go</button></form>
+<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice" role="status" aria-live="polite"></div>
 <script>
-const input=document.getElementById('address'),status=document.getElementById('status');
-let editing=false;
+const input=document.getElementById('address'),status=document.getElementById('status'),tabs=document.getElementById('tabs');
+let editing=false,activeId=null,tabSignature='';
 function send(action,value){window.ipc.postMessage(JSON.stringify({action,value}));}
 for(const action of ['back','forward','reload','stop','home'])document.getElementById(action).onclick=()=>send(action);
+document.getElementById('new').onclick=()=>send('new_tab');
+document.getElementById('search').onchange=e=>send('set_search_engine',e.target.value);
 document.getElementById('nav').onsubmit=e=>{e.preventDefault();editing=false;send('navigate',input.value)};
 input.onfocus=()=>editing=true;input.onblur=()=>editing=false;
 window.focusAddress=()=>{input.focus();input.select();editing=true};
-window.render=s=>{if(!editing)input.value=s.url;document.getElementById('back').disabled=!s.back;document.getElementById('forward').disabled=!s.forward;document.getElementById('stop').disabled=!s.loading;status.textContent=s.message;status.className=s.message.startsWith('Error:')?'error':'';};
+window.render=s=>{
+    if(activeId!==s.active_id){editing=false;activeId=s.active_id;}
+    if(!editing)input.value=s.url;
+    document.getElementById('back').disabled=!s.back;document.getElementById('forward').disabled=!s.forward;document.getElementById('stop').disabled=!s.loading;
+    status.textContent=s.message;status.className=s.message.startsWith('Error:')?'error':'';
+    document.getElementById('notice').textContent=s.notice;document.getElementById('search').value=s.search_engine;
+    const signature=JSON.stringify(s.tabs);
+    if(signature!==tabSignature){
+        tabSignature=signature;tabs.replaceChildren();
+        for(const tab of s.tabs){
+            const item=document.createElement('div');item.className='tab'+(tab.active?' active':'');
+            const select=document.createElement('button');select.type='button';select.className='select';select.setAttribute('role','tab');select.setAttribute('aria-selected',String(tab.active));
+            select.textContent=tab.title||'New tab';select.title=tab.title;select.onclick=()=>send('select_tab',tab.id);
+            const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Close tab '+tab.title);close.onclick=()=>send('close_tab',tab.id);
+            item.append(select,close);tabs.append(item);if(tab.active)item.scrollIntoView({block:'nearest',inline:'nearest'});
+        }
+    }
+};
 send('ready');
 </script></body></html>

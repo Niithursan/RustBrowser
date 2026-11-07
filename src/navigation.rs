@@ -2,6 +2,44 @@ use url::Url;
 
 pub const HOME: &str = "https://example.com/";
 
+/// Resolve explicit URLs, host-like input, or a percent-encoded search query.
+pub fn resolve(input: &str, engine: crate::settings::SearchEngine) -> Result<String, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err("Enter an address or search query.".into());
+    }
+    if input.len() > 8192 {
+        return Err("Address or query is too long.".into());
+    }
+    let host = input.split(['/', '?', '#']).next().unwrap_or(input);
+    let host_like = host.contains('.') || host.starts_with("localhost") || host.starts_with('[');
+    let explicit_scheme = input.contains("://")
+        || input.find(':').is_some_and(|colon| {
+            let prefix = &input[..colon];
+            let port = input[colon + 1..]
+                .split(['/', '?', '#'])
+                .next()
+                .unwrap_or("");
+            let host_port =
+                host_like && !port.is_empty() && port.chars().all(|c| c.is_ascii_digit());
+            !host_port
+                && prefix.starts_with(|c: char| c.is_ascii_alphabetic())
+                && prefix
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        });
+    let destination = if explicit_scheme || (!input.chars().any(char::is_whitespace) && host_like) {
+        address(input)?
+    } else {
+        engine.search(input)
+    };
+    // Encoding can expand a short query beyond the persisted URL size limit.
+    if destination.len() > 8192 {
+        return Err("The resulting address or search URL is too long.".into());
+    }
+    Ok(destination)
+}
+
 /// Only HTTP(S) can enter the remote content view. Never execute address-bar JS.
 pub fn address(input: &str) -> Result<String, String> {
     let input = input.trim();

@@ -11,6 +11,12 @@
 /profiles/
 /user-data/
 /test-profile/
+/session.json
+/session.json.tmp
+/session.lock
+/session-invalid-*.json
+/content/
+/toolbar/
 /bin/
 Thumbs.db
 .DS_Store
