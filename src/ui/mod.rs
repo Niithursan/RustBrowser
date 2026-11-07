@@ -49,3 +49,19 @@ pub struct ToolbarState<'a> {
     pub search_engine: SearchEngine,
     pub notice: &'a str,
 }
+
+/// One shortcut map for WebView2 controllers and the parent window's focus fallback.
+pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
+    match (key, ctrl, alt) {
+        (0x4c, true, _) | (0x44, _, true) | (0x75, _, _) => Some(Command::FocusAddress),
+        (0x52, true, _) | (0x74, _, _) => Some(Command::Reload),
+        (0x25, _, true) => Some(Command::Back),
+        (0x27, _, true) => Some(Command::Forward),
+        (0x1b, _, _) => Some(Command::Stop),
+        (0x54, true, _) => Some(Command::NewTab),
+        (0x57, true, _) => Some(Command::CloseActive),
+        (0x09, true, _) => Some(Command::CycleTab(shift)),
+        (0x76, _, _) => Some(Command::FocusPage),
+        _ => None,
+    }
+}

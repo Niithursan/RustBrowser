@@ -12,8 +12,9 @@ use rust_browser::{
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
-    event::WindowEvent,
+    event::{ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    keyboard::{Key, ModifiersState, NamedKey},
     window::{Window, WindowId},
 };
 use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
@@ -340,6 +341,7 @@ struct App {
     session: Option<Session>,
     proxy: EventLoopProxy<Event>,
     failure: Option<String>,
+    modifiers: ModifiersState,
 }
 impl ApplicationHandler<Event> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -361,6 +363,34 @@ impl ApplicationHandler<Event> for App {
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            // Child controllers handle focused-webpage input. This covers the native
+            // parent receiving focus before a child has been selected after startup.
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed && !event.repeat =>
+            {
+                let key = match event.logical_key {
+                    Key::Character(value) if value.len() == 1 => {
+                        value.as_bytes()[0].to_ascii_uppercase() as u32
+                    }
+                    Key::Named(NamedKey::F5) => 0x74,
+                    Key::Named(NamedKey::F6) => 0x75,
+                    Key::Named(NamedKey::F7) => 0x76,
+                    Key::Named(NamedKey::Tab) => 0x09,
+                    Key::Named(NamedKey::Escape) => 0x1b,
+                    Key::Named(NamedKey::ArrowLeft) => 0x25,
+                    Key::Named(NamedKey::ArrowRight) => 0x27,
+                    _ => 0,
+                };
+                if let Some(command) = ui::shortcut(
+                    key,
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                    self.modifiers.shift_key(),
+                ) {
+                    self.user_event(event_loop, Event::Command(command));
+                }
+            }
             WindowEvent::CloseRequested => {
                 if let Some(session) = &self.session {
                     session.persist();
@@ -414,6 +444,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         session: None,
         proxy: event_loop.create_proxy(),
         failure: None,
+        modifiers: ModifiersState::default(),
     };
     event_loop.run_app(&mut app)?;
     if let Some(error) = app.failure {

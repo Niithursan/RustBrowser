@@ -12,8 +12,10 @@ Local Windows x64 validation with Rust 1.99.1/MSVC and the installed WebView2 Ru
 - Live desktop checks verified Ctrl+T, Ctrl+W, next/previous-tab shortcuts, independent
   addresses/history, redirect URL updates, selection of DuckDuckGo, and actual search
   result rendering. Restart restored two tabs in order, active tab 2 and DuckDuckGo.
-- A startup focus issue found during GUI testing was corrected by restoring content
-  focus once the toolbar signals readiness.
+- A startup focus issue found during GUI testing led to a shared shortcut map for
+  both WebView2 controllers and the parent window, plus focus after toolbar readiness.
+  Ctrl+T then worked immediately after restart without a preceding content click.
+  Ctrl+W closed exactly one tab, and closing the final tab left one working Home tab.
 - Dependency audit passed using the repository's existing reviewed exceptions. No
   dependencies or audit exceptions were added. CI results are recorded on the PR.
 

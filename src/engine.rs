@@ -149,20 +149,7 @@ pub fn accelerators(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::co
                     let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
                     let alt = GetKeyState(VK_MENU.0 as i32) < 0;
                     let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
-                    let command = match (key, ctrl, alt) {
-                        (0x4c, true, _) | (0x44, _, true) | (0x75, _, _) => {
-                            Some(Command::FocusAddress)
-                        }
-                        (0x52, true, _) | (0x74, _, _) => Some(Command::Reload),
-                        (0x25, _, true) => Some(Command::Back),
-                        (0x27, _, true) => Some(Command::Forward),
-                        (0x1b, _, _) => Some(Command::Stop),
-                        (0x54, true, _) => Some(Command::NewTab),
-                        (0x57, true, _) => Some(Command::CloseActive),
-                        (0x09, true, _) => Some(Command::CycleTab(shift)),
-                        (0x76, _, _) => Some(Command::FocusPage),
-                        _ => None,
-                    };
+                    let command = crate::ui::shortcut(key, ctrl, alt, shift);
                     if let Some(command) = command {
                         args.SetHandled(true)?;
                         let _ = proxy.send_event(Event::Command(command));
