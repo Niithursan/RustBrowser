@@ -28,10 +28,16 @@ pub fn resolve(input: &str, engine: crate::settings::SearchEngine) -> Result<Str
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
         });
-    if explicit_scheme || (!input.chars().any(char::is_whitespace) && host_like) {
-        return address(input);
+    let destination = if explicit_scheme || (!input.chars().any(char::is_whitespace) && host_like) {
+        address(input)?
+    } else {
+        engine.search(input)
+    };
+    // Encoding can expand a short query beyond the persisted URL size limit.
+    if destination.len() > 8192 {
+        return Err("The resulting address or search URL is too long.".into());
     }
-    Ok(engine.search(input))
+    Ok(destination)
 }
 
 /// Only HTTP(S) can enter the remote content view. Never execute address-bar JS.

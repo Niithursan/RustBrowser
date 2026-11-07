@@ -131,6 +131,10 @@ impl Session {
     }
 
     fn open_tab(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
+        let url = navigation::address(&url)?;
+        if url.len() > 8192 {
+            return Err("The tab address is too long.".into());
+        }
         if self.tabs.items.len() >= MAX_TABS {
             return Err("The 64-tab limit has been reached.".into());
         }
@@ -327,6 +331,7 @@ impl Session {
             PageEvent::Error(error) => tab.content.state.message = format!("Error: {error}"),
         }
         if let Ok(url) = tab.content.engine.view.url()
+            && url.len() <= 8192
             && navigation::address(&url).as_deref() == Ok(url.as_str())
         {
             tab.url = url.clone();

@@ -53,4 +53,7 @@ fn urls_keep_existing_behavior_and_blocked_schemes_never_become_searches() {
         assert!(resolve(input, SearchEngine::Google).is_err(), "{input}");
     }
     assert!(resolve(&"x".repeat(8193), SearchEngine::Google).is_err());
+    assert!(resolve(&"日本".repeat(1000), SearchEngine::Google).is_err());
+    let almost_limit = format!("{}.com", "a".repeat(8188));
+    assert!(resolve(&almost_limit, SearchEngine::Google).is_err());
 }
