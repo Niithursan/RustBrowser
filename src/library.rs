@@ -167,7 +167,7 @@ impl Database {
             return Err("Library schema is newer than this browser. Use the newer browser; the database was preserved.".into());
         }
         connection.execute_batch(
-            "PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA synchronous=FULL;",
+            "PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA synchronous=FULL; PRAGMA temp_store=MEMORY;",
         )?;
         if version < 1 {
             let tx = connection.transaction()?;

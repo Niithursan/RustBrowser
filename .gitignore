@@ -19,6 +19,7 @@
 /toolbar/
 /library.sqlite*
 /library.corrupt-*
+private-contexts/
 .rust-browser-download-*/
 /bin/
 Thumbs.db
