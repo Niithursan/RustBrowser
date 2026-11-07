@@ -16,7 +16,7 @@ Local checks on Windows x64, Rust 1.99.1/MSVC and WebView2 156.0.4314.58:
 - Tests cover private lease isolation and abandoned-directory cleanup, snapshot
   exclusion, queued-write barriers, exact-origin permissions/revocation, confirmed
   database clearing, invalid settings, migration/corruption and connection indicators.
-- The native isolation test used actual WebView2 views and synthetic loopback data.
+- The native isolation test used actual WebView2 views and a test-only local fixture at a reserved origin.
   It verified two-way cookie/local-storage isolation, a successful clear callback,
   cleared normal storage with private storage intact, origin/capability correctness,
   cancellation denial, and an explicit synthetic notification grant.

@@ -1,6 +1,6 @@
 //! Actual application orchestration check, separate from the native adapter probe.
 use super::*;
-use std::io::{Read, Write};
+use crate::native_validation::{FIXTURE_URL, map_fixture, write_fixture};
 use winit::platform::windows::EventLoopBuilderExtWindows;
 
 struct Probe {
@@ -29,6 +29,13 @@ impl Probe {
         }
         match self.phase {
             0 => {
+                let fixture_loaded = session.tabs.active().is_some_and(|tab| {
+                    !tab.content.state.failed
+                        && tab.content.engine.view.url().ok().as_deref() == Some(FIXTURE_URL)
+                });
+                if !fixture_loaded {
+                    return Ok(());
+                }
                 let before = session.tabs.items.len();
                 if session
                     .begin_clear(
@@ -164,6 +171,13 @@ impl ApplicationHandler<Event> for Probe {
             None,
         ) {
             Ok(session) => {
+                if let Some(tab) = session.tabs.active()
+                    && let Err(error) = map_fixture(&tab.content.engine.view, &self.profile)
+                {
+                    self.error = Some(format!("Could not map application fixture: {error}"));
+                    event_loop.exit();
+                    return;
+                }
                 session.render();
                 self.app.session = Some(session);
             }
@@ -207,38 +221,17 @@ impl ApplicationHandler<Event> for Probe {
 #[test]
 #[ignore = "Requires Windows desktop/WebView2; run this test alone in a separate process"]
 fn native_application_clear_preserves_bookmarks_and_prevents_session_rewrites() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
-    listener.set_nonblocking(true).unwrap();
-    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let stopping = stop.clone();
-    let server = std::thread::spawn(move || {
-        while !stopping.load(std::sync::atomic::Ordering::Acquire) {
-            if let Ok((mut stream, _)) = listener.accept() {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
-                let _ = stream.read(&mut [0; 4096]);
-                let body=b"<!doctype html><title>Application clear fixture</title><p>Application clear fixture</p>";
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                );
-                let _ = stream.write_all(body);
-            } else {
-                std::thread::sleep(Duration::from_millis(5));
-            }
-        }
-    });
     let root = std::env::temp_dir().join(format!(
         "rust-browser-app-probe-{}-{}",
         std::process::id(),
         rust_browser::library::now()
     ));
     std::fs::create_dir(&root).unwrap();
+    write_fixture(&root).unwrap();
     storage::save(
         &root.join("session.json"),
         &Snapshot {
-            tabs: vec![url],
+            tabs: vec![FIXTURE_URL.into()],
             ..Snapshot::default()
         },
     )
@@ -263,8 +256,6 @@ fn native_application_clear_preserves_bookmarks_and_prevents_session_rewrites() 
     let error = probe.error.clone();
     let phase = probe.phase;
     drop(probe);
-    stop.store(true, std::sync::atomic::Ordering::Release);
-    server.join().unwrap();
     let snapshot = storage::load(&root.join("session.json")).unwrap();
     assert!(!snapshot.settings.restore_session);
     assert_eq!(snapshot.tabs, vec![navigation::HOME]);

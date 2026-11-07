@@ -7,21 +7,46 @@ use crate::{
 use rust_browser::privacy::{ClearRequest, PrivateLease};
 use std::{
     cell::RefCell,
-    io::{Read, Write},
     rc::Rc,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use webview2_com::Microsoft::Web::WebView2::Win32::{
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY, ICoreWebView2_3,
+};
+use windows::core::{HSTRING, Interface};
 use winit::{
     application::ApplicationHandler,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     platform::windows::EventLoopBuilderExtWindows,
     window::Window,
 };
-use wry::WebContext;
+use wry::{WebContext, WebView, WebViewExtWindows};
+
+const FIXTURE_HOST: &str = "rust-browser-validation.test";
+pub(crate) const FIXTURE_URL: &str = "https://rust-browser-validation.test/index.html";
+
+pub(crate) fn write_fixture(root: &std::path::Path) -> std::io::Result<()> {
+    let folder = root.join("fixture");
+    std::fs::create_dir(&folder)?;
+    std::fs::write(
+        folder.join("index.html"),
+        b"<!doctype html><title>Native validation fixture</title><p>Native validation fixture</p>",
+    )
+}
+
+pub(crate) fn map_fixture(view: &WebView, root: &std::path::Path) -> windows::core::Result<()> {
+    // Test-only: local static content at a reserved origin avoids CI networking races.
+    // SAFETY: the view and its COM interface are used only on the owning UI thread.
+    unsafe {
+        let core: ICoreWebView2_3 = view.webview().cast()?;
+        core.SetVirtualHostNameToFolderMapping(
+            &HSTRING::from(FIXTURE_HOST),
+            &HSTRING::from(root.join("fixture").as_os_str()),
+            COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY,
+        )
+    }
+}
 
 struct Harness {
     normal: Option<Engine>,
@@ -38,7 +63,7 @@ struct Harness {
     output: Arc<Mutex<Option<String>>>,
     failure: Option<String>,
     started: Instant,
-    url: String,
+    last_navigation_issue: Option<String>,
     root: std::path::PathBuf,
     lease: Option<PrivateLease>,
 }
@@ -71,7 +96,10 @@ impl Harness {
     }
     fn advance(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
         if self.started.elapsed() > Duration::from_secs(90) {
-            return Err("Native validation timed out".into());
+            return Err(format!(
+                "Native validation timed out at phase {}; last navigation issue: {:?}",
+                self.phase, self.last_navigation_issue
+            ));
         }
         if !(self.normal_loaded && self.private_loaded) {
             return Ok(());
@@ -147,7 +175,7 @@ impl Harness {
                         .as_ref()
                         .ok_or("No view")?
                         .view
-                        .load_url(&self.url)
+                        .load_url(FIXTURE_URL)
                         .map_err(|_| "Could not reload permission fixture")?;
                     self.phase = 9;
                 } else {
@@ -210,8 +238,10 @@ impl ApplicationHandler<Event> for Harness {
             )?;
             self.permissions.borrow_mut().active = Some(1);
             self.permissions.borrow_mut().enabled = true;
-            normal.view.load_url(&self.url)?;
-            private.view.load_url(&self.url)?;
+            map_fixture(&normal.view, &self.root)?;
+            map_fixture(&private.view, &self.root)?;
+            normal.view.load_url(FIXTURE_URL)?;
+            private.view.load_url(FIXTURE_URL)?;
             self.normal = Some(normal);
             self.private = Some(private);
             self.contexts = vec![normal_context, private_context];
@@ -219,8 +249,10 @@ impl ApplicationHandler<Event> for Harness {
             self.lease = Some(lease);
             Ok(())
         })();
-        if result.is_err() {
-            self.failure = Some("Could not initialize native validation views".into());
+        if let Err(error) = result {
+            self.failure = Some(format!(
+                "Could not initialize native validation views: {error}"
+            ));
             event_loop.exit();
         }
     }
@@ -233,15 +265,26 @@ impl ApplicationHandler<Event> for Harness {
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
         match event {
-            Event::Page(id, PageEvent::Completed { error, .. }) => {
-                if error.is_some() {
-                    self.failure = Some("Fixture navigation failed".into());
-                    event_loop.exit();
-                } else if id == 1 {
+            Event::Page(
+                id,
+                PageEvent::Completed {
+                    error: None, url, ..
+                },
+            ) if url == FIXTURE_URL => {
+                if id == 1 {
                     self.normal_loaded = true;
                 } else if id == 2 {
                     self.private_loaded = true;
                 }
+            }
+            Event::Page(
+                id,
+                PageEvent::Completed {
+                    error: Some(error), ..
+                },
+            ) => {
+                // Startup or superseded navigation can be cancelled before the fixture commits.
+                self.last_navigation_issue = Some(format!("Tab {id}: {error}"));
             }
             Event::EngineCleared {
                 ticket: 77,
@@ -258,7 +301,7 @@ impl ApplicationHandler<Event> for Harness {
             Event::PermissionPrompt => {
                 let prompt = self.permissions.borrow().prompt();
                 if let Some(prompt) = prompt {
-                    let expected = rust_browser::security::origin(&self.url);
+                    let expected = rust_browser::security::origin(FIXTURE_URL);
                     if Some(prompt.origin) != expected
                         || prompt.capability != rust_browser::security::Capability::Notifications
                     {
@@ -301,35 +344,13 @@ impl ApplicationHandler<Event> for Harness {
 #[test]
 #[ignore = "Requires an interactive Windows desktop and installed WebView2; run separately with --ignored --test-threads=1"]
 fn native_private_storage_and_confirmed_engine_deletion() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
-    let stop = Arc::new(AtomicBool::new(false));
-    let stopping = stop.clone();
-    let server = std::thread::spawn(move || {
-        while !stopping.load(Ordering::Acquire) {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
-                    let _ = stream.read(&mut [0; 4096]);
-                    let body=b"<!doctype html><title>Native isolation fixture</title><p>Native isolation fixture</p>";
-                    let header = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    let _ = stream.write_all(header.as_bytes());
-                    let _ = stream.write_all(body);
-                }
-                Err(_) => std::thread::sleep(Duration::from_millis(5)),
-            }
-        }
-    });
     let root = std::env::temp_dir().join(format!(
         "rust-browser-native-{}-{}",
         std::process::id(),
         rust_browser::library::now()
     ));
     std::fs::create_dir(&root).unwrap();
+    write_fixture(&root).unwrap();
     let event_loop = EventLoop::<Event>::with_user_event()
         .with_any_thread(true)
         .build()
@@ -349,7 +370,7 @@ fn native_private_storage_and_confirmed_engine_deletion() {
         output: Arc::new(Mutex::new(None)),
         failure: None,
         started: Instant::now(),
-        url,
+        last_navigation_issue: None,
         root: root.clone(),
         lease: None,
     };
@@ -357,8 +378,6 @@ fn native_private_storage_and_confirmed_engine_deletion() {
     let failure = app.failure.clone();
     let phase = app.phase;
     drop(app);
-    stop.store(true, Ordering::Release);
-    server.join().unwrap();
     let _ = std::fs::remove_dir_all(root);
     assert!(run.is_ok());
     assert!(failure.is_none(), "{failure:?}");
