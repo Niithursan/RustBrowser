@@ -42,7 +42,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           New-Item -ItemType Directory -Path dist/package -Force | Out-Null
-          Copy-Item target/release/rust-browser.exe,README.md,LICENSE,CHANGELOG.md -Destination dist/package
+          Copy-Item target/release/rust-browser.exe,README.md,LICENSE,CHANGELOG.md,SECURITY.md,VALIDATION.md -Destination dist/package
           $archive = "rust-browser-$env:RELEASE_TAG-windows-x64.zip"
           Compress-Archive -Path dist/package/* -DestinationPath "dist/$archive"
           $hash = (Get-FileHash "dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
