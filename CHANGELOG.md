@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Best-effort native sleeping tabs, protected activity checks, Keep awake, configurable
+  automation/delay and explicit resume failure/retry feedback; views are retained.
+- Drag and keyboard tab reordering, pinned tabs, overflow selector/scroll controls,
+  roving tab focus, selected/loading/sleep indicators and saved tab metadata.
+- Local new-tab search, favorites, three themes, optional recent history and bookmark
+  access, with ephemeral private settings and unchanged remote IPC restrictions.
+- Deduplicate unchanged toolbar renders, window titles and session snapshots; preserve
+  address drafts during background title updates and measure responsive chrome height.
+- Native sleep/resume/race and local/private new-tab tests, added to Windows CI.
+- Windows process-tree benchmark harness and documented v0.4/v0.5 measurements.
+
 ## 0.4.0
 
 - Isolated private windows with verified WebView2 InPrivate mode, no history or

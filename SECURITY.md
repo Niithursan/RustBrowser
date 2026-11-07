@@ -13,6 +13,24 @@ URI launches rejected. The app uses an internal blank page during clearing. Rest
 normal tabs makes network requests to those sites unless session retention is disabled.
 Hidden tabs share storage within their window and can continue background activity.
 
+Eligible background views can use WebView2's optional native suspension APIs. Sleeping
+does not isolate, clear or destroy a view, profile, cookies or page memory. The engine
+may refuse suspension. The app protects active/pinned/Keep awake/loading views, audio,
+granted permissions, downloads, pending permission requests and clearing operations;
+asynchronous results are checked against stable IDs and generations. Native runtime
+heuristics are additionally relied upon for operations the app cannot observe. No API
+fully identifies arbitrary important JavaScript work; disable automatic sleeping or
+use Keep awake for critical live sites. No security setting is weakened for performance.
+
+The bundled new-tab page runs inside the separate trusted toolbar view. Its internal
+marker is translated to a neutral content view, never enabled as a navigable remote
+scheme. Favorites accept validated HTTP(S) URLs, titles use text nodes, theme values
+are an enum, and remote content still has no Rust IPC. Recent history is opt-in and
+unavailable privately. Normal favorites and saved tab titles can be sensitive and are
+stored as plaintext settings; private new-tab preferences remain in memory only.
+Turning off session URL retention removes tab titles/pins/order metadata, while
+explicitly saved favorites and visual/performance preferences remain.
+
 Private windows use separate processes and temporary profiles with verified WebView2
 InPrivate mode. They open no persistent application session store and never queue
 history visits. Memory-only decisions and temporary runtime data are scoped to each

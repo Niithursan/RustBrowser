@@ -1,5 +1,85 @@
 # Validation
 
+## Version 0.5.0
+
+Preservation baseline: PR #7 was confirmed squash-merged at
+`8e97713fa9c006586e250f07fdc4af12003b192d`, with package version 0.4.0 and a tree
+matching the previously verified v0.4 feature head. Its
+[Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42335972778) and
+[dependency security](https://github.com/Niithursan/RustBrowser/actions/runs/42335972788)
+passed. All 28 regular baseline tests passed locally. Development uses
+`feat/v0.5-performance-ux`; main and release tags remain unchanged.
+
+The v0.4 measurements below used different pages and short samples. They are retained
+as historical observations and cannot establish an improvement. The controlled v0.5
+comparison uses an identical test-only synthetic workload on both versions; see
+[benchmark procedure](benchmarks/README.md) and [results](benchmarks/RESULTS.md).
+
+New regular coverage checks live tab identity/ordering/pinned groups, every explicit
+protected-activity flag, generation races, native refusal/timeout/resume failure
+states, additive legacy-session compatibility, invalid metadata/settings/favorites,
+and exclusion of private/retention-disabled tab metadata. Existing privacy, database,
+download safety and navigation tests remain in place.
+
+Native tests run separately because winit permits one event loop per process:
+
+```powershell
+cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_application_clear -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_tab_sleep_resume_and_local_page_security -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_private_newtab_settings_are_ephemeral -- --ignored --test-threads=1
+```
+
+The new native checks use real WebView2 controllers with disposable profiles. They
+verify native suspension state, same-controller/document preservation after resume,
+late successful callbacks racing tab selection, pin/Keep awake/global-disable guards,
+actual bundled new-tab DOM rendering, theme/favorites persistence, address draft
+preservation during background UI updates, forbidden remote schemes, and leaving
+the local page through navigation/back. A native private session verifies normal
+favorites are not read, private changes remain ephemeral, recent history cannot be
+enabled and the normal session file stays byte-identical. The existing native
+permission/isolation/confirmed-clearing checks also remain in Windows CI.
+
+Local validation on Windows x64, Rust 1.99.1/MSVC and WebView2 157.0.4341.42:
+
+- Formatting, strict Clippy across all targets/features, all 35 regular tests and
+  all four explicitly selected native tests passed. Debug and release builds passed.
+- `cargo audit --deny warnings` passed against 369 locked dependencies and 1422
+  advisories, with the existing reviewed platform exceptions unchanged. No dependency
+  was added; Cargo.lock changes only the application's package version.
+- Manual GUI checks opened separate Alpha/Beta/Gamma loopback fixture pages. Search
+  from the local page, Ctrl+T, direct tab selection, pointer drag ordering,
+  Ctrl+Shift+PageUp and Ctrl+Shift+P worked. Pins and ordering survived normal restart.
+  Remote content reported `IPC: undefined`; navigation correctly left the local UI.
+- A background fixture changing its title exposed an address draft race. The fix
+  was checked in the native DOM regression and manually: typed text stayed intact
+  across background title updates and submitted successfully.
+- The interface wrapped at approximately 570 pixels wide, with content positioned
+  below the expanded toolbar; the local page remained scrollable and usable. The
+  overflow selector opened and listed hidden tabs. Native popup targeting limited
+  automated mouse selection of its menu; full popup interaction remains a manual
+  follow-up. Existing Ctrl+Tab navigation and direct selection remain available.
+- A synthetic favorite was entered and saved using the actual new-tab form. Theme,
+  favorites/settings disk persistence and private exclusion were checked by the native
+  tests rather than claimed as a full manual private/theme acceptance run.
+
+No physical device access, fresh audio/download protection GUI test, true OS-cold
+startup, hours-long browsing soak, screen-reader or multi-monitor/high-DPI result is
+inferred from automated coverage. Protected-activity flags and native granted-document
+protection are tested; arbitrary critical live-site work still needs Keep awake or
+disabled automation. v0.4 download safety regressions pass; its recorded slow-transfer
+GUI results below are historical, not repeated v0.5 observations. Final CI results
+and benchmark findings are linked on the pull request.
+
+Twenty successful native performance-probe runs measured 1/5/10/20 tabs across fresh
+and warm profiles, plus a corrected 20-tab CPU comparison with a one-minute additional
+soak. App and WebView2 descendants were included. Hidden timer ticks fell to zero;
+corrected 20-tab idle CPU means were 15–24% lower in the two sampled conditions.
+Private bytes were modestly lower, with no general physical-RAM or startup speedup
+established. Some switching/all-loaded timings regressed. Initial CPU measurements
+were excluded after discovering integer rounding in the PowerShell harness; corrected
+data, numeric samples, exact methods and variability are in [RESULTS.md](benchmarks/RESULTS.md).
+
 ## Version 0.4.0
 
 Baseline: PR #6 was confirmed squash-merged at `3117426840c0d4338e1537d25551529fb4ecf2f1`.
