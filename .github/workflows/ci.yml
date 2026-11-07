@@ -23,6 +23,12 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
+      # Separate processes: winit permits one event loop per process.
+      - name: Native WebView2 isolation and permissions
+        run: cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
+      - name: Native application clearing
+        run: cargo test --locked --bin rust-browser native_application_clear -- --ignored --test-threads=1
+      - run: cargo build --locked
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

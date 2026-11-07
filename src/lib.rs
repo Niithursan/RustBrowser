@@ -1,6 +1,8 @@
 pub mod downloads;
 pub mod library;
 pub mod navigation;
+pub mod privacy;
+pub mod security;
 pub mod settings;
 pub mod storage;
 pub mod tabs;

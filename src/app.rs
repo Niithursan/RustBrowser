@@ -1,13 +1,15 @@
 use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
-    native_downloads,
+    native_downloads, native_security,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
 use rust_browser::{
     library::{Action, Data, Filter},
     navigation,
+    privacy::{self, ClearRequest, PrivateLease},
+    security::{self, Decision},
     settings::Settings,
     storage::{self, Snapshot, Store},
     tabs::{MAX_TABS, TabId, Tabs},
@@ -44,6 +46,12 @@ pub enum PageEvent {
 }
 #[derive(Debug)]
 pub enum Event {
+    PermissionPrompt,
+    EngineCleared {
+        startup: bool,
+        success: bool,
+        ticket: u64,
+    },
     Command(Command),
     Page(TabId, PageEvent),
     OpenTab(TabId, String),
@@ -60,6 +68,17 @@ pub enum Event {
 struct Page {
     engine: Engine,
     state: State,
+}
+struct Clearing {
+    failed: bool,
+    ticket: u64,
+    request: ClearRequest,
+    revision: u64,
+    library_done: bool,
+    engine_done: bool,
+    started: Instant,
+    started_native: bool,
+    results: Vec<String>,
 }
 
 // Drop views before contexts and the parent window. Store flushes and releases its lock last.
@@ -79,11 +98,21 @@ struct Session {
     run_id: String,
     downloads: native_downloads::Shared,
     library: Worker,
-    store: Store,
+    store: Option<Store>,
+    permissions: native_security::Shared,
+    profile: PathBuf,
+    private: bool,
+    ready: bool,
+    clearing: Option<Clearing>,
+    next_clear: u64,
+    permission_lockout: bool,
+    // Last field: native views/contexts and workers must release before cleanup.
+    _private_lease: Option<PrivateLease>,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
+        self.permissions.borrow_mut().cancel_all();
         self.downloads.borrow_mut().shutdown();
     }
 }
@@ -93,15 +122,57 @@ impl Session {
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let profile = storage::profile_dir()?;
+        Self::create_at(
+            event_loop,
+            proxy,
+            storage::profile_dir()?,
+            std::env::args().any(|arg| arg == "--private"),
+            std::env::args().skip(1).find(|arg| arg != "--private"),
+        )
+    }
+    fn create_at(
+        event_loop: &ActiveEventLoop,
+        proxy: EventLoopProxy<Event>,
+        normal_profile: PathBuf,
+        private: bool,
+        launch_url: Option<String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Sweep only dead, recognized leases; live private windows retain their locks.
+        let sweep_profile = normal_profile.clone();
+        let _ = std::thread::Builder::new()
+            .name("private-recovery".into())
+            .spawn(move || {
+                let _ = PrivateLease::sweep(&sweep_profile);
+            });
+        let private_lease = if private {
+            Some(PrivateLease::create(&normal_profile)?)
+        } else {
+            None
+        };
+        let profile = private_lease
+            .as_ref()
+            .map(|lease| lease.path.clone())
+            .unwrap_or(normal_profile);
         let error_proxy = proxy.clone();
-        let (store, snapshot, recovered) = Store::open(&profile, move || {
-            let _ = error_proxy.send_event(Event::StorageError);
-        })?;
-        let library = Worker::start(profile.join("library.sqlite"), proxy.clone())?;
+        let (store, snapshot, recovered) = if private {
+            (None, Snapshot::default(), false)
+        } else {
+            let (store, snapshot, recovered) = Store::open(&profile, move || {
+                let _ = error_proxy.send_event(Event::StorageError);
+            })?;
+            (Some(store), snapshot, recovered)
+        };
+        let library = Worker::start(
+            if private {
+                PathBuf::from(":memory:")
+            } else {
+                profile.join("library.sqlite")
+            },
+            proxy.clone(),
+        )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.3.0")
+                .with_title("Rust Browser 0.4.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -115,6 +186,9 @@ impl Session {
         let allowed_url = toolbar_url.clone();
         let toolbar = WebViewBuilder::new_with_web_context(&mut toolbar_context)
             .with_additional_browser_args("")
+            .with_incognito(private)
+            .with_permission_handler(|_| wry::PermissionResponse::Deny)
+            .with_download_started_handler(|_, _| false)
             .with_url(&toolbar_url)
             .with_devtools(false)
             .with_navigation_handler(move |url| url == allowed_url)
@@ -127,6 +201,9 @@ impl Session {
                 }
             })
             .build_as_child(&window)?;
+        if private {
+            native_security::verify_private(&toolbar)?;
+        }
         engine::accelerators(&toolbar, proxy.clone())?;
         let mut session = Self {
             tabs: Tabs::default(),
@@ -153,8 +230,21 @@ impl Session {
             downloads: Rc::new(RefCell::new(native_downloads::Manager::default())),
             library,
             store,
+            profile,
+            private,
+            permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
+            ready: false,
+            clearing: None,
+            next_clear: 0,
+            permission_lockout: false,
+            _private_lease: private_lease,
         };
-        for url in snapshot.tabs {
+        let restored = if !session.settings.restore_session {
+            vec![navigation::HOME.into()]
+        } else {
+            snapshot.tabs
+        };
+        for url in restored {
             session.open_tab(url)?;
         }
         if let Some(tab) = session.tabs.items.get(snapshot.active) {
@@ -162,7 +252,7 @@ impl Session {
             session.tabs.select(id);
         }
         // An explicit launch address opens an additional tab rather than discarding restoration.
-        if let Some(input) = std::env::args().nth(1) {
+        if let Some(input) = launch_url {
             match navigation::resolve(&input, session.settings.search_engine) {
                 Ok(url) => {
                     if let Err(error) = session.open_tab(url) {
@@ -177,17 +267,42 @@ impl Session {
         if session.library_action(Action::Refresh).is_err() {
             session.notice="Library database is unavailable. Browsing remains available; check profile access or use the browser version that created this library.".into();
         }
+        // Reset WebView2's legacy remembered permission states before any website
+        // loads. All new decisions are scoped in our library with SavesInProfile=false.
+        if let Some(tab) = session.tabs.active() {
+            native_security::clear(
+                &tab.content.engine.view,
+                &ClearRequest {
+                    permissions: true,
+                    confirmed: true,
+                    ..ClearRequest::default()
+                },
+                true,
+                0,
+                session.proxy.clone(),
+            )?;
+        }
         Ok(session)
     }
 
     fn open_tab(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
-        let url = navigation::address(&url)?;
+        let url = if url == "about:blank" {
+            url
+        } else {
+            navigation::address(&url)?
+        };
         if url.len() > 8192 {
             return Err("The tab address is too long.".into());
         }
         if self.tabs.items.len() >= MAX_TABS {
             return Err("The 64-tab limit has been reached.".into());
         }
+        let page = self.prepare_page(&url)?;
+        self.tabs.push(url, page)?;
+        Ok(())
+    }
+
+    fn prepare_page(&mut self, url: &str) -> Result<Page, Box<dyn std::error::Error>> {
         let id = self.tabs.next_id();
         let engine = Engine::new(
             &self.window,
@@ -195,17 +310,20 @@ impl Session {
             self.proxy.clone(),
             id,
             self.downloads.clone(),
+            self.permissions.clone(),
+            self.private,
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
-        engine.view.load_url(&url)?;
+        if self.ready {
+            engine.view.load_url(url)?;
+        }
         let state = State {
-            url: url.clone(),
+            url: url.into(),
             loading: true,
             message: "Connecting…".into(),
             ..State::default()
         };
-        self.tabs.push(url, Page { engine, state })?;
-        Ok(())
+        Ok(Page { engine, state })
     }
 
     fn resize(&self) -> wry::Result<()> {
@@ -235,6 +353,14 @@ impl Session {
     }
 
     fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let next = self.tabs.active().map(|tab| tab.id);
+        {
+            let mut permissions = self.permissions.borrow_mut();
+            if permissions.active != next {
+                permissions.cancel_all();
+            }
+            permissions.active = next;
+        }
         let active = self.tabs.active_index();
         for (index, tab) in self.tabs.items.iter().enumerate() {
             tab.content
@@ -252,12 +378,30 @@ impl Session {
     }
 
     fn persist(&self) {
-        self.store.queue(Snapshot {
+        if self.private || self.clearing.is_some() {
+            return;
+        }
+        let Some(store) = &self.store else { return };
+        let snapshot = Snapshot {
             version: 1,
-            tabs: self.tabs.items.iter().map(|tab| tab.url.clone()).collect(),
+            tabs: self
+                .tabs
+                .items
+                .iter()
+                .map(|tab| {
+                    if navigation::address(&tab.url).is_ok() {
+                        tab.url.clone()
+                    } else {
+                        navigation::HOME.into()
+                    }
+                })
+                .collect(),
             active: self.tabs.active_index(),
             settings: self.settings.clone(),
-        });
+        };
+        if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
+            store.queue(snapshot);
+        }
     }
 
     fn render(&self) {
@@ -265,6 +409,15 @@ impl Session {
             return;
         };
         let state = ToolbarState {
+            private: self.private,
+            restore_session: self.settings.restore_session,
+            security: security::indicator(
+                &active.content.engine.view.url().unwrap_or_default(),
+                active.content.state.loading,
+                active.content.state.failed,
+            ),
+            permission_prompt: self.permissions.borrow().prompt(),
+            busy: self.clearing.is_some() || !self.ready,
             page: &active.content.state,
             active_id: active.id,
             search_engine: self.settings.search_engine,
@@ -296,14 +449,17 @@ impl Session {
             }
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
-        self.window.set_title(if active.content.state.loading {
-            "Loading… — Rust Browser 0.3.0"
+        self.window.set_title(if self.private {
+            "Private — Rust Browser 0.4.0"
+        } else if active.content.state.loading {
+            "Loading… — Rust Browser 0.4.0"
         } else {
-            "Rust Browser 0.3.0"
+            "Rust Browser 0.4.0"
         });
     }
 
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn std::error::Error>> {
+        self.permissions.borrow_mut().cancel_tab(id);
         if self.tabs.items.len() == 1 && self.tabs.active().is_some_and(|tab| tab.id == id) {
             self.open_tab(navigation::HOME.into())?;
         }
@@ -313,7 +469,78 @@ impl Session {
     }
 
     fn command(&mut self, command: Command) -> Result<(), Box<dyn std::error::Error>> {
+        if self.clearing.is_some() {
+            return Err("Data clearing is in progress; wait for its result.".into());
+        }
+        if !self.ready && !matches!(command, Command::Ready) {
+            return Err("Security initialization is not complete.".into());
+        }
         match command {
+            Command::NewPrivateWindow => {
+                std::process::Command::new(std::env::current_exe()?)
+                    .arg("--private")
+                    .spawn()?;
+            }
+            Command::SetRestoreSession(value) => {
+                if self.private {
+                    return Err("Private windows never retain sessions.".into());
+                }
+                self.settings.restore_session = value;
+                if !value {
+                    if let Some(store) = &self.store {
+                        store.forget_session(self.settings.clone())?;
+                    }
+                    privacy::clear_session_backups(&self.profile)?;
+                }
+            }
+            Command::ClearData(request) => self.begin_clear(request, None)?,
+            Command::RevokePermission {
+                origin,
+                capability,
+                confirmed,
+            } => {
+                if !confirmed
+                    || security::permission_origin(&origin).as_deref() != Some(origin.as_str())
+                {
+                    return Err("Invalid or unconfirmed permission revocation.".into());
+                }
+                self.begin_clear(
+                    ClearRequest {
+                        permissions: true,
+                        confirmed: true,
+                        ..ClearRequest::default()
+                    },
+                    Some((origin, capability)),
+                )?;
+            }
+            Command::PermissionDecision {
+                id,
+                decision,
+                remember,
+            } => {
+                let prompt = self.permissions.borrow().prompt();
+                if let Some(prompt) = prompt.filter(|p| p.id == id) {
+                    let current = self
+                        .tabs
+                        .active()
+                        .and_then(|tab| tab.content.engine.view.url().ok())
+                        .and_then(|url| security::origin(&url));
+                    if current.as_deref() != Some(prompt.origin.as_str()) {
+                        self.permissions.borrow_mut().resolve(id, Decision::Deny)?;
+                        return Err("Permission request expired after navigation.".into());
+                    }
+                    if remember {
+                        self.library_action(Action::SetPermission {
+                            origin: prompt.origin,
+                            capability: prompt.capability,
+                            decision: Some(decision),
+                        })?;
+                    }
+                    self.permissions.borrow_mut().resolve(id, decision)?;
+                    self.panel = Some(Panel::Settings);
+                    self.activate()?;
+                }
+            }
             Command::ShowPanel(panel) => {
                 self.panel = Some(panel);
                 self.filter = Filter::default();
@@ -335,6 +562,9 @@ impl Session {
                 self.library_action(action)?;
             }
             Command::BookmarkCurrent => {
+                if self.private {
+                    return Err("Bookmarks are unavailable in private windows; normal bookmarks remain unchanged.".into());
+                }
                 if let Some(tab) = self.tabs.active() {
                     let title = if tab.title == "New tab" {
                         tab.url.clone()
@@ -402,6 +632,7 @@ impl Session {
                 self.settings.search_engine = engine;
             }
             Command::Navigate(input) => {
+                self.permissions.borrow_mut().cancel_all();
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.notice.clear();
                 if self.panel.take().is_some() {
@@ -413,6 +644,7 @@ impl Session {
                     tab.content.state.url = url;
                     tab.content.state.message = "Connecting…".into();
                     tab.content.state.loading = true;
+                    tab.content.state.failed = false;
                     tab.content.engine.view.focus()?;
                 }
             }
@@ -454,7 +686,9 @@ impl Session {
         };
         match event {
             PageEvent::Loading => {
+                self.permissions.borrow_mut().cancel_tab(id);
                 tab.content.state.loading = true;
+                tab.content.state.failed = false;
                 tab.content.state.message = "Loading…".into();
             }
             PageEvent::Changed => {}
@@ -465,7 +699,11 @@ impl Session {
                 url,
                 title,
             } => {
-                if error.is_none() && self.settings.history_enabled {
+                if error.is_none()
+                    && self.settings.history_enabled
+                    && !self.private
+                    && self.clearing.is_none()
+                {
                     let action = Action::Record {
                         key: format!("{}-{id}-{navigation_id}", self.run_id),
                         url,
@@ -481,12 +719,16 @@ impl Session {
                     }
                 }
                 tab.content.state.loading = false;
+                tab.content.state.failed = error.is_some();
                 tab.content.state.message =
                     error.map(|e| format!("Error: {e}")).unwrap_or_else(|| {
                         "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
                     });
             }
-            PageEvent::Error(error) => tab.content.state.message = format!("Error: {error}"),
+            PageEvent::Error(error) => {
+                tab.content.state.failed = true;
+                tab.content.state.message = format!("Error: {error}");
+            }
         }
         if let Ok(url) = tab.content.engine.view.url()
             && url.len() <= 8192
@@ -497,9 +739,22 @@ impl Session {
         }
         (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
         self.persist();
+        self.start_engine_clear();
     }
 
     fn library_action(&mut self, action: Action) -> Result<(), Box<dyn std::error::Error>> {
+        if self.private
+            && matches!(
+                action,
+                Action::SaveBookmark { .. }
+                    | Action::RemoveBookmark { .. }
+                    | Action::SaveFolder { .. }
+                    | Action::RemoveFolder { .. }
+                    | Action::Record { .. }
+            )
+        {
+            return Err("Private windows do not write bookmarks or history.".into());
+        }
         self.revision += 1;
         self.library.submit(library_worker::Job {
             revision: self.revision,
@@ -508,7 +763,134 @@ impl Session {
         })?;
         Ok(())
     }
+
+    fn begin_clear(
+        &mut self,
+        request: ClearRequest,
+        revoke: Option<(String, security::Capability)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        request.validate()?;
+        if self.downloads.borrow().active_count() > 0 {
+            return Err("Cancel or finish all downloads before clearing browsing data.".into());
+        }
+        let neutral = self.prepare_page("about:blank")?;
+        self.filter = Filter::default();
+        self.permissions.borrow_mut().cancel_all();
+        self.next_clear += 1;
+        self.permissions.borrow_mut().enabled = false;
+        self.clearing = Some(Clearing {
+            failed: false,
+            ticket: self.next_clear,
+            request: request.clone(),
+            revision: 0,
+            library_done: !(request.history || request.permissions),
+            engine_done: false,
+            started: Instant::now(),
+            started_native: false,
+            results: Vec::new(),
+        });
+        // Keep monotonically increasing tab IDs so late events cannot target a new tab.
+        self.tabs.items.clear();
+        self.tabs.push("about:blank".into(), neutral)?;
+        self.panel = Some(Panel::Settings);
+        self.activate()?;
+        if request.session {
+            self.settings.restore_session = false;
+            let result = self
+                .store
+                .as_ref()
+                .map(|store| store.forget_session(self.settings.clone()))
+                .unwrap_or(Ok(()))
+                .and_then(|()| privacy::clear_session_backups(&self.profile).map(|_| ()));
+            if let Some(clear) = &mut self.clearing {
+                clear.failed |= result.is_err();
+                clear.results.push(if result.is_ok(){"Saved session URLs and session recovery files cleared; restoration is now disabled."}else{"Session clearing failed or was partial; recovery files may remain."}.into());
+            }
+        }
+        if request.history || request.permissions {
+            let action = if let Some((origin, capability)) = revoke {
+                Action::SetPermission {
+                    origin,
+                    capability,
+                    decision: None,
+                }
+            } else {
+                Action::ClearLibrary {
+                    history: request.history,
+                    permissions: request.permissions,
+                    confirmed: true,
+                }
+            };
+            if self.library_action(action).is_ok() {
+                if let Some(clear) = &mut self.clearing {
+                    clear.revision = self.revision;
+                }
+            } else if let Some(clear) = &mut self.clearing {
+                clear.failed = true;
+                clear.library_done = true;
+                clear
+                    .results
+                    .push("Application database clearing failed.".into());
+            }
+        }
+        self.notice="Clearing selected data. Tabs were closed; waiting for the blank page and engine confirmation.".into();
+        Ok(())
+    }
+    fn start_engine_clear(&mut self) {
+        let Some(clear) = &mut self.clearing else {
+            return;
+        };
+        if clear.started_native {
+            return;
+        }
+        let Some(tab) = self.tabs.active() else {
+            return;
+        };
+        if tab.content.state.loading
+            || tab.content.engine.view.url().ok().as_deref() != Some("about:blank")
+        {
+            return;
+        }
+        clear.started_native = true;
+        if native_security::clear(
+            &tab.content.engine.view,
+            &clear.request,
+            false,
+            clear.ticket,
+            self.proxy.clone(),
+        )
+        .is_err()
+        {
+            clear.engine_done = true;
+            clear.failed = true;
+            clear
+                .results
+                .push("Engine clearing could not start; its data may remain.".into());
+        }
+    }
+    fn finish_clear(&mut self) {
+        let done = self
+            .clearing
+            .as_ref()
+            .is_some_and(|clear| clear.library_done && clear.engine_done);
+        if done && let Some(clear) = self.clearing.take() {
+            self.permission_lockout |= clear.failed && clear.request.permissions;
+            self.permissions.borrow_mut().enabled = !self.permission_lockout;
+            self.notice = format!(
+                "{} Bookmarks and downloaded files were kept. Library recovery backups were retained and may contain old history or permissions. New browsing can create new data; this is not secure disk erasure.",
+                clear.results.join(" ")
+            );
+            if clear.failed && clear.request.permissions {
+                self.notice.push_str(" Website permission requests remain denied until restart because revocation was not fully confirmed.");
+            }
+            self.persist();
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "app_validation.rs"]
+mod validation;
 
 struct App {
     session: Option<Session>,
@@ -565,6 +947,14 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             WindowEvent::CloseRequested => {
+                if let Some(session) = &mut self.session
+                    && session.clearing.is_some()
+                {
+                    session.notice =
+                        "Wait for the clearing result before closing the browser.".into();
+                    session.render();
+                    return;
+                }
                 if let Some(session) = &self.session {
                     session.persist();
                 }
@@ -582,12 +972,39 @@ impl ApplicationHandler<Event> for App {
             _ => {}
         }
     }
-    fn user_event(&mut self, _: &ActiveEventLoop, event: Event) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        if self
+            .session
+            .as_ref()
+            .is_some_and(|s| s.private && s.tabs.items.len() == 1 && s.clearing.is_none())
+            && matches!(&event, Event::Command(Command::CloseActive))
+        {
+            self.session = None;
+            event_loop.exit();
+            return;
+        }
         let Some(session) = &mut self.session else {
             return;
         };
         match event {
+            Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
+            Event::EngineCleared{startup,success,ticket}=>{
+                if startup {
+                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if tab.content.engine.view.load_url(&tab.url).is_err(){session.notice="A restored tab could not load.".into();}}}
+                    else {session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
+                } else if let Some(clear)=&mut session.clearing && clear.ticket==ticket {
+                    clear.engine_done=true;clear.failed |= !success;
+                    if clear.request.history || clear.request.cookies || clear.request.cache || clear.request.permissions {
+                        clear.results.push(if success {"WebView2 confirmed clearing the selected engine data."}else{"WebView2 reported a clearing failure; some engine data may remain."}.into());
+                    }
+                }
+            }
             Event::Library(reply) => {
+                if let Some(data)=&reply.data {session.permissions.borrow_mut().rules=data.permissions.clone();}
+                if let Some(clear)=&mut session.clearing && clear.revision==reply.revision && !clear.library_done {
+                    clear.library_done=true;clear.failed |= reply.message.is_some();
+                    clear.results.push(if reply.message.is_none(){"Selected application history/permission records cleared."}else{"Application database clearing failed; records may remain."}.into());
+                }
                 if let Some(message) = reply.message {
                     session.notice = message;
                 }
@@ -657,15 +1074,33 @@ impl ApplicationHandler<Event> for App {
                     "Error: Session could not be saved. Check profile access and disk space.".into()
             }
         }
+        session.finish_clear();
         session.render();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(session) = &self.session {
+        if let Some(session) = &mut self.session {
+            if session.permissions.borrow_mut().expire() {
+                session.render();
+            }
+            if session
+                .clearing
+                .as_ref()
+                .is_some_and(|c| c.started.elapsed() > Duration::from_secs(60))
+            {
+                session.clearing = None;
+                session.permission_lockout = true;
+                session.notice =
+                    "Clearing timed out. Completion is unconfirmed; some data may remain. Website permission requests remain denied until restart.".into();
+                session.render();
+            }
             if session.downloads.borrow_mut().poll(&session.proxy) {
                 session.render();
             }
-            if session.downloads.borrow().active_count() > 0 {
+            if session.downloads.borrow().active_count() > 0
+                || session.permissions.borrow().prompt().is_some()
+                || session.clearing.is_some()
+            {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(
                     Instant::now() + Duration::from_millis(250),
                 ));

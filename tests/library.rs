@@ -221,7 +221,7 @@ fn schema_migration_corruption_recovery_and_future_schema_preservation() {
     let version: i64 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, rust_browser::library::SCHEMA_VERSION);
     connection.execute_batch("PRAGMA user_version=99").unwrap();
     drop(connection);
     assert!(Database::open(&p.db()).is_err());

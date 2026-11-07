@@ -1,6 +1,6 @@
-# Rust Browser 0.3.0
+# Rust Browser 0.4.0
 
-A multi-tab, single-window Windows browser starter using Rust, **winit 0.30** and
+A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
@@ -14,7 +14,8 @@ engine or a daily-use replacement for Firefox/Chrome yet.
    with **Desktop development with C++**, MSVC and a Windows SDK.
 4. Install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
    if it is missing. Microsoft Edge being installed is not a substitute for checking
-   the Runtime. This project does not bundle or install it.
+   the Runtime. Use a current Evergreen Runtime: v0.4 requires native profile,
+   permission and external-scheme controls. This project does not bundle or install it.
 5. Restart your terminal after installing tools. Internet access is needed for
    Cargo's first dependency download and for browsing.
 
@@ -50,7 +51,7 @@ The console remains available intentionally for diagnostics in this initial vers
 | Stop | × button or Escape |
 | Home | Home button → https://example.com/ |
 | New tab | + button or Ctrl+T |
-| Close active tab | Ctrl+W (closing the last tab opens Home) |
+| Close active tab | Ctrl+W (last normal tab opens Home; last private tab closes its window) |
 | Close a specific tab | Its × button |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab (wraps around) |
 | Select a tab | Click its title |
@@ -59,6 +60,8 @@ The console remains available intentionally for diagnostics in this initial vers
 | Bookmark manager | Bookmarks button or Ctrl+Shift+O |
 | Browsing history | History button or Ctrl+H |
 | Download manager | Downloads button or Ctrl+J |
+| New private window | Private window button or Ctrl+Shift+N |
+| Privacy and security | Privacy & security button or connection indicator |
 | Move through toolbar | Tab / Shift+Tab |
 
 Bare domains receive `https://`. Explicit `http://` supports local development.
@@ -67,8 +70,10 @@ chooses Google (default), DuckDuckGo or Bing and saves that choice automatically
 Queries are URL-encoded; active schemes and embedded credentials remain blocked.
 Inputs resembling a domain or localhost address are treated as URLs. Single-label
 intranet hosts require an explicit `http://` or `https://` prefix. HTTP is not upgraded automatically when typed
-explicitly. The displayed URL includes its scheme; there is no certificate/security
-indicator yet. Website navigation, redirects, fragments and History API changes
+explicitly. The connection indicator shows the engine's current scheme and origin.
+Open it for details. HTTPS encrypts the connection; it does not vouch for a site.
+HTTP traffic is not encrypted. Loading and failed navigations show separate messages.
+Website navigation, redirects, fragments and History API changes
 update the address field. Editing the field pauses updates until focus leaves it.
 Back/forward use WebView2's actual history, rather than a separate Rust URL list.
 
@@ -82,8 +87,8 @@ render normally and count as completed navigation.
 
 Cookies, site storage and cache persist in `%LOCALAPPDATA%\RustBrowser\v0.1\content`.
 The toolbar has its own `toolbar` profile folder. The existing v0.1 folder is reused
-to preserve cookies on upgrade. There is no password manager, profile management UI,
-cookie/cache-clearing UI or private mode yet. The library has its own history-clearing control.
+to preserve normal cookies and data on upgrade. There is no password manager or
+general profile manager. Private windows use separate temporary storage.
 Close every instance before manually removing a profile folder.
 
 `session.json` stores tab URLs, order, active tab and search settings in **plain text**
@@ -94,7 +99,8 @@ are coalesced on a background thread, atomically replaced and flushed on normal 
 A profile lock prevents current browser instances from overwriting the same session.
 Do not run v0.1 against the same profile simultaneously.
 
-Restart automatically restores all tab URLs and the active tab. An optional command
+By default, restart restores normal tab URLs and the active tab. The Privacy & security
+panel can disable URL retention while preserving search and history preferences. An optional command
 line URL opens an additional tab. Back/forward history, form data, scroll position and
 page JavaScript state are not restored. Up to 64 live tabs are supported; hidden tabs
 retain their engines and may continue loading, playing media or using resources.
@@ -112,18 +118,71 @@ cargo run --locked
 The toolbar is local embedded HTML in a separate child webview. Only it receives a
 Rust IPC command bridge. Remote sites receive **no application IPC bridge or injected
 application scripts**. Toolbar navigation is restricted to its exact bundled data
-URL; remote content navigation is limited to HTTP(S). Address entry rejects
+URL; remote content navigation is limited to HTTP(S) and a neutral `about:blank`
+page used when clearing data. The native external-scheme handler blocks OS app launches. Address entry rejects
 embedded credentials and active schemes such as `javascript:`, `data:` and `file:`.
-WebView2 permission requests are denied. HTTP(S) downloads require destination selection.
+Unsupported permissions are denied. HTTP(S) downloads require destination selection.
 Wry's default extra browser arguments are replaced with an empty argument string to
 retain the Runtime's default security features. Media autoplay is disabled.
 
-New-window requests open a new tab. This supports
+HTTP(S) new-window requests open a tab in the same window and browsing mode. This supports
 basic target=_blank links but can break popup-based sign-in flows. There are no
 extensions, printing UI, sync, full crash recovery or default-browser
-registration. Permission UI, origin indicators, threat protections and compatibility
+registration. Threat protections and compatibility
 need a dedicated review before everyday browsing. Runtime behavior remains dependent
 on Microsoft's installed WebView2 version and policy.
+
+## Private browsing
+
+Use **Private window** or **Ctrl+Shift+N**, or run `cargo run --locked -- --private`.
+Each clearly labelled private window runs separately and verifies native WebView2
+InPrivate mode before any website loads. Its tabs share that window's temporary
+content profile. Private windows do not share cookies, cache or site storage with
+normal tabs or with other private windows. No private session store is opened;
+history is not recorded and temporary permission decisions are kept in memory.
+Normal bookmarks are unavailable in private windows and remain unchanged.
+
+Closing the window releases its views and attempts to remove its temporary directory.
+On a later launch, the browser makes a best-effort attempt to remove abandoned
+private directories. It does not remove live windows' data. Runtime files can remain
+temporarily locked or survive an abrupt exit until a later cleanup succeeds.
+Private mode does not provide anonymity or hide activity from sites, network observers,
+Windows, or other software. Downloads and their metadata can remain on disk.
+
+## Website permissions
+
+Camera, microphone, geolocation and notifications can prompt on the active tab after
+a user-initiated request. The prompt shows the actual requesting origin and capability.
+Choose Allow or Deny, with optional remembering for that exact scheme, host, port and
+capability. Private remembered decisions last only for that window. Unsupported
+capabilities, background requests, cross-origin frames and nonsecure origins other
+than loopback are denied. Pending requests expire after one minute and are denied when
+their tab navigates, switches or closes. Windows and WebView2 policies still apply.
+
+Privacy & security lists remembered rules. Revoking a rule closes tabs to stop
+active access and preserves other application rules. The app suppresses WebView2's
+automatic persistence for new decisions and resets legacy runtime permission settings
+before navigation on startup. A failed or unconfirmed permission clear leaves requests
+denied until restart. Keep the Runtime updated if startup security checks fail.
+
+## Clear browsing data
+
+Select categories in **Privacy & security**, then confirm. The browser prepares a
+blank view and closes other tabs before clearing, so active pages cannot immediately
+repopulate the old data. Finish or cancel downloads first. Clearing history covers
+the active library and engine history; cookies include site storage; cache includes
+disk cache and Cache Storage. Engine results are reported only after its callback.
+
+Saved session clearing disables URL retention and removes session recovery files.
+Closing the tabs also changes the current tab list, even if that category is unchecked.
+Bookmarks and downloaded files remain. Library recovery copies are retained because
+they can contain otherwise lost bookmarks; they can also contain older history and
+permission rules. Review partial failures in the panel. This is logical deletion,
+not secure disk erasure. Browsing again can create new data.
+
+See [WebView2 controller options](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controlleroptions),
+[permission persistence](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2permissionrequestedeventargs3),
+and [asynchronous browsing data clearing](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2profile2).
 
 ## Bookmarks and history
 
@@ -148,12 +207,12 @@ or a new tab. Individual removal is available; Clear all history asks for confir
 Clearing this library does not clear WebView2's back stack, cookies, cache or session
 URLs. The Record history checkbox pauses/resumes new recording and persists across
 restarts. Session restoration remains enabled independently and can retain full query
-URLs even when history is paused. There is no private browsing mode.
+URLs even when history is paused, unless retention is disabled separately.
 
 `library.sqlite` lives beside `session.json` in the existing profile. SQLite is bundled,
 so no separate database installation is needed. One background worker owns the
 connection and runs parameterized queries and transactional schema migrations (currently
-version 2). Native browser callbacks never write the database directly. A corrupt
+version 3, including remembered permission rules). Native browser callbacks never write the database directly. A corrupt
 database is preserved as `library.corrupt-<timestamp>` before recovery. A newer schema
 or access error disables the library with a notice rather than resetting its data;
 ordinary browsing remains available. Back up the profile with the browser closed.
@@ -200,6 +259,9 @@ src/navigation.rs     URL normalization and scheme policy, with unit tests
 src/tabs.rs           Engine-independent tab IDs, ordering and selection
 src/settings.rs       Search provider settings and query encoding
 src/storage.rs        Validated snapshots, profile lock and background persistence
+src/privacy.rs        Private profile leases and clearing/retention policy
+src/security.rs       Exact-origin permission types and connection indicators
+src/native_security.rs Windows permission deferrals and confirmed engine data clearing
 src/library.rs        SQLite bookmark/folder/history model and migrations
 src/library_worker.rs Bounded database worker and application replies
 src/downloads.rs      Filename policy, stall tracking and no-overwrite finalization

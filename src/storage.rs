@@ -82,6 +82,17 @@ pub fn load(path: &Path) -> io::Result<Snapshot> {
 }
 
 pub fn save(path: &Path, snapshot: &Snapshot) -> io::Result<()> {
+    let sanitized;
+    let snapshot = if snapshot.settings.restore_session {
+        snapshot
+    } else {
+        sanitized = Snapshot {
+            version: snapshot.version,
+            settings: snapshot.settings.clone(),
+            ..Snapshot::default()
+        };
+        &sanitized
+    };
     snapshot.validate()?;
     let bytes = serde_json::to_vec_pretty(snapshot)?;
     let temp = path.with_extension("json.tmp");
@@ -94,6 +105,8 @@ pub fn save(path: &Path, snapshot: &Snapshot) -> io::Result<()> {
 }
 
 pub struct Store {
+    path: PathBuf,
+    write_gate: Arc<Mutex<()>>,
     latest: Arc<Mutex<Option<Snapshot>>>,
     stop: Arc<AtomicBool>,
     wake: SyncSender<()>,
@@ -131,6 +144,9 @@ impl Store {
             }
         };
         let latest = Arc::new(Mutex::new(None::<Snapshot>));
+        let stored_path = path.clone();
+        let write_gate = Arc::new(Mutex::new(()));
+        let worker_gate = write_gate.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let (wake, receiver) = mpsc::sync_channel(1);
         let pending = latest.clone();
@@ -138,31 +154,32 @@ impl Store {
         let worker = thread::Builder::new()
             .name("session-writer".into())
             .spawn(move || {
-                while receiver.recv().is_ok() {
-                    if !stopping.load(Ordering::Acquire) {
-                        thread::sleep(Duration::from_millis(350));
-                    }
-                    let snapshot = pending.lock().ok().and_then(|mut latest| latest.take());
-                    if let Some(snapshot) = snapshot
+                let write_pending = || {
+                    // Serializing disk writes here does not block ordinary queue updates.
+                    if let Ok(_guard) = worker_gate.lock()
+                        && let Some(snapshot) =
+                            pending.lock().ok().and_then(|mut latest| latest.take())
                         && save(&path, &snapshot).is_err()
                     {
                         on_error();
                     }
+                };
+                while receiver.recv().is_ok() {
+                    if !stopping.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(350));
+                    }
+                    write_pending();
                     if stopping.load(Ordering::Acquire) {
                         // A newer queue can arrive during the preceding write. Flush it too.
-                        let final_snapshot =
-                            pending.lock().ok().and_then(|mut latest| latest.take());
-                        if let Some(snapshot) = final_snapshot
-                            && save(&path, &snapshot).is_err()
-                        {
-                            on_error();
-                        }
+                        write_pending();
                         break;
                     }
                 }
             })?;
         Ok((
             Self {
+                path: stored_path,
+                write_gate,
                 latest,
                 stop,
                 wake,
@@ -179,6 +196,31 @@ impl Store {
             *latest = Some(snapshot);
         }
         let _ = self.wake.try_send(());
+    }
+
+    /// Used after session retention has been disabled in application state. An old
+    /// queued write cannot restore URLs after this operation returns successfully.
+    pub fn forget_session(&self, settings: Settings) -> io::Result<()> {
+        if settings.restore_session {
+            return Err(io::Error::other(
+                "Disable session retention before clearing.",
+            ));
+        }
+        let _guard = self
+            .write_gate
+            .lock()
+            .map_err(|_| io::Error::other("Session writer unavailable."))?;
+        *self
+            .latest
+            .lock()
+            .map_err(|_| io::Error::other("Session writer unavailable."))? = None;
+        save(
+            &self.path,
+            &Snapshot {
+                settings,
+                ..Snapshot::default()
+            },
+        )
     }
 }
 

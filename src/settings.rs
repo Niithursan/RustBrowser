@@ -28,6 +28,7 @@ impl SearchEngine {
 pub struct Settings {
     pub search_engine: SearchEngine,
     pub history_enabled: bool,
+    pub restore_session: bool,
 }
 
 impl Default for Settings {
@@ -35,6 +36,7 @@ impl Default for Settings {
         Self {
             search_engine: SearchEngine::default(),
             history_enabled: true,
+            restore_session: true,
         }
     }
 }

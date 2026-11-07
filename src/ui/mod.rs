@@ -8,6 +8,7 @@ pub enum Panel {
     Bookmarks,
     History,
     Downloads,
+    Settings,
 }
 
 pub const HEIGHT: f64 = 136.0;
@@ -16,6 +17,19 @@ pub const HTML: &str = include_str!("toolbar.html");
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
+    RevokePermission {
+        origin: String,
+        capability: rust_browser::security::Capability,
+        confirmed: bool,
+    },
+    NewPrivateWindow,
+    SetRestoreSession(bool),
+    ClearData(rust_browser::privacy::ClearRequest),
+    PermissionDecision {
+        id: u64,
+        decision: rust_browser::security::Decision,
+        remember: bool,
+    },
     Navigate(String),
     Back,
     Forward,
@@ -36,7 +50,10 @@ pub enum Command {
     ClosePanel,
     QueryLibrary(Filter),
     Library(Action),
-    OpenSaved { url: String, new_tab: bool },
+    OpenSaved {
+        url: String,
+        new_tab: bool,
+    },
     SetHistoryEnabled(bool),
     CancelDownload(u64),
     OpenDownloadFolder(u64),
@@ -46,6 +63,7 @@ pub enum Command {
 pub struct State {
     pub url: String,
     pub loading: bool,
+    pub failed: bool,
     pub back: bool,
     pub forward: bool,
     pub message: String,
@@ -60,6 +78,11 @@ pub struct TabState<'a> {
 
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
+    pub private: bool,
+    pub restore_session: bool,
+    pub security: rust_browser::security::Indicator,
+    pub permission_prompt: Option<crate::native_security::Prompt>,
+    pub busy: bool,
     #[serde(flatten)]
     pub page: &'a State,
     pub tabs: Vec<TabState<'a>>,
@@ -75,6 +98,7 @@ pub struct ToolbarState<'a> {
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.
 pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
     match (key, ctrl, alt) {
+        (0x4e, true, _) if shift => Some(Command::NewPrivateWindow),
         (0x44, true, _) => Some(Command::BookmarkCurrent),
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
         (0x4a, true, _) => Some(Command::ShowPanel(Panel::Downloads)),

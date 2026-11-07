@@ -1,5 +1,82 @@
 # Validation
 
+## Version 0.4.0
+
+Baseline: PR #6 was confirmed squash-merged at `3117426840c0d4338e1537d25551529fb4ecf2f1`.
+The merged tree matched the verified v0.3 feature tree, and all 21 baseline tests
+passed locally. Its [Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42330920256)
+and [dependency security](https://github.com/Niithursan/RustBrowser/actions/runs/42330920275)
+passed. Development used a feature branch; no release/tag was created or changed.
+
+Local checks on Windows x64, Rust 1.99.1/MSVC and WebView2 156.0.4314.58:
+
+- Formatting, strict Clippy, 28 regular tests and Windows debug/release builds passed.
+- The dependency audit passed for 369 locked dependencies with the existing reviewed
+  exceptions unchanged. No dependency was added.
+- Tests cover private lease isolation and abandoned-directory cleanup, snapshot
+  exclusion, queued-write barriers, exact-origin permissions/revocation, confirmed
+  database clearing, invalid settings, migration/corruption and connection indicators.
+- The native isolation test used actual WebView2 views and a test-only local fixture at a reserved origin.
+  It verified two-way cookie/local-storage isolation, a successful clear callback,
+  cleared normal storage with private storage intact, origin/capability correctness,
+  cancellation denial, and an explicit synthetic notification grant.
+- The application-level native test verified unconfirmed clearing is rejected,
+  active tabs are replaced by a blank view, the native callback and database worker
+  both complete, bookmarks and library recovery files remain, and saved session URLs
+  and recovery files are removed. A separately injected failed engine callback
+  verified visible partial-failure reporting and denial of further grants.
+
+The two native tests open real windows and run separately because winit supports one
+event loop per process. CI runs them explicitly after the regular suite:
+
+```powershell
+cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_application_clear -- --ignored --test-threads=1
+```
+
+Actual Windows GUI and process checks used isolated test profiles:
+
+- Normal cookie and local-storage markers were absent from a private window on the
+  same origin. Remote content reported no application IPC object. Normal markers
+  were still present after private shutdown. The private window created neither
+  `session.json` nor `library.sqlite`, and its temporary directory disappeared on
+  normal close. Ctrl+Shift+N opened a correctly labelled private window.
+- A unique private navigation did not appear in the normal session or SQLite
+  history. After intentionally terminating the private test process, a later
+  launch removed its abandoned directory and kept the current live directory.
+- A normal five-tab test process was terminated after its session was saved. On
+  restart, all five tabs and the active URL restored; normal shutdown then succeeded.
+  This does not prove recovery of changes lost during the write debounce or an OS crash.
+- HTTP and HTTPS displayed their actual scheme/origin with distinct descriptions.
+  A loopback notification request displayed the requesting origin and capability;
+  switching tabs dismissed it. Permission decisions and data clearing were exercised
+  in the controlled native tests above, not by granting devices or deleting user
+  data through the desktop UI. A `target=_blank` HTTP link opened a third normal tab.
+- A 4 MiB slow HTTP transfer showed live progress and cancelled at 88%; no staged
+  or final file remained. A deliberately truncated response showed Failed after
+  the two-minute stall guard, leaving no current staging files. Abrupt termination
+  during a transfer can still leave a staging folder at the chosen destination.
+
+Process-tree samples over five seconds after loading pages:
+
+| Tabs | Processes | Summed working set (MiB) | Private bytes (MiB) | CPU seconds |
+| ---: | ---: | ---: | ---: | ---: |
+| 2 | 14 | 792.0 | 352.8 | 0.812 |
+| 5 | 17 | 915.9 | 427.5 | 0.031 |
+| 10 | 22 | 1131.2 | 507.9 | 0.000 |
+
+These include browser and WebView2 descendants. Summed working sets can count shared
+pages more than once. The two-tab run included an HTTPS home page; five and ten tabs
+used static loopback content. These brief samples do not characterize real websites,
+long-term growth, or background media. No suspension or performance gain is claimed.
+
+Limits: private cleanup is best effort; private mode does not provide anonymity,
+secure erasure, or protection from Windows and network observers. Downloaded files
+and metadata remain. Library recovery copies may retain history and permission rules.
+Physical camera/microphone/location access, broader site/redirect compatibility,
+mixed content, accessibility, long-duration soak tests and real OS crashes were not
+comprehensively verified. CI results on the final revision are recorded on the PR.
+
 ## Version 0.3.0
 
 Preservation baseline: PR #5 was verified squash-merged into `main` at `7c9c152`.
