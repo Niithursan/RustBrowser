@@ -225,7 +225,10 @@ impl ApplicationHandler<Event> for Harness {
                 1,
                 Rc::new(RefCell::new(native_downloads::Manager::default())),
                 self.permissions.clone(),
-                false,
+                crate::engine::Options {
+                    private: false,
+                    environment: None,
+                },
             )?;
             let private = Engine::new(
                 &window,
@@ -234,7 +237,10 @@ impl ApplicationHandler<Event> for Harness {
                 2,
                 Rc::new(RefCell::new(native_downloads::Manager::default())),
                 Rc::new(RefCell::new(native_security::Permissions::default())),
-                true,
+                crate::engine::Options {
+                    private: true,
+                    environment: None,
+                },
             )?;
             self.permissions.borrow_mut().active = Some(1);
             self.permissions.borrow_mut().enabled = true;

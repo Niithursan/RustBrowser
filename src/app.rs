@@ -1,7 +1,7 @@
 use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
-    native_background, native_downloads, native_security,
+    native_background, native_downloads, native_popup, native_security,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
@@ -60,7 +60,10 @@ pub enum Event {
     },
     Command(Command),
     Page(TabId, PageEvent),
-    OpenTab(TabId, String),
+    PopupRequested(u64),
+    PopupBlocked,
+    PageClose(TabId),
+    Fullscreen(TabId, bool),
     StorageError,
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
@@ -69,12 +72,14 @@ pub enum Event {
     DownloadRejected,
     DownloadDestination(u64, Result<Option<PathBuf>, String>),
     DownloadFinished(u64, Result<PathBuf, String>),
+    DownloadRecovery(String),
 }
 
 struct Page {
     engine: Engine,
     state: State,
     lifecycle: Lifecycle,
+    opener: Option<TabId>,
 }
 struct Clearing {
     failed: bool,
@@ -107,6 +112,8 @@ struct Session {
     library: Worker,
     store: Option<Store>,
     permissions: native_security::Shared,
+    popups: native_popup::Shared,
+    fullscreen: Option<TabId>,
     profile: PathBuf,
     private: bool,
     ready: bool,
@@ -115,6 +122,7 @@ struct Session {
     permission_lockout: bool,
     started: Instant,
     next_background: Instant,
+    last_background: Instant,
     chrome_height: f64,
     last_snapshot: RefCell<Option<Snapshot>>,
     last_render: RefCell<String>,
@@ -126,6 +134,7 @@ struct Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.permissions.borrow_mut().cancel_all();
+        self.popups.borrow_mut().clear();
         self.downloads.borrow_mut().shutdown();
     }
 }
@@ -185,7 +194,7 @@ impl Session {
         )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.5.0")
+                .with_title("Rust Browser 0.6.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -227,7 +236,7 @@ impl Session {
             proxy,
             settings: snapshot.settings,
             notice: if recovered {
-                "Invalid session was backed up; started with Home.".into()
+                "Session recovery performed. Invalid originals were preserved; the last valid snapshot was used when available.".into()
             } else {
                 String::new()
             },
@@ -246,12 +255,15 @@ impl Session {
             profile,
             private,
             permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
+            popups: Rc::new(RefCell::new(native_popup::Manager::default())),
+            fullscreen: None,
             ready: false,
             clearing: None,
             next_clear: 0,
             permission_lockout: false,
             started: Instant::now(),
             next_background: Instant::now(),
+            last_background: Instant::now(),
             chrome_height: ui::HEIGHT,
             last_snapshot: RefCell::new(None),
             last_render: RefCell::new(String::new()),
@@ -329,6 +341,15 @@ impl Session {
     }
 
     fn prepare_page(&mut self, url: &str) -> Result<Page, Box<dyn std::error::Error>> {
+        self.prepare_related(url, None)
+    }
+    fn prepare_related(
+        &mut self,
+        url: &str,
+        environment: Option<
+            webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
+        >,
+    ) -> Result<Page, Box<dyn std::error::Error>> {
         let id = self.tabs.next_id();
         let engine = Engine::new(
             &self.window,
@@ -337,10 +358,14 @@ impl Session {
             id,
             self.downloads.clone(),
             self.permissions.clone(),
-            self.private,
+            engine::Options {
+                private: self.private,
+                environment: environment.clone(),
+            },
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
-        if self.ready {
+        native_popup::install(&engine.view, self.popups.clone(), self.proxy.clone(), id)?;
+        if self.ready && environment.is_none() {
             engine.view.load_url(if url == navigation::HOME {
                 "about:blank"
             } else {
@@ -357,6 +382,7 @@ impl Session {
             engine,
             state,
             lifecycle: Lifecycle::default(),
+            opener: None,
         })
     }
 
@@ -367,6 +393,28 @@ impl Session {
                 .filter(|tab| tab.url == navigation::HOME)
                 .map(|_| Panel::NewTab)
         })
+    }
+
+    fn open_popup(&mut self, ticket: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(request) = self.popups.borrow_mut().take(ticket) else {
+            return Ok(());
+        };
+        if !self.ready
+            || self.clearing.is_some()
+            || self.tabs.items.len() >= MAX_TABS
+            || !self.tabs.items.iter().any(|t| t.id == request.source)
+        {
+            return Err("Popup could not be opened safely.".into());
+        }
+        let mut page = self.prepare_related(&request.url, Some(request.environment.clone()))?;
+        page.opener = Some(request.source);
+        request.attach(&page.engine.view)?;
+        crate::native_activity::watch_resources(&page.engine.view, page.engine.activity.clone())?;
+        self.tabs.push(request.url.clone(), page)?;
+        self.panel = None;
+        self.activate()?;
+        self.persist();
+        Ok(())
     }
 
     fn resize(&self) -> wry::Result<()> {
@@ -398,6 +446,16 @@ impl Session {
 
     fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let next = self.tabs.active().map(|tab| tab.id);
+        let fullscreen = self
+            .tabs
+            .active()
+            .filter(|t| t.content.engine.activity.fullscreen.get())
+            .map(|t| t.id);
+        if fullscreen != self.fullscreen {
+            self.fullscreen = fullscreen;
+            self.window
+                .set_fullscreen(fullscreen.map(|_| winit::window::Fullscreen::Borderless(None)));
+        }
         {
             let mut permissions = self.permissions.borrow_mut();
             if permissions.active != next {
@@ -542,11 +600,11 @@ impl Session {
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
         let title = if self.private {
-            "Private — Rust Browser 0.5.0"
+            "Private — Rust Browser 0.6.0"
         } else if active.content.state.loading {
-            "Loading… — Rust Browser 0.5.0"
+            "Loading… — Rust Browser 0.6.0"
         } else {
-            "Rust Browser 0.5.0"
+            "Rust Browser 0.6.0"
         };
         if self.last_title.borrow().as_str() != title {
             self.window.set_title(title);
@@ -555,11 +613,20 @@ impl Session {
     }
 
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn std::error::Error>> {
+        let return_to = self
+            .tabs
+            .active()
+            .filter(|t| t.id == id)
+            .and_then(|t| t.content.opener);
+        self.popups.borrow_mut().cancel_tab(id);
         self.permissions.borrow_mut().cancel_tab(id);
         if self.tabs.items.len() == 1 && self.tabs.active().is_some_and(|tab| tab.id == id) {
             self.open_tab(navigation::HOME.into())?;
         }
         self.tabs.close(id);
+        if let Some(opener) = return_to {
+            self.tabs.select(opener);
+        }
         self.activate()?;
         Ok(())
     }
@@ -917,6 +984,8 @@ impl Session {
         };
         match event {
             PageEvent::Loading => {
+                // Keep critical-operation protection until the document is closed: a POST
+                // navigation can still be uploading while NavigationStarting fires.
                 tab.content.lifecycle.resumed(true);
                 tab.content.lifecycle.visible(true, self.started.elapsed());
                 tab.content.lifecycle.visible(
@@ -973,6 +1042,7 @@ impl Session {
                     });
             }
             PageEvent::Error(error) => {
+                tab.content.state.loading = false;
                 tab.content.state.failed = true;
                 tab.content.state.message = format!("Error: {error}");
             }
@@ -1027,16 +1097,46 @@ impl Session {
             loading: tab.is_none_or(|t| t.content.state.loading),
             downloads: self.downloads.borrow().active_count() > 0,
             permissions: self.permissions.borrow().prompt().is_some(),
-            capture: self.permissions.borrow().protected(id),
+            capture: self.permissions.borrow().protected(id)
+                || tab.is_some_and(|t| {
+                    t.content.engine.activity.protected.get()
+                        || !t.content.engine.activity.observable.get()
+                        || t.content.engine.activity.fullscreen.get()
+                        || t.content.opener.is_some()
+                })
+                || self.tabs.items.iter().any(|t| t.content.opener == Some(id)),
             audio,
-            busy: !self.ready || self.clearing.is_some(),
+            busy: !self.ready || self.clearing.is_some() || self.popups.borrow().busy(),
         }
     }
     fn background_tick(&mut self) -> bool {
         if Instant::now() < self.next_background {
             return false;
         }
+        let gap = self.last_background.elapsed() > Duration::from_secs(30);
+        self.last_background = Instant::now();
         self.next_background = Instant::now() + Duration::from_secs(1);
+        if gap {
+            let active = self.tabs.active().map(|t| t.id);
+            for tab in &mut self.tabs.items {
+                if matches!(
+                    tab.content.lifecycle.phase,
+                    Phase::Sleeping | Phase::Pending | Phase::ResumeFailed
+                ) {
+                    let success = native_background::resume(&tab.content.engine.view).is_ok();
+                    tab.content.lifecycle.resumed(success);
+                    if !success {
+                        self.notice="A tab did not resume after an event-loop pause. Select it and use Wake tab; the page was preserved.".into();
+                    }
+                }
+                tab.content.lifecycle.visible(true, self.started.elapsed());
+                tab.content
+                    .lifecycle
+                    .visible(active == Some(tab.id), self.started.elapsed());
+                tab.content.lifecycle.defer(self.started.elapsed());
+            }
+            return true;
+        }
         let now = self.started.elapsed();
         let mut changed = false;
         let ids: Vec<_> = self.tabs.items.iter().map(|tab| tab.id).collect();
@@ -1142,6 +1242,7 @@ impl Session {
         let neutral = self.prepare_page("about:blank")?;
         self.filter = Filter::default();
         self.permissions.borrow_mut().cancel_all();
+        self.popups.borrow_mut().clear();
         self.next_clear += 1;
         self.permissions.borrow_mut().enabled = false;
         self.clearing = Some(Clearing {
@@ -1266,6 +1367,10 @@ mod benchmark_probe;
 #[path = "ux_validation.rs"]
 mod ux_validation;
 
+#[cfg(test)]
+#[path = "compat_validation.rs"]
+mod compat_validation;
+
 struct App {
     session: Option<Session>,
     proxy: EventLoopProxy<Event>,
@@ -1353,7 +1458,8 @@ impl ApplicationHandler<Event> for App {
             .session
             .as_ref()
             .is_some_and(|s| s.private && s.tabs.items.len() == 1 && s.clearing.is_none())
-            && matches!(&event, Event::Command(Command::CloseActive))
+            && (matches!(&event, Event::Command(Command::CloseActive))
+                || matches!(&event,Event::PageClose(id) if self.session.as_ref().is_some_and(|s|s.tabs.active().is_some_and(|t|t.id==*id && t.content.opener.is_some()))))
         {
             self.session = None;
             event_loop.exit();
@@ -1363,6 +1469,37 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            Event::PopupRequested(ticket) => {
+                if let Err(error) = session.open_popup(ticket) {
+                    session.notice = format!("Error: {error}");
+                }
+            }
+            Event::PopupBlocked => {
+                session.notice =
+                    "Popup blocked: only user-initiated HTTP(S) or blank popups are supported."
+                        .into()
+            }
+            Event::PageClose(id) => {
+                if session
+                    .tabs
+                    .items
+                    .iter()
+                    .any(|t| t.id == id && t.content.opener.is_some())
+                {
+                    let _ = session.close_tab(id);
+                }
+            }
+            Event::Fullscreen(id, enabled) => {
+                if session.tabs.active().is_some_and(|t| t.id == id) {
+                    session.fullscreen = enabled.then_some(id);
+                    session.window.set_fullscreen(if enabled {
+                        Some(winit::window::Fullscreen::Borderless(None))
+                    } else {
+                        None
+                    });
+                    let _ = session.resize();
+                }
+            }
             Event::SuspensionResult{id,ticket,success}=>session.suspension_result(id,ticket,success),
             Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
@@ -1412,6 +1549,14 @@ impl ApplicationHandler<Event> for App {
                     .name("download-folder-picker".into())
                     .spawn(move || {
                         let result = native_downloads::choose_folder(owner);
+                        if let Ok(Some(folder))=&result {
+                            let notice=match rust_browser::download_recovery::clean_empty_abandoned(folder){
+                                Ok(r) if r.cleaned>0 || r.preserved>0=>Some(format!("Download staging check: {} empty abandoned folders cleaned; {} nonempty or unrecognized owned folders preserved for manual review. Live transfers were kept.",r.cleaned,r.preserved)),
+                                Ok(_)=>None,
+                                Err(_)=>Some("Download staging could not be checked; existing files were preserved.".into()),
+                            };
+                            if let Some(notice)=notice {let _=proxy.send_event(Event::DownloadRecovery(notice));}
+                        }
                         let _ = proxy.send_event(Event::DownloadDestination(id, result));
                     })
                     .is_err()
@@ -1431,21 +1576,13 @@ impl ApplicationHandler<Event> for App {
             Event::DownloadFinished(id, result) => {
                 session.downloads.borrow_mut().finished(id, result)
             }
+            Event::DownloadRecovery(notice)=>session.notice=notice,
             Event::Command(command) => {
                 if let Err(error) = session.command(command) {
                     session.notice = format!("Error: {error}");
                 }
             }
             Event::Page(id, event) => session.page_event(id, event),
-            Event::OpenTab(source, url) => {
-                if session.tabs.items.iter().any(|tab| tab.id == source)
-                    && navigation::address(&url).is_ok()
-                    && let Err(error) = session.open_tab(url).and_then(|()| session.activate())
-                {
-                    session.notice = format!("Error: {error}");
-                }
-                session.persist();
-            }
             Event::StorageError => {
                 *session.last_snapshot.borrow_mut()=None;
                 session.notice =
@@ -1458,6 +1595,7 @@ impl ApplicationHandler<Event> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(session) = &mut self.session {
+            session.popups.borrow_mut().expire();
             if session.background_tick() {
                 session.render();
             }
