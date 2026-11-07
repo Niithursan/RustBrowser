@@ -1,6 +1,7 @@
+use rust_browser::{settings::SearchEngine, tabs::TabId};
 use serde::{Deserialize, Serialize};
 
-pub const HEIGHT: f64 = 100.0;
+pub const HEIGHT: f64 = 136.0;
 pub const HTML: &str = include_str!("toolbar.html");
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +16,12 @@ pub enum Command {
     FocusPage,
     Home,
     Ready,
+    NewTab,
+    CloseActive,
+    CloseTab(TabId),
+    SelectTab(TabId),
+    CycleTab(bool),
+    SetSearchEngine(SearchEngine),
 }
 
 #[derive(Default, Serialize)]
@@ -24,4 +31,21 @@ pub struct State {
     pub back: bool,
     pub forward: bool,
     pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct TabState<'a> {
+    pub id: TabId,
+    pub title: &'a str,
+    pub active: bool,
+}
+
+#[derive(Serialize)]
+pub struct ToolbarState<'a> {
+    #[serde(flatten)]
+    pub page: &'a State,
+    pub tabs: Vec<TabState<'a>>,
+    pub active_id: TabId,
+    pub search_engine: SearchEngine,
+    pub notice: &'a str,
 }

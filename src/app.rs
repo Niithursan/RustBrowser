@@ -1,10 +1,14 @@
 use crate::{
     engine::{self, Engine},
-    navigation,
-    ui::{self, Command, State},
+    ui::{self, Command, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
-use std::path::PathBuf;
+use rust_browser::{
+    navigation,
+    settings::Settings,
+    storage::{self, Snapshot, Store},
+    tabs::{MAX_TABS, TabId, Tabs},
+};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
@@ -15,22 +19,37 @@ use winit::{
 use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 
 #[derive(Debug)]
-pub enum Event {
-    Command(Command),
+pub enum PageEvent {
     Loading,
     Changed,
     Completed(Option<String>),
     Error(String),
+    Title(String),
+}
+#[derive(Debug)]
+pub enum Event {
+    Command(Command),
+    Page(TabId, PageEvent),
+    OpenTab(TabId, String),
+    StorageError,
 }
 
-// Drop webviews before their contexts and parent window.
-struct Session {
+struct Page {
     engine: Engine,
+    state: State,
+}
+
+// Drop views before contexts and the parent window. Store flushes and releases its lock last.
+struct Session {
+    tabs: Tabs<Page>,
     toolbar: WebView,
-    _content_context: WebContext,
+    content_context: WebContext,
     _toolbar_context: WebContext,
     window: Window,
-    state: State,
+    proxy: EventLoopProxy<Event>,
+    settings: Settings,
+    notice: String,
+    store: Store,
 }
 
 impl Session {
@@ -38,47 +57,99 @@ impl Session {
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let profile = storage::profile_dir()?;
+        let error_proxy = proxy.clone();
+        let (store, snapshot, recovered) = Store::open(&profile, move || {
+            let _ = error_proxy.send_event(Event::StorageError);
+        })?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.1")
+                .with_title("Rust Browser 0.2.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
-                .with_min_inner_size(LogicalSize::new(500.0, 300.0)),
+                .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
-        let profile = profile_dir()?;
-        std::fs::create_dir_all(&profile)?;
-        let mut content_context = WebContext::new(Some(profile.join("content")));
+        let content_context = WebContext::new(Some(profile.join("content")));
         let mut toolbar_context = WebContext::new(Some(profile.join("toolbar")));
-        let engine = Engine::new(&window, &mut content_context, proxy.clone())?;
         let ipc_proxy = proxy.clone();
         let toolbar_url = format!(
             "data:text/html;charset=utf-8;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(ui::HTML)
         );
-        let allowed_toolbar_url = toolbar_url.clone();
+        let allowed_url = toolbar_url.clone();
         let toolbar = WebViewBuilder::new_with_web_context(&mut toolbar_context)
             .with_additional_browser_args("")
             .with_url(&toolbar_url)
             .with_devtools(false)
-            .with_navigation_handler(move |url| url == allowed_toolbar_url)
+            .with_navigation_handler(move |url| url == allowed_url)
             .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
             .with_ipc_handler(move |request| {
-                if let Ok(command) = serde_json::from_str::<Command>(request.body()) {
+                if request.body().len() <= 16384
+                    && let Ok(command) = serde_json::from_str::<Command>(request.body())
+                {
                     let _ = ipc_proxy.send_event(Event::Command(command));
                 }
             })
             .build_as_child(&window)?;
-        engine::accelerators(&engine.view, proxy.clone())?;
-        engine::accelerators(&toolbar, proxy)?;
-        let session = Self {
-            engine,
+        engine::accelerators(&toolbar, proxy.clone())?;
+        let mut session = Self {
+            tabs: Tabs::default(),
             toolbar,
-            _content_context: content_context,
+            content_context,
             _toolbar_context: toolbar_context,
             window,
-            state: State::default(),
+            proxy,
+            settings: snapshot.settings,
+            notice: if recovered {
+                "Invalid session was backed up; started with Home.".into()
+            } else {
+                String::new()
+            },
+            store,
         };
-        session.resize()?;
+        for url in snapshot.tabs {
+            session.open_tab(url)?;
+        }
+        if let Some(tab) = session.tabs.items.get(snapshot.active) {
+            let id = tab.id;
+            session.tabs.select(id);
+        }
+        // An explicit launch address opens an additional tab rather than discarding restoration.
+        if let Some(input) = std::env::args().nth(1) {
+            match navigation::resolve(&input, session.settings.search_engine) {
+                Ok(url) => {
+                    if let Err(error) = session.open_tab(url) {
+                        session.notice = error.to_string();
+                    }
+                }
+                Err(error) => session.notice = error,
+            }
+        }
+        session.activate()?;
+        session.persist();
         Ok(session)
+    }
+
+    fn open_tab(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
+        if self.tabs.items.len() >= MAX_TABS {
+            return Err("The 64-tab limit has been reached.".into());
+        }
+        let id = self.tabs.next_id();
+        let engine = Engine::new(
+            &self.window,
+            &mut self.content_context,
+            self.proxy.clone(),
+            id,
+        )?;
+        engine::accelerators(&engine.view, self.proxy.clone())?;
+        engine.view.load_url(&url)?;
+        let state = State {
+            url: url.clone(),
+            loading: true,
+            message: "Connecting…".into(),
+            ..State::default()
+        };
+        self.tabs.push(url, Page { engine, state })?;
+        Ok(())
     }
 
     fn resize(&self) -> wry::Result<()> {
@@ -90,73 +161,179 @@ impl Session {
             position: LogicalPosition::new(0.0, 0.0).into(),
             size: LogicalSize::new(size.width, ui::HEIGHT).into(),
         })?;
-        self.engine.view.set_bounds(Rect {
-            position: LogicalPosition::new(0.0, ui::HEIGHT).into(),
-            size: LogicalSize::new(size.width, (size.height - ui::HEIGHT).max(1.0)).into(),
-        })
+        if let Some(tab) = self.tabs.active() {
+            tab.content.engine.view.set_bounds(Rect {
+                position: LogicalPosition::new(0.0, ui::HEIGHT).into(),
+                size: LogicalSize::new(size.width, (size.height - ui::HEIGHT).max(1.0)).into(),
+            })?;
+        }
+        Ok(())
     }
 
-    fn render(&mut self) {
-        if let Ok(url) = self.engine.view.url()
-            && navigation::allowed(&url)
-        {
-            self.state.url = url;
+    fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let active = self.tabs.active_index();
+        for (index, tab) in self.tabs.items.iter().enumerate() {
+            tab.content.engine.view.set_visible(index == active)?;
         }
-        (self.state.back, self.state.forward) = self.engine.history();
-        let json = serde_json::to_string(&self.state).expect("state serializes");
-        if let Err(error) = self
-            .toolbar
-            .evaluate_script(&format!("window.render && window.render({json})"))
-        {
-            eprintln!("Toolbar: {error}");
+        self.resize()?;
+        if let Some(tab) = self.tabs.active() {
+            tab.content.engine.view.focus()?;
         }
-        self.window.set_title(if self.state.loading {
-            "Loading… — Rust Browser 0.1"
-        } else {
-            "Rust Browser 0.1"
+        Ok(())
+    }
+
+    fn persist(&self) {
+        self.store.queue(Snapshot {
+            version: 1,
+            tabs: self.tabs.items.iter().map(|tab| tab.url.clone()).collect(),
+            active: self.tabs.active_index(),
+            settings: self.settings.clone(),
         });
+    }
+
+    fn render(&self) {
+        let Some(active) = self.tabs.active() else {
+            return;
+        };
+        let state = ToolbarState {
+            page: &active.content.state,
+            active_id: active.id,
+            search_engine: self.settings.search_engine,
+            notice: &self.notice,
+            tabs: self
+                .tabs
+                .items
+                .iter()
+                .map(|tab| TabState {
+                    id: tab.id,
+                    title: &tab.title,
+                    active: tab.id == active.id,
+                })
+                .collect(),
+        };
+        match serde_json::to_string(&state) {
+            Ok(json) => {
+                if self
+                    .toolbar
+                    .evaluate_script(&format!("window.render && window.render({json})"))
+                    .is_err()
+                {
+                    eprintln!("Could not update browser toolbar.");
+                }
+            }
+            Err(_) => eprintln!("Could not encode browser toolbar state."),
+        }
+        self.window.set_title(if active.content.state.loading {
+            "Loading… — Rust Browser 0.2.0"
+        } else {
+            "Rust Browser 0.2.0"
+        });
+    }
+
+    fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn std::error::Error>> {
+        if self.tabs.items.len() == 1 && self.tabs.active().is_some_and(|tab| tab.id == id) {
+            self.open_tab(navigation::HOME.into())?;
+        }
+        self.tabs.close(id);
+        self.activate()?;
+        Ok(())
     }
 
     fn command(&mut self, command: Command) -> Result<(), Box<dyn std::error::Error>> {
         match command {
+            Command::NewTab => {
+                self.open_tab(navigation::HOME.into())?;
+                self.activate()?;
+                self.command(Command::FocusAddress)?;
+            }
+            Command::SelectTab(id) => {
+                if self.tabs.select(id) {
+                    self.activate()?;
+                }
+            }
+            Command::CycleTab(backwards) => {
+                self.tabs.cycle(backwards);
+                self.activate()?;
+            }
+            Command::CloseTab(id) => self.close_tab(id)?,
+            Command::CloseActive => {
+                if let Some(tab) = self.tabs.active() {
+                    self.close_tab(tab.id)?;
+                }
+            }
+            Command::SetSearchEngine(engine) => {
+                self.settings.search_engine = engine;
+            }
             Command::Navigate(input) => {
-                let url = navigation::address(&input)?;
-                self.state.url = url.clone();
-                self.state.message = "Connecting…".into();
-                self.state.loading = true;
-                self.engine.view.load_url(&url)?;
-                self.engine.view.focus()?;
+                let url = navigation::resolve(&input, self.settings.search_engine)?;
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.content.engine.view.load_url(&url)?;
+                    tab.url = url.clone();
+                    tab.content.state.url = url;
+                    tab.content.state.message = "Connecting…".into();
+                    tab.content.state.loading = true;
+                    tab.content.engine.view.focus()?;
+                }
             }
             Command::Home => self.command(Command::Navigate(navigation::HOME.into()))?,
-            Command::Ready => {}
+            Command::Ready => self.activate()?,
             Command::FocusAddress => {
                 self.toolbar.focus()?;
                 self.toolbar.evaluate_script("window.focusAddress()")?;
             }
-            Command::FocusPage => self.engine.view.focus()?,
-            Command::Back if !self.state.back => {}
-            Command::Forward if !self.state.forward => {}
+            Command::FocusPage => {
+                if let Some(tab) = self.tabs.active() {
+                    tab.content.engine.view.focus()?;
+                }
+            }
             other => {
-                self.engine.command(&other)?;
-                if matches!(other, Command::Stop) {
-                    self.state.loading = false;
-                    self.state.message = "Stopped.".into();
+                if let Some(tab) = self.tabs.active_mut() {
+                    if matches!(other, Command::Back) && !tab.content.state.back
+                        || matches!(other, Command::Forward) && !tab.content.state.forward
+                    {
+                        return Ok(());
+                    }
+                    tab.content.engine.command(&other)?;
+                    if matches!(other, Command::Stop) {
+                        tab.content.state.loading = false;
+                        tab.content.state.message = "Stopped.".into();
+                    }
                 }
             }
         }
+        self.persist();
         Ok(())
     }
-}
 
-fn profile_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Some(value) = std::env::var_os("RUST_BROWSER_PROFILE") {
-        return Ok(value.into());
+    fn page_event(&mut self, id: TabId, event: PageEvent) {
+        let Some(tab) = self.tabs.get_mut(id) else {
+            return;
+        };
+        match event {
+            PageEvent::Loading => {
+                tab.content.state.loading = true;
+                tab.content.state.message = "Loading…".into();
+            }
+            PageEvent::Changed => {}
+            PageEvent::Title(title) => tab.title = title.chars().take(120).collect(),
+            PageEvent::Completed(error) => {
+                tab.content.state.loading = false;
+                tab.content.state.message =
+                    error.map(|e| format!("Error: {e}")).unwrap_or_else(|| {
+                        "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
+                    });
+            }
+            PageEvent::Error(error) => tab.content.state.message = format!("Error: {error}"),
+        }
+        if let Ok(url) = tab.content.engine.view.url()
+            && navigation::address(&url).as_deref() == Ok(url.as_str())
+        {
+            tab.url = url.clone();
+            tab.content.state.url = url;
+        }
+        (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
+        self.persist();
     }
-    Ok(
-        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is not set")?)
-            .join("RustBrowser")
-            .join("v0.1"),
-    )
 }
 
 struct App {
@@ -164,27 +341,19 @@ struct App {
     proxy: EventLoopProxy<Event>,
     failure: Option<String>,
 }
-
 impl ApplicationHandler<Event> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.session.is_some() {
             return;
         }
         match Session::create(event_loop, self.proxy.clone()) {
-            Ok(mut session) => {
-                let initial = std::env::args()
-                    .nth(1)
-                    .unwrap_or_else(|| navigation::HOME.into());
-                if let Err(error) = session.command(Command::Navigate(initial)) {
-                    session.state.message = format!("Error: {error}");
-                    session.state.loading = false;
-                }
+            Ok(session) => {
                 session.render();
                 self.session = Some(session);
             }
             Err(error) => {
                 self.failure = Some(format!(
-                    "Could not start browser: {error}. Check the WebView2 Runtime installation."
+                    "Could not start browser: {error}. Check WebView2 Runtime and profile access."
                 ));
                 event_loop.exit();
             }
@@ -193,14 +362,17 @@ impl ApplicationHandler<Event> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
+                if let Some(session) = &self.session {
+                    session.persist();
+                }
                 self.session = None;
                 event_loop.exit();
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(session) = &mut self.session
-                    && let Err(error) = session.resize()
+                    && session.resize().is_err()
                 {
-                    session.state.message = format!("Error: {error}");
+                    session.notice = "Could not resize webpage.".into();
                     session.render();
                 }
             }
@@ -214,22 +386,23 @@ impl ApplicationHandler<Event> for App {
         match event {
             Event::Command(command) => {
                 if let Err(error) = session.command(command) {
-                    session.state.message = format!("Error: {error}");
-                    session.state.loading = false;
+                    session.notice = format!("Error: {error}");
                 }
             }
-            Event::Loading => {
-                session.state.loading = true;
-                session.state.message = "Loading…".into();
+            Event::Page(id, event) => session.page_event(id, event),
+            Event::OpenTab(source, url) => {
+                if session.tabs.items.iter().any(|tab| tab.id == source)
+                    && navigation::address(&url).is_ok()
+                    && let Err(error) = session.open_tab(url).and_then(|()| session.activate())
+                {
+                    session.notice = format!("Error: {error}");
+                }
+                session.persist();
             }
-            Event::Changed => {}
-            Event::Completed(error) => {
-                session.state.loading = false;
-                session.state.message = error.map(|e| format!("Error: {e}")).unwrap_or_else(|| {
-                    "Ready · Ctrl+L address · Alt+←/→ history · F5 reload · Ctrl+Tab page".into()
-                });
+            Event::StorageError => {
+                session.notice =
+                    "Error: Session could not be saved. Check profile access and disk space.".into()
             }
-            Event::Error(error) => session.state.message = format!("Error: {error}"),
         }
         session.render();
     }
