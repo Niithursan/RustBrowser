@@ -35,6 +35,7 @@ struct Pending {
 }
 #[derive(Default)]
 pub struct Permissions {
+    protected: std::collections::HashSet<TabId>,
     pub enabled: bool,
     pub rules: Vec<Rule>,
     pending: Vec<Pending>,
@@ -101,6 +102,7 @@ pub fn install(
                     .find(|r| r.origin == origin && r.capability == capability)
                 {
                     if rule.decision == Decision::Allow {
+                        manager.protected.insert(tab);
                         args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
                     }
                     return Ok(());
@@ -158,11 +160,15 @@ impl Permissions {
                 COREWEBVIEW2_PERMISSION_STATE_DENY
             };
             let result = pending.args.SetState(state);
+            if state == COREWEBVIEW2_PERMISSION_STATE_ALLOW {
+                self.protected.insert(pending.prompt.tab);
+            }
             let complete = pending.deferral.Complete();
             result.and(complete)
         }
     }
     pub fn cancel_tab(&mut self, tab: TabId) {
+        self.protected.remove(&tab);
         let ids: Vec<_> = self
             .pending
             .iter()
@@ -172,6 +178,9 @@ impl Permissions {
         for id in ids {
             let _ = self.resolve(id, Decision::Deny);
         }
+    }
+    pub fn protected(&self, tab: TabId) -> bool {
+        self.protected.contains(&tab)
     }
     pub fn cancel_all(&mut self) {
         let ids: Vec<_> = self.pending.iter().map(|p| p.prompt.id).collect();

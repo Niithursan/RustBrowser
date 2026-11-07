@@ -1,3 +1,4 @@
+pub mod background;
 pub mod downloads;
 pub mod library;
 pub mod navigation;

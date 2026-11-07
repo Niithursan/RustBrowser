@@ -272,6 +272,10 @@ fn origins_and_connection_indicators_do_not_overstate_security() {
         security::indicator("about:blank", false, false).scheme,
         "none"
     );
+    assert_eq!(
+        security::indicator(rust_browser::navigation::HOME, false, false).scheme,
+        "local"
+    );
 }
 
 #[test]

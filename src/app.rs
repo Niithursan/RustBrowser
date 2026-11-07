@@ -1,11 +1,12 @@
 use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
-    native_downloads, native_security,
+    native_background, native_downloads, native_security,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
 use rust_browser::{
+    background::{Lifecycle, Phase, Protection},
     library::{Action, Data, Filter},
     navigation,
     privacy::{self, ClearRequest, PrivateLease},
@@ -46,6 +47,11 @@ pub enum PageEvent {
 }
 #[derive(Debug)]
 pub enum Event {
+    SuspensionResult {
+        id: TabId,
+        ticket: u64,
+        success: bool,
+    },
     PermissionPrompt,
     EngineCleared {
         startup: bool,
@@ -68,6 +74,7 @@ pub enum Event {
 struct Page {
     engine: Engine,
     state: State,
+    lifecycle: Lifecycle,
 }
 struct Clearing {
     failed: bool,
@@ -106,6 +113,12 @@ struct Session {
     clearing: Option<Clearing>,
     next_clear: u64,
     permission_lockout: bool,
+    started: Instant,
+    next_background: Instant,
+    chrome_height: f64,
+    last_snapshot: RefCell<Option<Snapshot>>,
+    last_render: RefCell<String>,
+    last_title: RefCell<String>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
 }
@@ -172,7 +185,7 @@ impl Session {
         )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.4.0")
+                .with_title("Rust Browser 0.5.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -237,6 +250,12 @@ impl Session {
             clearing: None,
             next_clear: 0,
             permission_lockout: false,
+            started: Instant::now(),
+            next_background: Instant::now(),
+            chrome_height: ui::HEIGHT,
+            last_snapshot: RefCell::new(None),
+            last_render: RefCell::new(String::new()),
+            last_title: RefCell::new(String::new()),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -244,8 +263,15 @@ impl Session {
         } else {
             snapshot.tabs
         };
-        for url in restored {
+        for (index, url) in restored.into_iter().enumerate() {
             session.open_tab(url)?;
+            if let Some(tab) = session.tabs.active_mut() {
+                tab.pinned = snapshot.pinned.get(index).copied().unwrap_or(false);
+                tab.keep_awake = snapshot.keep_awake.get(index).copied().unwrap_or(false);
+                if let Some(title) = snapshot.titles.get(index) {
+                    tab.title = title.clone();
+                }
+            }
         }
         if let Some(tab) = session.tabs.items.get(snapshot.active) {
             let id = tab.id;
@@ -286,7 +312,7 @@ impl Session {
     }
 
     fn open_tab(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
-        let url = if url == "about:blank" {
+        let url = if url == "about:blank" || url == navigation::HOME {
             url
         } else {
             navigation::address(&url)?
@@ -315,7 +341,11 @@ impl Session {
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
         if self.ready {
-            engine.view.load_url(url)?;
+            engine.view.load_url(if url == navigation::HOME {
+                "about:blank"
+            } else {
+                url
+            })?;
         }
         let state = State {
             url: url.into(),
@@ -323,7 +353,20 @@ impl Session {
             message: "Connecting…".into(),
             ..State::default()
         };
-        Ok(Page { engine, state })
+        Ok(Page {
+            engine,
+            state,
+            lifecycle: Lifecycle::default(),
+        })
+    }
+
+    fn effective_panel(&self) -> Option<Panel> {
+        self.panel.or_else(|| {
+            self.tabs
+                .active()
+                .filter(|tab| tab.url == navigation::HOME)
+                .map(|_| Panel::NewTab)
+        })
     }
 
     fn resize(&self) -> wry::Result<()> {
@@ -335,18 +378,19 @@ impl Session {
             position: LogicalPosition::new(0.0, 0.0).into(),
             size: LogicalSize::new(
                 size.width,
-                if self.panel.is_some() {
+                if self.effective_panel().is_some() {
                     size.height
                 } else {
-                    ui::HEIGHT
+                    self.chrome_height
                 },
             )
             .into(),
         })?;
         if let Some(tab) = self.tabs.active() {
             tab.content.engine.view.set_bounds(Rect {
-                position: LogicalPosition::new(0.0, ui::HEIGHT).into(),
-                size: LogicalSize::new(size.width, (size.height - ui::HEIGHT).max(1.0)).into(),
+                position: LogicalPosition::new(0.0, self.chrome_height).into(),
+                size: LogicalSize::new(size.width, (size.height - self.chrome_height).max(1.0))
+                    .into(),
             })?;
         }
         Ok(())
@@ -362,14 +406,29 @@ impl Session {
             permissions.active = next;
         }
         let active = self.tabs.active_index();
-        for (index, tab) in self.tabs.items.iter().enumerate() {
+        let panel = self.effective_panel();
+        let now = self.started.elapsed();
+        for (index, tab) in self.tabs.items.iter_mut().enumerate() {
+            tab.content.lifecycle.visible(index == active, now);
+            if index == active
+                && matches!(
+                    tab.content.lifecycle.phase,
+                    Phase::Sleeping | Phase::Pending | Phase::ResumeFailed
+                )
+            {
+                let result = native_background::resume(&tab.content.engine.view);
+                tab.content.lifecycle.resumed(result.is_ok());
+                if result.is_err() {
+                    self.notice="This tab could not resume. Use Wake tab to retry; the page was kept intact.".into();
+                }
+            }
             tab.content
                 .engine
                 .view
-                .set_visible(index == active && self.panel.is_none())?;
+                .set_visible(index == active && panel.is_none())?;
         }
         self.resize()?;
-        if self.panel.is_some() {
+        if panel.is_some() {
             self.toolbar.focus()?;
         } else if let Some(tab) = self.tabs.active() {
             tab.content.engine.view.focus()?;
@@ -389,7 +448,7 @@ impl Session {
                 .items
                 .iter()
                 .map(|tab| {
-                    if navigation::address(&tab.url).is_ok() {
+                    if tab.url == navigation::HOME || navigation::address(&tab.url).is_ok() {
                         tab.url.clone()
                     } else {
                         navigation::HOME.into()
@@ -398,9 +457,27 @@ impl Session {
                 .collect(),
             active: self.tabs.active_index(),
             settings: self.settings.clone(),
+            pinned: self.tabs.items.iter().map(|tab| tab.pinned).collect(),
+            titles: self
+                .tabs
+                .items
+                .iter()
+                .map(|tab| {
+                    tab.title
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(120)
+                        .collect()
+                })
+                .collect(),
+            keep_awake: self.tabs.items.iter().map(|tab| tab.keep_awake).collect(),
         };
         if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
-            store.queue(snapshot);
+            let mut last = self.last_snapshot.borrow_mut();
+            if last.as_ref() != Some(&snapshot) {
+                store.queue(snapshot.clone());
+                *last = Some(snapshot);
+            }
         }
     }
 
@@ -408,11 +485,18 @@ impl Session {
         let Some(active) = self.tabs.active() else {
             return;
         };
+        let source = active.content.engine.view.url().unwrap_or_default();
+        let indicator_url = if active.url == navigation::HOME && source == "about:blank" {
+            navigation::HOME
+        } else {
+            source.as_str()
+        };
         let state = ToolbarState {
+            settings: &self.settings,
             private: self.private,
             restore_session: self.settings.restore_session,
             security: security::indicator(
-                &active.content.engine.view.url().unwrap_or_default(),
+                indicator_url,
                 active.content.state.loading,
                 active.content.state.failed,
             ),
@@ -422,7 +506,7 @@ impl Session {
             active_id: active.id,
             search_engine: self.settings.search_engine,
             notice: &self.notice,
-            panel: self.panel,
+            panel: self.effective_panel(),
             library: &self.library_data,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
@@ -434,28 +518,40 @@ impl Session {
                     id: tab.id,
                     title: &tab.title,
                     active: tab.id == active.id,
+                    pinned: tab.pinned,
+                    keep_awake: tab.keep_awake,
+                    phase: tab.content.lifecycle.phase,
+                    loading: tab.content.state.loading,
                 })
                 .collect(),
         };
         match serde_json::to_string(&state) {
             Ok(json) => {
-                if self
-                    .toolbar
-                    .evaluate_script(&format!("window.render && window.render({json})"))
-                    .is_err()
+                let changed = *self.last_render.borrow() != json;
+                if changed
+                    && self
+                        .toolbar
+                        .evaluate_script(&format!("window.render && window.render({json})"))
+                        .is_err()
                 {
                     eprintln!("Could not update browser toolbar.");
+                } else {
+                    *self.last_render.borrow_mut() = json;
                 }
             }
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
-        self.window.set_title(if self.private {
-            "Private — Rust Browser 0.4.0"
+        let title = if self.private {
+            "Private — Rust Browser 0.5.0"
         } else if active.content.state.loading {
-            "Loading… — Rust Browser 0.4.0"
+            "Loading… — Rust Browser 0.5.0"
         } else {
-            "Rust Browser 0.4.0"
-        });
+            "Rust Browser 0.5.0"
+        };
+        if self.last_title.borrow().as_str() != title {
+            self.window.set_title(title);
+            *self.last_title.borrow_mut() = title.into();
+        }
     }
 
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn std::error::Error>> {
@@ -472,10 +568,101 @@ impl Session {
         if self.clearing.is_some() {
             return Err("Data clearing is in progress; wait for its result.".into());
         }
-        if !self.ready && !matches!(command, Command::Ready) {
+        if !self.ready && !matches!(command, Command::Ready | Command::ToolbarHeight(_)) {
             return Err("Security initialization is not complete.".into());
         }
         match command {
+            Command::ToolbarHeight(height) => {
+                if !height.is_finite() || !(80.0..=320.0).contains(&height) {
+                    return Err("Invalid toolbar size.".into());
+                }
+                self.chrome_height = height;
+                self.resize()?;
+            }
+            Command::MoveTab { id, to } => {
+                self.tabs.move_to(id, to);
+                self.activate()?;
+            }
+            Command::MoveActive(backwards) => {
+                if let Some(tab) = self.tabs.active() {
+                    let id = tab.id;
+                    let index = self.tabs.active_index();
+                    let to = if backwards {
+                        index.saturating_sub(1)
+                    } else {
+                        (index + 1).min(self.tabs.items.len() - 1)
+                    };
+                    self.tabs.move_to(id, to);
+                    self.activate()?;
+                }
+            }
+            Command::PinActive => {
+                if let Some(tab) = self.tabs.active() {
+                    let id = tab.id;
+                    let pinned = !tab.pinned;
+                    self.tabs.pin(id, pinned);
+                    self.activate()?;
+                }
+            }
+            Command::KeepAwake => {
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.keep_awake = !tab.keep_awake;
+                }
+                self.activate()?;
+            }
+            Command::WakeTab => {
+                if let Some(tab) = self.tabs.active_mut() {
+                    let result = native_background::resume(&tab.content.engine.view);
+                    tab.content.lifecycle.resumed(result.is_ok());
+                    result?;
+                }
+            }
+            Command::SetAutomaticSuspension(enabled) => {
+                self.settings.automatic_suspension = enabled;
+                if !enabled {
+                    for tab in &mut self.tabs.items {
+                        if matches!(
+                            tab.content.lifecycle.phase,
+                            Phase::Sleeping | Phase::Pending
+                        ) {
+                            let result = native_background::resume(&tab.content.engine.view);
+                            tab.content.lifecycle.resumed(result.is_ok());
+                            if result.is_err() {
+                                self.notice="A sleeping tab could not resume. Select it and use Wake tab to retry.".into();
+                            }
+                        }
+                    }
+                }
+            }
+            Command::SetSuspendDelay(seconds) => {
+                if !(15..=3600).contains(&seconds) {
+                    return Err("Choose a suspension delay between 15 and 3600 seconds.".into());
+                }
+                self.settings.suspend_after_seconds = seconds;
+            }
+            Command::SetTheme(theme) => self.settings.theme = theme,
+            Command::SetShowRecent(value) => {
+                if self.private && value {
+                    return Err("Private windows do not show normal browsing history.".into());
+                }
+                self.settings.show_recent = value;
+                self.library_action(Action::Refresh)?;
+            }
+            Command::AddFavorite { title, url } => {
+                let mut settings = self.settings.clone();
+                settings.favorites.push(rust_browser::settings::Favorite {
+                    title: title.trim().into(),
+                    url: navigation::address(&url)?,
+                });
+                settings.validate()?;
+                self.settings = settings;
+            }
+            Command::RemoveFavorite(index) => {
+                if index >= self.settings.favorites.len() {
+                    return Err("Favorite no longer exists.".into());
+                }
+                self.settings.favorites.remove(index);
+            }
             Command::NewPrivateWindow => {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
@@ -542,6 +729,9 @@ impl Session {
                 }
             }
             Command::ShowPanel(panel) => {
+                if panel == Panel::NewTab {
+                    return self.command(Command::Home);
+                }
                 self.panel = Some(panel);
                 self.filter = Filter::default();
                 self.activate()?;
@@ -610,6 +800,9 @@ impl Session {
                 self.open_tab(navigation::HOME.into())?;
                 self.activate()?;
                 self.command(Command::FocusAddress)?;
+                if self.settings.show_recent && !self.private {
+                    self.library_action(Action::Refresh)?;
+                }
             }
             Command::SelectTab(id) => {
                 self.panel = None;
@@ -632,12 +825,11 @@ impl Session {
                 self.settings.search_engine = engine;
             }
             Command::Navigate(input) => {
+                let panel_open = self.effective_panel().is_some();
                 self.permissions.borrow_mut().cancel_all();
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.notice.clear();
-                if self.panel.take().is_some() {
-                    self.activate()?;
-                }
+                self.panel = None;
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.content.engine.view.load_url(&url)?;
                     tab.url = url.clone();
@@ -647,17 +839,52 @@ impl Session {
                     tab.content.state.failed = false;
                     tab.content.engine.view.focus()?;
                 }
+                if panel_open {
+                    self.activate()?;
+                }
             }
-            Command::Home => self.command(Command::Navigate(navigation::HOME.into()))?,
-            Command::Ready => self.activate()?,
+            Command::Home => {
+                self.panel = None;
+                self.permissions.borrow_mut().cancel_all();
+                if let Some(tab) = self.tabs.active_mut() {
+                    let result = native_background::resume(&tab.content.engine.view);
+                    tab.content.lifecycle.resumed(result.is_ok());
+                    result?;
+                    tab.url = navigation::HOME.into();
+                    tab.title = "New tab".into();
+                    tab.content.state.url = tab.url.clone();
+                    tab.content.state.failed = false;
+                    tab.content.engine.view.load_url("about:blank")?;
+                }
+                self.activate()?;
+                if self.settings.show_recent && !self.private {
+                    self.library_action(Action::Refresh)?;
+                }
+            }
+            Command::Ready => {
+                self.last_render.borrow_mut().clear();
+                self.activate()?;
+            }
             Command::FocusAddress => {
                 self.toolbar.focus()?;
                 self.toolbar.evaluate_script("window.focusAddress()")?;
             }
+            Command::FocusTabs => {
+                self.toolbar.focus()?;
+                self.toolbar
+                    .evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
+            }
             Command::FocusPage => {
                 self.panel = None;
                 self.activate()?;
-                if let Some(tab) = self.tabs.active() {
+                if self
+                    .tabs
+                    .active()
+                    .is_some_and(|tab| tab.url == navigation::HOME)
+                {
+                    self.toolbar
+                        .evaluate_script("document.getElementById('home-query').focus()")?;
+                } else if let Some(tab) = self.tabs.active() {
                     tab.content.engine.view.focus()?;
                 }
             }
@@ -681,18 +908,38 @@ impl Session {
     }
 
     fn page_event(&mut self, id: TabId, event: PageEvent) {
+        let was_local = self
+            .tabs
+            .active()
+            .is_some_and(|tab| tab.url == navigation::HOME);
         let Some(tab) = self.tabs.get_mut(id) else {
             return;
         };
         match event {
             PageEvent::Loading => {
+                tab.content.lifecycle.resumed(true);
+                tab.content.lifecycle.visible(true, self.started.elapsed());
+                tab.content.lifecycle.visible(
+                    self.permissions.borrow().active == Some(id),
+                    self.started.elapsed(),
+                );
                 self.permissions.borrow_mut().cancel_tab(id);
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
                 tab.content.state.message = "Loading…".into();
             }
             PageEvent::Changed => {}
-            PageEvent::Title(title) => tab.title = title.chars().take(120).collect(),
+            PageEvent::Title(title) => {
+                tab.title = if tab.url == navigation::HOME {
+                    "New tab".into()
+                } else {
+                    title
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(120)
+                        .collect()
+                }
+            }
             PageEvent::Completed {
                 error,
                 navigation_id,
@@ -738,6 +985,13 @@ impl Session {
             tab.content.state.url = url;
         }
         (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
+        let is_local = self
+            .tabs
+            .active()
+            .is_some_and(|tab| tab.url == navigation::HOME);
+        if was_local != is_local {
+            let _ = self.activate();
+        }
         self.persist();
         self.start_engine_clear();
     }
@@ -762,6 +1016,118 @@ impl Session {
             filter: self.filter.clone(),
         })?;
         Ok(())
+    }
+
+    fn suspension_protection(&self, id: TabId, audio: bool) -> Protection {
+        let tab = self.tabs.items.iter().find(|tab| tab.id == id);
+        Protection {
+            active: self.tabs.active().is_some_and(|tab| tab.id == id),
+            pinned: tab.is_some_and(|t| t.pinned),
+            keep_awake: tab.is_some_and(|t| t.keep_awake),
+            loading: tab.is_none_or(|t| t.content.state.loading),
+            downloads: self.downloads.borrow().active_count() > 0,
+            permissions: self.permissions.borrow().prompt().is_some(),
+            capture: self.permissions.borrow().protected(id),
+            audio,
+            busy: !self.ready || self.clearing.is_some(),
+        }
+    }
+    fn background_tick(&mut self) -> bool {
+        if Instant::now() < self.next_background {
+            return false;
+        }
+        self.next_background = Instant::now() + Duration::from_secs(1);
+        let now = self.started.elapsed();
+        let mut changed = false;
+        let ids: Vec<_> = self.tabs.items.iter().map(|tab| tab.id).collect();
+        for id in ids {
+            let Some(tab) = self.tabs.items.iter().find(|tab| tab.id == id) else {
+                continue;
+            };
+            let protection = self.suspension_protection(id, false);
+            if protection.protected() || !self.settings.automatic_suspension {
+                if matches!(
+                    tab.content.lifecycle.phase,
+                    Phase::Sleeping | Phase::Pending
+                ) {
+                    let success = native_background::resume(&tab.content.engine.view).is_ok();
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.content.lifecycle.resumed(success);
+                        tab.content.lifecycle.defer(now);
+                    }
+                    changed = true;
+                }
+                continue;
+            }
+            if tab.content.lifecycle.pending_expired(now) {
+                let resumed = native_background::resume(&tab.content.engine.view).is_ok();
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    if resumed {
+                        tab.content.lifecycle.unsupported();
+                    } else {
+                        tab.content.lifecycle.resumed(false);
+                        self.notice = "A timed-out sleeping tab could not resume. Select it and use Wake tab to retry.".into();
+                    }
+                }
+                changed = true;
+                continue;
+            }
+            if tab.content.lifecycle.phase != Phase::Awake {
+                continue;
+            }
+            let audio = match native_background::playing_audio(&tab.content.engine.view) {
+                Ok(value) => value,
+                Err(_) => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.content.lifecycle.unsupported();
+                    }
+                    changed = true;
+                    continue;
+                }
+            };
+            let protection = self.suspension_protection(id, audio);
+            if let Some(tab) = self.tabs.get_mut(id)
+                && let Some(ticket) = tab.content.lifecycle.request(
+                    now,
+                    Duration::from_secs(self.settings.suspend_after_seconds),
+                    true,
+                    protection,
+                )
+            {
+                if native_background::suspend(
+                    &tab.content.engine.view,
+                    self.proxy.clone(),
+                    id,
+                    ticket,
+                )
+                .is_err()
+                {
+                    tab.content.lifecycle.unsupported();
+                }
+                changed = true;
+            }
+        }
+        changed
+    }
+    fn suspension_result(&mut self, id: TabId, ticket: u64, success: bool) {
+        let protection = self.suspension_protection(id, false);
+        if let Some(tab) = self.tabs.get_mut(id) {
+            let eligible = self.settings.automatic_suspension && !protection.protected();
+            if !eligible
+                || tab.content.lifecycle.generation != ticket
+                || tab.content.lifecycle.phase != Phase::Pending
+            {
+                if success {
+                    let resumed = native_background::resume(&tab.content.engine.view).is_ok();
+                    tab.content.lifecycle.resumed(resumed);
+                    tab.content.lifecycle.defer(self.started.elapsed());
+                }
+            } else {
+                tab.content
+                    .lifecycle
+                    .complete(ticket, success, self.started.elapsed());
+            }
+        }
     }
 
     fn begin_clear(
@@ -892,6 +1258,14 @@ impl Session {
 #[path = "app_validation.rs"]
 mod validation;
 
+#[cfg(test)]
+#[path = "benchmark_probe.rs"]
+mod benchmark_probe;
+
+#[cfg(test)]
+#[path = "ux_validation.rs"]
+mod ux_validation;
+
 struct App {
     session: Option<Session>,
     proxy: EventLoopProxy<Event>,
@@ -929,6 +1303,8 @@ impl ApplicationHandler<Event> for App {
                         value.as_bytes()[0].to_ascii_uppercase() as u32
                     }
                     Key::Named(NamedKey::F5) => 0x74,
+                    Key::Named(NamedKey::PageUp) => 0x21,
+                    Key::Named(NamedKey::PageDown) => 0x22,
                     Key::Named(NamedKey::F6) => 0x75,
                     Key::Named(NamedKey::F7) => 0x76,
                     Key::Named(NamedKey::Tab) => 0x09,
@@ -987,10 +1363,11 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            Event::SuspensionResult{id,ticket,success}=>session.suspension_result(id,ticket,success),
             Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
                 if startup {
-                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if tab.content.engine.view.load_url(&tab.url).is_err(){session.notice="A restored tab could not load.".into();}}}
+                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if tab.content.engine.view.load_url(if tab.url==navigation::HOME {"about:blank"}else{&tab.url}).is_err(){session.notice="A restored tab could not load.".into();}}}
                     else {session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
                 } else if let Some(clear)=&mut session.clearing && clear.ticket==ticket {
                     clear.engine_done=true;clear.failed |= !success;
@@ -1070,6 +1447,7 @@ impl ApplicationHandler<Event> for App {
                 session.persist();
             }
             Event::StorageError => {
+                *session.last_snapshot.borrow_mut()=None;
                 session.notice =
                     "Error: Session could not be saved. Check profile access and disk space.".into()
             }
@@ -1080,6 +1458,9 @@ impl ApplicationHandler<Event> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(session) = &mut self.session {
+            if session.background_tick() {
+                session.render();
+            }
             if session.permissions.borrow_mut().expire() {
                 session.render();
             }
@@ -1105,7 +1486,13 @@ impl ApplicationHandler<Event> for App {
                     Instant::now() + Duration::from_millis(250),
                 ));
             } else {
-                event_loop.set_control_flow(ControlFlow::Wait);
+                event_loop.set_control_flow(
+                    if session.settings.automatic_suspension && session.tabs.items.len() > 1 {
+                        ControlFlow::WaitUntil(session.next_background)
+                    } else {
+                        ControlFlow::Wait
+                    },
+                );
             }
         }
     }

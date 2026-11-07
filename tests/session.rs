@@ -71,6 +71,7 @@ fn tabs_search_settings_and_active_session_roundtrip() {
             search_engine: SearchEngine::DuckDuckGo,
             ..Settings::default()
         },
+        ..Snapshot::default()
     };
     store.queue(snapshot.clone());
     drop(store); // Shutdown must flush even before the debounce expires.

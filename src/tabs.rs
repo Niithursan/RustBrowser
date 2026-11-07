@@ -6,6 +6,8 @@ pub struct Tab<T> {
     pub id: TabId,
     pub url: String,
     pub title: String,
+    pub pinned: bool,
+    pub keep_awake: bool,
     pub content: T,
 }
 
@@ -51,6 +53,8 @@ impl<T> Tabs<T> {
             id,
             url,
             title: "New tab".into(),
+            pinned: false,
+            keep_awake: false,
             content,
         });
         self.active = self.items.len() - 1;
@@ -63,6 +67,48 @@ impl<T> Tabs<T> {
         } else {
             false
         }
+    }
+    pub fn pin(&mut self, id: TabId, pinned: bool) -> bool {
+        let Some(index) = self.items.iter().position(|tab| tab.id == id) else {
+            return false;
+        };
+        if self.items[index].pinned == pinned {
+            return false;
+        }
+        let active = self.active().map(|tab| tab.id);
+        let mut tab = self.items.remove(index);
+        tab.pinned = pinned;
+        let boundary = self.items.iter().take_while(|tab| tab.pinned).count();
+        self.items.insert(boundary, tab);
+        if let Some(id) = active {
+            self.select(id);
+        }
+        true
+    }
+    /// Move within the pinned or ordinary group without recreating content.
+    pub fn move_to(&mut self, id: TabId, to: usize) -> bool {
+        let Some(from) = self.items.iter().position(|tab| tab.id == id) else {
+            return false;
+        };
+        if to >= self.items.len() {
+            return false;
+        }
+        let pins = self.items.iter().take_while(|tab| tab.pinned).count();
+        let to = if self.items[from].pinned {
+            to.min(pins.saturating_sub(1))
+        } else {
+            to.max(pins)
+        };
+        if from == to {
+            return false;
+        }
+        let active = self.active().map(|tab| tab.id);
+        let tab = self.items.remove(from);
+        self.items.insert(to, tab);
+        if let Some(id) = active {
+            self.select(id);
+        }
+        true
     }
     pub fn cycle(&mut self, backwards: bool) {
         if !self.items.is_empty() {
