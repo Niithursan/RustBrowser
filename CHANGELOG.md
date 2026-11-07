@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+- Isolated private windows with verified WebView2 InPrivate mode, no history or
+  session retention, and temporary profile cleanup on exit or later recovery.
+- Origin-scoped camera, microphone, location and notification prompts, optional
+  remembered decisions and revocation. Unknown and background requests stay denied.
+- Confirmed browsing-data clearing for history, cookies/site storage, cache,
+  sessions and permissions, with engine completion and partial-failure reporting.
+- Separate normal session-retention preference and protection against stale writes.
+- HTTP/HTTPS origin indicators and native blocking of external URI launches.
+- Schema 3 permission storage and Windows native security regression checks.
+
 ## 0.3.0
 
 - Bookmark manager: Ctrl+D, add/edit/remove, flat folders, search and open in current/new tab.
