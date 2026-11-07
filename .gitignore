@@ -1,0 +1,16 @@
+/target/
+*.zip
+*.pdb
+*.log
+/dist/
+.env
+.env.*
+!.env.example
+/.idea/
+/.vs/
+/profiles/
+/user-data/
+/test-profile/
+/bin/
+Thumbs.db
+.DS_Store
