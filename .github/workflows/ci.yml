@@ -32,6 +32,10 @@ jobs:
         run: cargo test --locked --bin rust-browser native_tab_sleep_resume_and_local_page_security -- --ignored --test-threads=1
       - name: Private new-tab isolation
         run: cargo test --locked --bin rust-browser native_private_newtab_settings_are_ephemeral -- --ignored --test-threads=1
+      - name: Native linked popups, media and upload protection
+        run: cargo test --locked --bin rust-browser native_popup_opener_upload_audio_fullscreen_and_redirects -- --ignored --test-threads=1
+      - name: Native renderer crash and reload recovery
+        run: cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
       - run: cargo build --locked
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

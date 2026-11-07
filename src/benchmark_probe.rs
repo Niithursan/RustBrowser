@@ -19,6 +19,7 @@ struct Metrics {
     switch_responsive_ms: Vec<f64>,
     scale_factor: f64,
     tabs: usize,
+    churn_cycles: u64,
 }
 struct Probe {
     app: App,
@@ -39,6 +40,8 @@ struct Probe {
     switching: Option<Instant>,
     callback: Arc<Mutex<Option<Instant>>>,
     failure: Option<String>,
+    churn: bool,
+    next_churn: Instant,
 }
 impl Probe {
     fn emit(&self) -> std::io::Result<()> {
@@ -113,7 +116,40 @@ impl Probe {
             self.phase = 3;
             self.phase_started = Instant::now();
             self.stage("soak")?;
+        } else if self.phase == 3
+            && self.churn
+            && self.phase_started.elapsed() < self.soak
+            && Instant::now() >= self.next_churn
+        {
+            let s = self.app.session.as_mut().ok_or("No soak session")?;
+            if s.tabs.items.len() > self.metrics.tabs {
+                let id = s.tabs.items.last().ok_or("No churn tab")?.id;
+                s.close_tab(id).map_err(|_| "Could not close churn tab")?;
+            }
+            s.open_tab("about:blank".into())
+                .map_err(|_| "Could not create churn tab")?;
+            map_fixture(
+                &s.tabs.active().ok_or("No churn view")?.content.engine.view,
+                &self.profile,
+            )
+            .map_err(|_| "Could not map churn fixture")?;
+            s.command(Command::Navigate(format!("{FIXTURE_URL}?churn")))
+                .map_err(|_| "Could not navigate churn fixture")?;
+            let index = self.metrics.churn_cycles as usize % self.metrics.tabs;
+            let id = s.tabs.items[index].id;
+            s.command(Command::SelectTab(id))
+                .map_err(|_| "Could not switch soak tab")?;
+            s.render();
+            self.metrics.churn_cycles += 1;
+            self.next_churn = Instant::now() + Duration::from_secs(10);
+            self.emit().map_err(|_| "Could not update soak metrics")?;
         } else if self.phase == 3 && self.phase_started.elapsed() >= self.soak {
+            let s = self.app.session.as_mut().ok_or("No soak session")?;
+            if s.tabs.items.len() > self.metrics.tabs {
+                let id = s.tabs.items.last().ok_or("No churn tab")?.id;
+                s.close_tab(id)
+                    .map_err(|_| "Could not close final churn tab")?;
+            }
             self.phase = 4;
             self.stage("switching")?;
         } else if self.phase == 4 {
@@ -277,7 +313,11 @@ fn windows_performance_probe() {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(default)
-                .min(180),
+                .min(if key == "RUST_BROWSER_BENCH_SOAK" {
+                    3600
+                } else {
+                    180
+                }),
         )
     };
     let started = Instant::now();
@@ -312,6 +352,8 @@ fn windows_performance_probe() {
         switching: None,
         callback: Arc::new(Mutex::new(None)),
         failure: None,
+        churn: std::env::var("RUST_BROWSER_BENCH_CHURN").as_deref() == Ok("1"),
+        next_churn: Instant::now(),
     };
     let result = event_loop.run_app(&mut probe);
     assert!(result.is_ok());

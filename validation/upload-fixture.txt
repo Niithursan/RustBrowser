@@ -1,0 +1,2 @@
+Synthetic Rust Browser compatibility upload fixture.
+This file contains no personal, account, or authentication data.
