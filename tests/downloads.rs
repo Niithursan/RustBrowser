@@ -4,6 +4,20 @@ use std::{
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
+
+#[test]
+fn stalled_downloads_do_not_stay_alive_by_repeating_the_same_bytes() {
+    use std::time::Duration;
+    let mut progress = rust_browser::downloads::ProgressWatch::default();
+    progress.observe(4096, Duration::from_secs(10));
+    progress.observe(0, Duration::from_secs(60));
+    progress.observe(4096, Duration::from_secs(100));
+    assert_eq!(progress.bytes(), 4096);
+    assert!(!progress.stalled(Duration::from_secs(129)));
+    assert!(progress.stalled(Duration::from_secs(130)));
+    progress.observe(8192, Duration::from_secs(131));
+    assert!(!progress.stalled(Duration::from_secs(200)));
+}
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Folder(PathBuf);
 impl Folder {
@@ -34,6 +48,8 @@ fn hostile_filenames_cannot_escape_or_use_windows_devices_and_streams() {
     }
     assert_eq!(safe_filename("CON.txt"), "_CON.txt");
     assert_eq!(safe_filename("LPT9"), "_LPT9");
+    assert_eq!(safe_filename("COM¹.txt"), "_COM¹.txt");
+    assert_eq!(safe_filename("CONOUT$"), "_CONOUT$");
     assert_eq!(safe_filename("hello.txt:secret"), "hello.txtsecret");
     assert!(!safe_filename("invoice\u{202e}exe.pdf").contains('\u{202e}'));
     assert!(safe_filename(&"日".repeat(1000)).chars().count() <= 100);
@@ -60,4 +76,32 @@ fn cancellation_and_missing_files_are_safe() {
     stage.clean_partial();
     assert!(!stage.temporary.exists());
     assert!(!folder.0.join("a.txt").exists());
+}
+
+#[test]
+fn simultaneous_completions_cannot_replace_each_other() {
+    let folder = Folder::new();
+    let outputs = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..6)
+            .map(|index| {
+                let path = &folder.0;
+                scope.spawn(move || {
+                    let stage = Staged::create(path, "same.txt").unwrap();
+                    fs::write(&stage.temporary, [index]).unwrap();
+                    stage.publish().unwrap()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let mut names = outputs.clone();
+    names.sort();
+    names.dedup();
+    assert_eq!(names.len(), 6);
+    let mut bytes: Vec<_> = outputs.iter().map(|p| fs::read(p).unwrap()[0]).collect();
+    bytes.sort();
+    assert_eq!(bytes, vec![0, 1, 2, 3, 4, 5]);
 }

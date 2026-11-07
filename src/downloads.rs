@@ -5,6 +5,27 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Count forward progress only: retrying the same bytes must not reset a stalled transfer.
+#[derive(Default)]
+pub struct ProgressWatch {
+    highest: i64,
+    last_advance: std::time::Duration,
+}
+impl ProgressWatch {
+    pub fn observe(&mut self, received: i64, elapsed: std::time::Duration) {
+        if received > self.highest {
+            self.highest = received;
+            self.last_advance = elapsed;
+        }
+    }
+    pub fn bytes(&self) -> i64 {
+        self.highest
+    }
+    pub fn stalled(&self, elapsed: std::time::Duration) -> bool {
+        elapsed.saturating_sub(self.last_advance) >= std::time::Duration::from_secs(120)
+    }
+}
+
 pub fn safe_filename(suggested: &str) -> String {
     let name = suggested.rsplit(['/', '\\']).next().unwrap_or("");
     let name: String = name.chars().filter(|c| !c.is_control() && !matches!(c,
@@ -19,10 +40,16 @@ pub fn safe_filename(suggested: &str) -> String {
         .unwrap_or("")
         .trim_end()
         .to_ascii_uppercase();
-    if ["CON", "PRN", "AUX", "NUL", "CLOCK$"].contains(&stem.as_str())
-        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.len() == 4
-            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+    if ["CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$"].contains(&stem.as_str())
+        || stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
     {
         name.insert(0, '_');
     }
