@@ -6,11 +6,12 @@ use crate::{
 use rust_browser::{navigation, tabs::TabId};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
-    AcceleratorKeyPressedEventHandler, HistoryChangedEventHandler, NavigationCompletedEventHandler,
+    AcceleratorKeyPressedEventHandler, HistoryChangedEventHandler,
+    LaunchingExternalUriSchemeEventHandler, NavigationCompletedEventHandler,
     SourceChangedEventHandler,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
-use windows::core::BOOL;
+use windows::core::{BOOL, Interface};
 use winit::{event_loop::EventLoopProxy, window::Window};
 use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebViewExtWindows};
 
@@ -25,6 +26,8 @@ impl Engine {
         proxy: EventLoopProxy<Event>,
         id: TabId,
         downloads: crate::native_downloads::Shared,
+        permissions: crate::native_security::Shared,
+        private: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let nav_proxy = proxy.clone();
         let popup_proxy = proxy.clone();
@@ -33,9 +36,11 @@ impl Engine {
             // Preserve WebView2 security defaults instead of Wry's default browser arguments.
             .with_additional_browser_args("")
             .with_autoplay(false)
+            .with_clipboard(false)
+            .with_incognito(private)
             .with_focused(false)
             .with_navigation_handler(move |url| {
-                let allowed = navigation::allowed(&url);
+                let allowed = url == "about:blank" || navigation::allowed(&url);
                 if !allowed {
                     let _ = nav_proxy.send_event(Event::Page(
                         id,
@@ -48,7 +53,6 @@ impl Engine {
                 let _ = popup_proxy.send_event(Event::OpenTab(id, url));
                 wry::NewWindowResponse::Deny
             })
-            .with_permission_handler(|_| wry::PermissionResponse::Deny)
             .with_on_page_load_handler(move |event, _| {
                 if matches!(event, wry::PageLoadEvent::Started) {
                     let _ = load_proxy.send_event(Event::Page(id, PageEvent::Loading));
@@ -62,12 +66,26 @@ impl Engine {
                 }
             })
             .build_as_child(window)?;
+        if private {
+            crate::native_security::verify_private(&view)?;
+        }
+        crate::native_security::install(&view, permissions, proxy.clone(), id)?;
         crate::native_downloads::install(&view, downloads, proxy.clone(), id)?;
         // SAFETY: handlers are registered against live WebView2 objects on the UI/COM
         // apartment thread. They enqueue owned events; no COM object crosses threads.
         unsafe {
             let core = view.webview();
             let mut token = 0;
+            let external: ICoreWebView2_18 = core.cast()?;
+            external.add_LaunchingExternalUriScheme(
+                &LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
+                    if let Some(args) = args {
+                        args.SetCancel(true)?;
+                    }
+                    Ok(())
+                })),
+                &mut token,
+            )?;
             let p = proxy.clone();
             core.add_SourceChanged(
                 &SourceChangedEventHandler::create(Box::new(move |_, _| {
