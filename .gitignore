@@ -17,6 +17,9 @@
 /session-invalid-*.json
 /content/
 /toolbar/
+/library.sqlite*
+/library.corrupt-*
+.rust-browser-download-*/
 /bin/
 Thumbs.db
 .DS_Store

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+- Bookmark manager: Ctrl+D, add/edit/remove, flat folders, search and open in current/new tab.
+- Persistent searchable browsing history with titles/timestamps, date filters, duplicate
+  coalescing, individual removal, confirmed clearing and a saved recording toggle.
+- Query-string and credential URLs excluded from automatic history; fragments stripped.
+- Bundled SQLite, background database ownership, transactional schema migrations and
+  preservation of corrupt or newer-schema data.
+- Native HTTP(S) downloads with destination folder picker, progress, terminal-state
+  events, cancellation, collision-safe filenames and Open folder.
+- Filename/path protections, atomic no-replace finalization, partial cleanup and a
+  two-minute no-forward-progress safeguard; no automatic execution or application resume.
+- Ctrl+H, Ctrl+J and Ctrl+Shift+O; existing tab/navigation/search shortcuts retained.
+- Database, filesystem-safety and session-compatibility regression tests.
+
 ## 0.2.0
 
 - Multiple independent WebView2 tabs with stable IDs and separate navigation state.

@@ -23,8 +23,18 @@ impl SearchEngine {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Settings {
     pub search_engine: SearchEngine,
+    pub history_enabled: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            search_engine: SearchEngine::default(),
+            history_enabled: true,
+        }
+    }
 }
