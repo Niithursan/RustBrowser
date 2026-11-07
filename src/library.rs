@@ -8,7 +8,7 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 pub const HISTORY_LIMIT: i64 = 10_000;
 
 pub fn now() -> i64 {
@@ -30,6 +30,16 @@ pub struct Filter {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
+    SetPermission {
+        origin: String,
+        capability: crate::security::Capability,
+        decision: Option<crate::security::Decision>,
+    },
+    ClearLibrary {
+        history: bool,
+        permissions: bool,
+        confirmed: bool,
+    },
     Refresh,
     SaveBookmark {
         id: Option<i64>,
@@ -82,6 +92,7 @@ pub struct Visit {
 }
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Data {
+    pub permissions: Vec<crate::security::Rule>,
     pub bookmarks: Vec<Bookmark>,
     pub folders: Vec<Folder>,
     pub history: Vec<Visit>,
@@ -177,11 +188,57 @@ impl Database {
             )?;
             tx.commit()?;
         }
+        if version < 3 {
+            let tx = connection.transaction()?;
+            tx.execute_batch("CREATE TABLE permissions(origin TEXT NOT NULL, capability TEXT NOT NULL, decision TEXT NOT NULL, PRIMARY KEY(origin,capability)); PRAGMA user_version=3;")?;
+            tx.commit()?;
+        }
         Ok(Self { connection })
     }
 
     pub fn apply(&mut self, action: Action) -> Result<()> {
         match action {
+            Action::SetPermission {
+                origin,
+                capability,
+                decision,
+            } => {
+                if crate::security::permission_origin(&origin).as_deref() != Some(origin.as_str()) {
+                    return Err("Invalid permission origin.".into());
+                }
+                let capability = serde_json::to_string(&capability)?;
+                if let Some(decision) = decision {
+                    let count: i64 =
+                        self.connection
+                            .query_row("SELECT count(*) FROM permissions", [], |r| r.get(0))?;
+                    if count >= 512 {
+                        return Err("Permission rule limit reached; revoke an entry first.".into());
+                    }
+                    self.connection.execute("INSERT INTO permissions(origin,capability,decision) VALUES(?1,?2,?3) ON CONFLICT(origin,capability) DO UPDATE SET decision=excluded.decision",params![origin,capability,serde_json::to_string(&decision)?])?;
+                } else {
+                    self.connection.execute(
+                        "DELETE FROM permissions WHERE origin=?1 AND capability=?2",
+                        params![origin, capability],
+                    )?;
+                }
+            }
+            Action::ClearLibrary {
+                history,
+                permissions,
+                confirmed,
+            } => {
+                if !confirmed {
+                    return Err("Confirmation required.".into());
+                }
+                let tx = self.connection.transaction()?;
+                if history {
+                    tx.execute("DELETE FROM visits", [])?;
+                }
+                if permissions {
+                    tx.execute("DELETE FROM permissions", [])?;
+                }
+                tx.commit()?;
+            }
             Action::Refresh => {}
             Action::SaveBookmark {
                 id,
@@ -312,7 +369,33 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let bookmarks = self.connection.prepare("SELECT id,title,url,folder FROM bookmarks WHERE instr(lower(title||' '||url),lower(?1))>0 AND (?2 IS NULL OR coalesce(folder,0)=?2) ORDER BY title COLLATE NOCASE,id LIMIT 200")?.query_map(params![query,filter.folder], |r| Ok(Bookmark { id:r.get(0)?, title:r.get(1)?, url:r.get(2)?, folder:r.get(3)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let history = self.connection.prepare("SELECT id,title,url,visited_at FROM visits WHERE instr(lower(title||' '||url),lower(?1))>0 AND (?2 IS NULL OR visited_at>=?2) AND (?3 IS NULL OR visited_at<?3) ORDER BY visited_at DESC,id DESC LIMIT 200")?.query_map(params![query,filter.from,filter.until], |r| Ok(Visit { id:r.get(0)?, title:r.get(1)?, url:r.get(2)?, timestamp:r.get(3)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut permissions = Vec::new();
+        let mut statement=self.connection.prepare("SELECT origin,capability,decision FROM permissions ORDER BY origin,capability LIMIT 513")?;
+        let values = statement.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for value in values {
+            let (origin, capability, decision) = value?;
+            if crate::security::permission_origin(&origin).as_deref() != Some(origin.as_str()) {
+                continue;
+            }
+            if let (Ok(capability), Ok(decision)) = (
+                serde_json::from_str(&capability),
+                serde_json::from_str(&decision),
+            ) {
+                permissions.push(crate::security::Rule {
+                    origin,
+                    capability,
+                    decision,
+                });
+            }
+        }
         Ok(Data {
+            permissions,
             bookmarks,
             folders,
             history,
