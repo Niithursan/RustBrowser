@@ -1,6 +1,6 @@
-# Rust Browser 0.1
+# Rust Browser 0.2.0
 
-A working, single-window Windows browser starter using Rust, **winit 0.30** and
+A multi-tab, single-window Windows browser starter using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
@@ -49,11 +49,20 @@ The console remains available intentionally for diagnostics in this initial vers
 | Reload | Button, Ctrl+R or F5 |
 | Stop | × button or Escape |
 | Home | Home button → https://example.com/ |
-| Focus webpage from toolbar | Ctrl+Tab |
+| New tab | + button or Ctrl+T |
+| Close active tab | Ctrl+W (closing the last tab opens Home) |
+| Close a specific tab | Its × button |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab (wraps around) |
+| Select a tab | Click its title |
+| Focus webpage from toolbar | F7 |
 | Move through toolbar | Tab / Shift+Tab |
 
 Bare domains receive `https://`. Explicit `http://` supports local development.
-Input is a URL, not a search query. HTTP is not upgraded automatically when typed
+Words and phrases are searched with the selected provider. The toolbar selector
+chooses Google (default), DuckDuckGo or Bing and saves that choice automatically.
+Queries are URL-encoded; active schemes and embedded credentials remain blocked.
+Inputs resembling a domain or localhost address are treated as URLs. Single-label
+intranet hosts require an explicit `http://` or `https://` prefix. HTTP is not upgraded automatically when typed
 explicitly. The displayed URL includes its scheme; there is no certificate/security
 indicator yet. Website navigation, redirects, fragments and History API changes
 update the address field. Editing the field pauses updates until focus leaves it.
@@ -68,9 +77,26 @@ render normally and count as completed navigation.
 ## Data and boundaries
 
 Cookies, site storage and cache persist in `%LOCALAPPDATA%\RustBrowser\v0.1\content`.
-The toolbar has its own `toolbar` profile folder. There is no Rust history database,
+The toolbar has its own `toolbar` profile folder. The existing v0.1 folder is reused
+to preserve cookies on upgrade. There is no Rust history database,
 password manager, profile management UI, clearing-data UI or private mode yet.
 Close every instance before manually removing a profile folder.
+
+`session.json` stores tab URLs, order, active tab and search settings in **plain text**
+inside this profile. URLs may contain sensitive paths, queries or tokens. No URL log
+or page content is saved by the Rust session layer. Keep the profile private and out
+of Git; OS account permissions protect it, not application encryption. Session saves
+are coalesced on a background thread, atomically replaced and flushed on normal exit.
+A profile lock prevents two v0.2 instances from overwriting the same session.
+Do not run v0.1 and v0.2 against the same profile simultaneously.
+
+Restart automatically restores all tab URLs and the active tab. An optional command
+line URL opens an additional tab. Back/forward history, form data, scroll position and
+page JavaScript state are not restored. Up to 64 live tabs are supported; hidden tabs
+retain their engines and may continue loading, playing media or using resources.
+There is no tab suspension yet. Invalid, oversized or unsupported session files are
+backed up as `session-invalid-*.json`, with a visible recovery notice. Disk-write
+failures show a notice; check disk space and profile permissions before exiting.
 
 Use a separate profile for testing:
 
@@ -88,9 +114,9 @@ WebView2 permission requests are denied and downloads are cancelled in this vers
 Wry's default extra browser arguments are replaced with an empty argument string to
 retain the Runtime's default security features. Media autoplay is disabled.
 
-New-window requests are redirected into the current content view. This supports
-basic target=_blank links but can break popup-based sign-in flows. There are no tabs,
-extensions, download manager, printing UI, sync, crash recovery or default-browser
+New-window requests open a new tab. This supports
+basic target=_blank links but can break popup-based sign-in flows. There are no
+extensions, download manager, printing UI, sync, full crash recovery or default-browser
 registration. Permission UI, origin indicators, threat protections and compatibility
 need a dedicated review before everyday browsing. Runtime behavior remains dependent
 on Microsoft's installed WebView2 version and policy.
@@ -101,15 +127,21 @@ on Microsoft's installed WebView2 version and policy.
 src/main.rs           Entry point and Windows platform gate
 src/app.rs            Event loop, session lifetime, layout, profile and state
 src/navigation.rs     URL normalization and scheme policy, with unit tests
+src/tabs.rs           Engine-independent tab IDs, ordering and selection
+src/settings.rs       Search provider settings and query encoding
+src/storage.rs        Validated snapshots, profile lock and background persistence
+src/lib.rs            Testable core shared by application and integration tests
 src/engine.rs         Wry content view and Windows COM adapter
 src/ui/mod.rs         Toolbar commands and serializable view state
 src/ui/toolbar.html   Local accessible toolbar
 ```
 
-Keep the engine view and session logic separate when adding tabs: introduce a tab
-model with one engine instance per tab, shared content context, active-tab bounds
-and focus control. Add bookmarks/settings/history as dedicated storage modules,
-then explicit privacy/profile services and permission decisions. Add an engine
+Each tab owns one engine instance with its own navigation state. All content tabs
+share the site's WebView2 context, while the toolbar remains separate. Native events
+carry stable tab IDs, including background callbacks; late events from closed tabs
+are ignored. Switching hides/shows views without recreation. The generic tab model,
+settings and persistence do not depend on WebView2. Add bookmarks/history and explicit
+privacy/profile services next. Add an engine
 trait only when a second backend's actual requirements are known. Servo would need
 its own embedding, rendering/input integration and compatibility testing; it cannot
 simply be substituted into Wry. No Servo dependency is included.
