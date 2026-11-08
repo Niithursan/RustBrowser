@@ -210,10 +210,14 @@ int wmain(int argc, wchar_t** argv) {
             std::wstring(argv[1]) == L"--cleanup" || std::wstring(argv[1]) == L"--diagnostics-appcontainer" ||
             std::wstring(argv[1]) == L"--diagnostics-lpac" || std::wstring(argv[1]) == L"--diagnostics-malformed" ||
             std::wstring(argv[1]) == L"--diagnostics-hang" || std::wstring(argv[1]) == L"--diagnostics-crash" ||
+            std::wstring(argv[1]) == L"--diagnostics-malformed-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-hang-lpac" ||
             std::wstring(argv[1]) == L"--diagnostics-crash-lpac"), "Select a fixed probe mode");
         const bool diagnostic = std::wstring(argv[1]).find(L"--diagnostics-") == 0;
         const bool less_privileged = std::wstring(argv[1]) == L"--lpac" ||
             std::wstring(argv[1]) == L"--diagnostics-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-malformed-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-hang-lpac" ||
             std::wstring(argv[1]) == L"--diagnostics-crash-lpac";
         const fs::path run = fs::current_path();
         require(fs::is_regular_file(run / L".rust-browser-isolation-probe"), "Fresh owned run marker");
@@ -304,7 +308,9 @@ int wmain(int argc, wchar_t** argv) {
         require(SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) != FALSE,
             "Set job limits");
         if (diagnostic) {
-            const std::wstring mode = std::wstring(argv[1]).substr(std::wstring(L"--diagnostics-").size());
+            std::wstring mode = std::wstring(argv[1]).substr(std::wstring(L"--diagnostics-").size());
+            if (mode == L"malformed-lpac") mode = L"malformed";
+            if (mode == L"hang-lpac") mode = L"hang";
             run_diagnostics(exe, run, container.sid, job.value, event.value, less_privileged, mode);
             require(container.remove(), "Delete owned diagnostic profile");
             return 0;

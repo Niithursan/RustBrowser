@@ -81,7 +81,9 @@ foreach ($attempt in 1..$Repeats) {
 if ($Diagnostics) {
     foreach ($fault in 'malformed','hang') {
         $run = New-OwnedProbeRun
-        $result = Invoke-OwnedProbe $run ('diagnostics-' + $fault)
+        $faultMode = 'diagnostics-' + $fault
+        if ($Mode -eq 'LPAC') { $faultMode += '-lpac' }
+        $result = Invoke-OwnedProbe $run $faultMode
         $result.stdout
         $result.stderr
         if ($result.exit_code -ne 0) { throw "The $fault IPC rejection test failed. Inspect $run." }
