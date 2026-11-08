@@ -43,7 +43,8 @@ Its profile retained two files.
 - Maximize resized the view and repainted the fixture at observed scale 1.0.
   The interactive run closed normally with exit code 0 and a teardown marker.
   Cached traversal exposed a stale refusal title during testing. The final
-  build adds a traversal-complete status update.
+  build displayed “Fixture history restored” on Back and Forward, then closed
+  normally with exit code 0. The observed console child exited as well.
 - Three final-build smoke runs reached the first ready presentation in
   **612, 781, and 624 ms**. Each logged teardown and exited 0. A fourth
   launch refused to reuse the third run and preserved its fixture hash.
@@ -58,33 +59,41 @@ WebView2 presentation timing and numeric input latency are unavailable.
 ## Process-tree resource sample
 
 The [numeric collector](../../validation/sample-process.ps1) observed one
-1200 × 820 logical fixture window after a 20-second settling interval.
-The Servo sample used the interactive build preceding the final status and
-smoke changes. The WebView2 row is historical context from the
-[v0.7 observation](RESULTS.md). Both display the same fixture HTML and
-canvas workload.
+1200 × 820 logical fixture window per run. WebView2 ran first with
+Runtime 157.0.4341.42, followed by the final Servo executable. Both used
+fresh profiles and displayed the same fixture HTML and canvas workload.
+The shared fixture SHA-256 was
+`89e77a3810fcc78b4032f298beee38012a0174c7aca2c42094cfcd5c093a899f`.
+Each sample began after visual confirmation and at least 20 seconds of
+settling. The [v0.7 procedure](README.md#controlled-input-and-resource-comparison)
+describes the loopback server and one-tab WebView2 setup.
 
 | Shell | Samples / observed time | Mean private memory (range) | Mean summed working set | Mean process count | CPU per logical core |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| v0.8 native Servo embedder | 34 / 30.329 s | 282.46 MiB (282.39–282.59) | 205.13 MiB | 2 | 6.26% |
-| v0.7 Rust Browser with WebView2 | 34 / 30.675 s | 323.21 MiB (322.22–323.81) | 690.20 MiB | 14 | 6.51% |
+| v0.8 native Servo embedder | 34 / 30.646 s | 277.75 MiB (277.69–277.88) | 186.97 MiB | 2 | 6.14% |
+| v0.8 Rust Browser with WebView2 | 31 / 30.028 s | 325.49 MiB (319.58–328.62) | 697.74 MiB | 14 | 21.57% |
 
 The sampler includes the root and discovered descendants. It uses CPU time
 between samples divided by the sampling interval. Summed working sets can
-count shared pages more than once. Servo used a dev build and a local file
-with an injected CSP. WebView2 used a release build, the normal browser
-chrome, and loopback HTTP. Each row represents one run. Different
-viewport sizes, process models, foreground conditions, and caches prevent an
-engine-level conclusion. The Servo sample retained aggregate process counts,
-so independent exit of each sampled descendant remains unverified.
+count shared pages more than once. Both applications closed normally with exit
+code 0. The one observed Servo descendant (`conhost.exe`) and all 13 observed
+WebView2 descendants exited.
+
+Servo used a dev build and a local file with an injected CSP. WebView2 used a
+release build, the normal browser chrome, and loopback HTTP. Its executable
+SHA-256 was `d5b180125d66d0fe94872ed6760dd7b2a9d0ce560ceb7d49635971267b2ebed8`.
+Each row represents one run. The different origin storage, content viewport,
+process model, and uncontrolled system activity limit comparison to these
+two runs. The [v0.7 observation](RESULTS.md) had a different CPU result.
 
 ## Boundaries and remaining checks
 
-- The pinned Servo Windows content-process sandbox is unsupported.
-  The process uses ordinary user privileges, and the fixture gates are
-  application policy. The runtime was exercised only on bundled local
-  pages. HTTPS, permissions that depend on a secure origin, and general
-  download denial remain unverified. The source keeps TLS validation
+- The host uses the pinned single-process defaults. The Servo Windows
+  content-process sandbox is unsupported. The process uses ordinary user
+  privileges, and the fixture gates are application policy. The runtime
+  was exercised only on bundled local pages. HTTPS, permissions that depend
+  on a secure origin, and general download denial remain unverified.
+  The source keeps TLS validation
   enabled and does not expose a bridge, file picker, or external launcher.
   [Pinned sandbox implementation](https://github.com/servo/servo/blob/65d058b9c6543840c1d986f7cae4520605bf5b5c/components/servo/servo.rs#L1516-L1526)
 - Each completed host run retained five files in its disposable profile.
