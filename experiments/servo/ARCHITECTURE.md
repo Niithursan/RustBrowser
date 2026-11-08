@@ -29,10 +29,30 @@ existing native UX regression now invokes a `dyn ContentEngine` against a real v
 for history, Back/Forward, Stop, visibility, focus and integration metadata. Existing
 tests also exercise load, Home/blank and crash/Reload through the new adapter.
 
-## Designed extension, not implemented
+## Implemented in v0.8
 
-A future Servo host driver should be separate from per-page navigation. Its minimum
-interfaces and lifecycle are:
+The [standalone source example](embedder/main.rs) embeds one Servo view and
+owns its winit event loop, window, and WGL surface. It stages into the pinned
+Servo workspace and uses the upstream lockfile and keyboard translation.
+It shares `NavigationCommand` with Rust Browser. Its two file fixtures use a
+separate [policy](embedder/policy.rs) because the production `WebLocation`
+validates HTTP(S) locations.
+
+The Servo waker and delegates post small events to winit. The host pumps Servo
+on the UI thread and requests redraw on frame notifications. On redraw it
+makes the context current, paints the view, and presents. Native keyboard,
+pointer, wheel, focus, size, and scale events flow to the view. On shutdown
+the host drops the view, engine, surface, and window in that order. The
+example has a bounded presentation-and-shutdown smoke check.
+
+The embedder and the v0.7 servoshell launcher both use separate executables.
+The production application keeps its WebView2 adapter, event loop, UI, and
+profile formats. See [measured capabilities and limits](EMBEDDER_RESULTS.md).
+
+## Future shared driver boundary
+
+If both engines eventually share a host, keep the rendering driver separate
+from per-page navigation.
 
 | Direction | Interface/event responsibility |
 | --- | --- |
@@ -45,28 +65,15 @@ interfaces and lifecycle are:
 | Engine → application | Owned URL/title/load/history/error/close events mapped to tab IDs; separate typed permission/popup/download requests with cancellation/revocation lifetimes. |
 | Host shutdown | Stop new requests, deny/cancel pending privileged operations, drop views, finish engine shutdown as supported, release contexts/surfaces, then profile lease and window. |
 
-Do not add unused trait methods for all of this now. A compiled embedder must first
-establish exact pinned API shapes, callback ownership, surface constraints, shutdown
-completion and handling of late callbacks. In particular, a COM environment, WebView2
-profile object, TrySuspend, or native download operation is not a universal engine
-capability. Future unsupported features must fail visibly and remain opt-in.
-
-The servoshell prototype is a **separate process**, launched only by scripts under
-this directory. It does not implement `ContentEngine`, share the normal application
-event loop/UI, or permit selecting Servo in normal tabs. No foreign engine object
-is injected into the working application, and no profile format/schema changes occur.
+Extend the interface only when both engines demonstrate a need for the capability.
+COM environments, WebView2 profile objects, TrySuspend, and native download operations
+remain adapter-specific.
 
 ## Recommended next milestone
 
-1. Provision a dedicated Windows source-build environment and compile the pinned
-   upstream minimal example before writing a custom adapter. Record cold/warm build
-   time, peak memory, disk use and exact toolchain/native dependencies.
-2. Implement a separate minimal window with full keyboard/text/IME/pointer forwarding,
-   frame scheduling, DPI/resize and graceful engine shutdown. Continue using only
-   controlled content and disposable storage, without privileged IPC.
-3. Require explicit default-deny delegates, verified profile isolation/deletion,
-   popup/scheme policy and a Windows process-isolation/security design before allowing
-   wider untrusted browsing. Unsupported Windows sandboxing is not solved by a profile.
-4. Only then connect that verified driver to the navigation boundary and expand it
-   with capabilities proven necessary by both adapters. Keep production CI and the
-   default WebView2 path unchanged throughout.
+1. Establish Windows process isolation and verify its filesystem and network
+   boundaries with synthetic content before allowing wider browsing.
+2. Exercise IME, mixed-DPI input, and late callbacks with repeatable fixture tests.
+   Verify the lifetime of each observed descendant process.
+3. Instrument equivalent presentation and input endpoints on both engines before
+   comparing them. Keep the source build independent of production CI.

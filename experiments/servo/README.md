@@ -1,5 +1,9 @@
 # Opt-in Servo spike
 
+For the v0.8 standalone native embedder, use the
+[Windows source-build procedure](SOURCE_BUILD.md) and [results](EMBEDDER_RESULTS.md).
+The procedure below runs the v0.7 official servoshell package.
+
 This uses the **official servoshell executable**, not an in-process Rust Browser
 Servo renderer. WebView2 remains the application's only working/default engine.
 Read [research](RESEARCH.md), [architecture](ARCHITECTURE.md) and [results](RESULTS.md).
@@ -92,7 +96,11 @@ New tooling/fixture tests execute no downloaded engine. Default Cargo.lock has n
 Servo dependencies. Actual servoshell rendering/input/shutdown is validated separately;
 a full Servo source build is not silently skipped or treated as passed in application CI.
 
-## Separate source-build procedure (not performed locally)
+## v0.7 reference source-build procedure
+
+The verified v0.8 Windows library build and fixture run use
+[SOURCE_BUILD.md](SOURCE_BUILD.md). These v0.7 commands describe the full
+upstream servoshell build path.
 
 Provision the official [Windows prerequisites](https://book.servo.org/building/windows.html)
 in a dedicated development environment: x64 SDK/MSVC + ATL, uv/rustup and Servo's

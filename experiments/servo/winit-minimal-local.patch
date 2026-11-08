@@ -1,0 +1,37 @@
+diff --git a/components/servo/examples/winit_minimal.rs b/components/servo/examples/winit_minimal.rs
+--- a/components/servo/examples/winit_minimal.rs
++++ b/components/servo/examples/winit_minimal.rs
+@@ -75,7 +75,20 @@
+
+             let _ = rendering_context.make_current();
+
++            let run = std::env::current_dir().expect("Disposable run directory");
++            assert!(
++                run.join(".rust-browser-servo-spike").is_file(),
++                "Launch the local example from a newly allocated Servo run directory"
++            );
++            let profile = run.join("profile");
++            std::fs::create_dir(&profile).expect("A fresh Servo profile is required");
++
+             let servo = ServoBuilder::default()
++                .opts(servo::opts::Opts {
++                    config_dir: Some(profile),
++                    temporary_storage: true,
++                    ..Default::default()
++                })
+                 .event_loop_waker(Box::new(waker.clone()))
+                 .build();
+             servo.setup_logging();
+@@ -87,9 +100,9 @@
+                 webviews: Default::default(),
+             });
+
+-            // Make a new WebView and assign the `AppState` as the delegate.
+-            let url = Url::parse("https://demo.servo.org/experiments/twgl-tunnel/")
+-                .expect("Guaranteed by argument");
++            // Load the controlled fixture in the disposable run directory.
++            let url = Url::from_file_path(run.join("fixture.html"))
++                .expect("The controlled fixture path must be absolute");
+
+             let webview =
+                 WebViewBuilder::new(&app_state.servo, app_state.rendering_context.clone())
