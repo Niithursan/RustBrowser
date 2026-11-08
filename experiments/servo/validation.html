@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Controlled event validation</title>
+<style>
+  body { font: 18px system-ui; margin: 20px; }
+  #panel { width: 320px; transform-origin: top left; }
+  input, button { display: block; margin: 12px; padding: 8px; }
+</style>
+<h1>Controlled event validation</h1>
+<p>Synthetic events and animation-frame timing. No accounts or native bridge.</p>
+<div id="panel"><input id="entry" aria-label="Synthetic composition"><button id="target">Pointer target</button></div>
+<p id="status" role="status">Running fixture assertions</p>
+<script>
+(async () => {
+  const ready = performance.now();
+  let stage = 1;
+  const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  const check = condition => { if (!condition) throw new Error('Fixture assertion failed'); };
+  const delay = async action => {
+    const started = performance.now();
+    action();
+    await frame();
+    return performance.now() - started;
+  };
+  try {
+    await frame(); await frame();
+    const readyTime = performance.now() - ready;
+    const entry = document.getElementById('entry');
+    const target = document.getElementById('target');
+    const panel = document.getElementById('panel');
+    let keys = 0, pointers = 0, trusted = 0;
+    const composition = [];
+    entry.addEventListener('keydown', event => {
+      check(event.key === 'a'); keys++; trusted += Number(event.isTrusted);
+    });
+    for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
+      entry.addEventListener(type, event => {
+        composition.push([event.type, event.data]); trusted += Number(event.isTrusted);
+      });
+    }
+    target.addEventListener('pointerdown', event => {
+      const rect = target.getBoundingClientRect();
+      check(event.clientX >= rect.left && event.clientX <= rect.right);
+      check(event.clientY >= rect.top && event.clientY <= rect.bottom);
+      pointers++; trusted += Number(event.isTrusted);
+    });
+    stage = 2;
+    const keyboard = await delay(() => {
+      entry.focus();
+      check(document.activeElement === entry);
+      entry.dispatchEvent(new KeyboardEvent('keydown', {key:'a', bubbles:true}));
+    });
+    stage = 3;
+    let ime = null;
+    if (typeof CompositionEvent === 'function') {
+      ime = await delay(() => {
+        for (const [type, data] of [['compositionstart',''], ['compositionupdate','日本語'], ['compositionend','日本語']]) {
+          entry.dispatchEvent(new CompositionEvent(type, {data, bubbles:true}));
+        }
+        entry.value = '日本語';
+        entry.dispatchEvent(new InputEvent('input', {data:'日本語', inputType:'insertCompositionText', bubbles:true}));
+      });
+      check(entry.value === '日本語');
+      check(JSON.stringify(composition) === JSON.stringify([
+        ['compositionstart',''], ['compositionupdate','日本語'], ['compositionend','日本語']]));
+    }
+    stage = 4;
+    panel.style.transform = 'scale(1.25)';
+    const rect = target.getBoundingClientRect();
+    check(Math.abs(rect.width - target.offsetWidth * 1.25) < 1);
+    const x = (rect.left + rect.right) / 2, y = (rect.top + rect.bottom) / 2;
+    check(document.elementFromPoint(x,y) === target);
+    stage = 5;
+    const pointer = await delay(() => target.dispatchEvent(
+      new PointerEvent('pointerdown', {clientX:x, clientY:y, pointerType:'mouse', bubbles:true})));
+    stage = 6;
+    check(keys === 1 && pointers === 1 && trusted === 0);
+    stage = 7;
+    check(typeof window.ipc === 'undefined');
+    document.getElementById('status').textContent =
+      'Synthetic keyboard, scaled hit test, and pointer assertions passed. Composition ' +
+      (ime === null ? 'unavailable' : 'passed');
+    document.title = ['RBVALID1','pass',devicePixelRatio,innerWidth,innerHeight,
+      readyTime.toFixed(3),pointer.toFixed(3),keyboard.toFixed(3),
+      ime === null ? 'unsupported' : ime.toFixed(3)].join('|');
+  } catch {
+    document.title = 'RBVALID1|fail|' + stage;
+    document.getElementById('status').textContent = 'Fixture assertions failed';
+  }
+})();
+</script>
+</html>

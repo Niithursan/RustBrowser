@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9 investigation
+
+- Documented the Windows Servo threat model, candidate broker/worker design,
+  and blockers to permitting arbitrary content.
+- Added synthetic AppContainer boundary and lifecycle probes with a separate
+  Windows workflow and exact owned-profile recovery after broker termination.
+- Added shared keyboard, pointer, composition capability, and device-scale
+  fixtures with comparable script-to-frame timing endpoints.
+- Added Servo IME event forwarding and unit regressions. Corrected converted
+  wheel distances to use pixel units.
+- Kept the production package at 0.8.0 while Servo containment remains unverified.
+
 ## 0.8.0
 
 - Added an opt-in Windows Servo embedder with a pinned, separate source build.

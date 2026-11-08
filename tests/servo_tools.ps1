@@ -25,6 +25,7 @@ $fake=Join-Path $root 'invalid.exe'
 Set-Content -LiteralPath $fake -Value 'not an executable'
 Reject { & (Join-Path $PSScriptRoot '../experiments/servo/run.ps1') -ServoExecutable $fake -OutputRoot $root } 'pinned official Servo'
 Reject { & (Join-Path $PSScriptRoot '../experiments/servo/prepare.ps1') -Archive $fake -OutputRoot $root } 'digest mismatch'
+Reject { & (Join-Path $PSScriptRoot '../experiments/servo/isolation/check-boundaries.ps1') -OutputRoot $repository } 'outside the repository'
 $arguments=@(Get-ServoArguments 'C:\disposable path\profile' 'https://example.com/')
 Require ($arguments.Count -eq 4) 'Unexpected launch arguments'
 Require ($arguments[0] -eq '--temporary-storage') 'Missing temporary storage restriction'
@@ -32,7 +33,7 @@ Require ($arguments[1] -eq '--window-size=1200x820') 'Unexpected initial window 
 Require ($arguments[2] -eq '--config-dir="C:\disposable path\profile"') 'Profile quoting failed'
 Require ($arguments[3] -eq 'https://example.com/') 'Unexpected destination'
 Require (-not ($arguments -match 'ignore-certificate|devtools|webdriver|userscripts|sandbox')) 'Unsafe launch arguments'
-Get-ChildItem (Join-Path $PSScriptRoot '../experiments/servo') -Filter *.ps1 | ForEach-Object {
+Get-ChildItem (Join-Path $PSScriptRoot '../experiments/servo') -Filter *.ps1 -Recurse | ForEach-Object {
     $tokens=$null;$errors=$null
     $null=[Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
     Require ($errors.Count -eq 0) ('PowerShell syntax: '+$_.Name)

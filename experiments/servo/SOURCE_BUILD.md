@@ -142,11 +142,13 @@ navigation command type. The upstream manifest and lockfile stay intact.
 ```powershell
 $stage = Join-Path $source 'components/servo/examples/rust_browser_embedder'
 New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null
-foreach ($name in 'main.rs', 'policy.rs', 'second.html') {
+foreach ($name in 'main.rs', 'policy.rs', 'input.rs', 'second.html') {
     Copy-Item (Join-Path $repo "experiments/servo/embedder/$name") $stage
 }
 Copy-Item (Join-Path $repo 'src/engine_api.rs') $stage
 Copy-Item (Join-Path $repo 'experiments/servo/fixture.html') $stage
+Copy-Item (Join-Path $repo 'experiments/servo/validation.rs') $stage
+Copy-Item (Join-Path $repo 'experiments/servo/validation.html') $stage
 
 Push-Location $source
 try {
@@ -161,6 +163,8 @@ try {
 $exe = Join-Path $examples 'rust_browser_embedder.exe'
 & (Join-Path $repo 'experiments/servo/embedder/check-smoke.ps1') `
     -Executable $exe -OutputRoot (Join-Path $scratch 'smoke')
+& (Join-Path $repo 'experiments/servo/embedder/check-validation.ps1') `
+    -Executable $exe -OutputRoot (Join-Path $scratch 'validation')
 $run = New-ServoRun (Join-Path $scratch 'runs')
 Start-Process -FilePath $exe -WorkingDirectory $run -WindowStyle Normal -Wait
 ```
@@ -171,6 +175,10 @@ Alt+Left and Alt+Right traverse history. F5 or Ctrl+R reloads, and F1 opens the
 first fixture. Resize the window, then close it. The smoke script checks three
 fresh runs for a ready frame, teardown, and successful exit, then checks that
 the executable refuses to reuse a run.
+
+The validation script runs the shared synthetic event fixture at four engine
+device scales. It records frame-callback timings and explicitly reports missing
+composition support. See [validation scope and results](VALIDATION_V09.md).
 
 Keep both executables on the supplied local fixtures. See
 [measured results and limits](EMBEDDER_RESULTS.md) before using the experiment.

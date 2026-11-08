@@ -1,5 +1,30 @@
 # Validation
 
+## v0.9 investigation
+
+The branch is based on verified PR #11 squash commit
+`469cddf2c080f7b1fa0a8dcd2c5c6993fbe3effa`. The
+[detailed validation record](experiments/servo/VALIDATION_V09.md) describes
+the isolation decision, tests, script timing endpoints and remaining work.
+
+- Formatting, strict production Clippy, 47 regular tests, debug/release
+  Windows builds, and the production dependency audit passed locally.
+- All six existing native WebView2 regressions passed, including the
+  sleeping-tab race fix. The existing PowerShell safety suite and two Python
+  server tests passed.
+- The new native WebView2 fixture passed at four simulated rasterization
+  scales. The separate Servo example's six unit tests passed. Its own host
+  code compiled with compiler warnings treated as errors. Upstream Servo
+  library warnings remain visible.
+- The standard AppContainer probe passed repeated sentinel/lifecycle tests
+  and actual broker-crash recovery. Its loopback timeout is inconclusive.
+  The explicit LPAC attempt failed Winsock initialization with error 10107
+  and reported profile cleanup. A Servo renderer sandbox remains unverified.
+- Actual Windows IME service behavior, monitor DPI transitions, physical
+  input-to-display latency, and compositor first-pixel timing remain
+  unverified. The native fixtures exercise synthetic DOM events and
+  engine scale overrides.
+
 ## Version 0.8.0
 
 Windows 11 x64 validation on 2026-11-08. The branch starts at the

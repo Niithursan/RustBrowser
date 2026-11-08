@@ -1,5 +1,24 @@
 # Security
 
+The v0.9 [threat model](experiments/servo/isolation/THREAT_MODEL.md) keeps
+arbitrary Servo browsing blocked. A separate synthetic worker validates
+selected AppContainer and Job Object mechanisms. Its standard AppContainer
+probe observed inconclusive loopback timeouts, and its capability-free LPAC
+probe failed Winsock initialization. These results leave Servo containment
+unverified. The tests create their own package identities and modify ACLs
+only on newly staged synthetic files. They include journaled recovery for
+their exact profile after broker termination. An AppContainer profile
+can remain after a failed cleanup, which is reported.
+
+The shared event fixture has no native bridge or network callbacks. Both
+hosts accept only a bounded numeric report from their fixed document.
+WebView2's test harness allows its exact generated HTML navigation. The
+Servo host retains its two-file navigation and resource allowlist.
+Simulated raster/device scales and dispatched DOM composition events
+do not validate Windows input services, monitor changes, or physical
+input latency. Servo's pinned DOM composition constructor is disabled
+by default and remains unavailable in that fixture.
+
 This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting if enabled, or contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
 
 The browser uses the installed Microsoft WebView2 Runtime. Keep that runtime and Windows updated. Remote content receives no application IPC handler; the local toolbar has a separate profile and restricted navigation. HTTP traffic is unencrypted. HTTPS does not establish trustworthiness, and certificate validation is never bypassed.

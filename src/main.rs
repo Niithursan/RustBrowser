@@ -16,6 +16,8 @@ mod native_popup;
 mod native_security;
 #[cfg(all(windows, test))]
 mod native_validation;
+#[cfg(all(windows, test))]
+mod servo_validation;
 #[cfg(windows)]
 mod ui;
 

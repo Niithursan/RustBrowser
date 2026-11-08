@@ -1,5 +1,10 @@
 # Opt-in Servo spike
 
+The v0.9 investigation adds a
+[Windows boundary threat model and synthetic probe](isolation/README.md) and
+[shared event validation](VALIDATION_V09.md). Servo stays restricted to its
+owned fixture pages while containment remains unverified.
+
 For the v0.8 standalone native embedder, use the
 [Windows source-build procedure](SOURCE_BUILD.md) and [results](EMBEDDER_RESULTS.md).
 The procedure below runs the v0.7 official servoshell package.
