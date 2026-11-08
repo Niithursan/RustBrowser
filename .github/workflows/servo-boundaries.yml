@@ -1,0 +1,30 @@
+name: Experimental Windows boundaries
+on:
+  pull_request:
+    paths:
+      - 'experiments/servo/isolation/**'
+      - '.github/workflows/servo-boundaries.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Synthetic child only. LPAC is an investigation and may fail.'
+        type: choice
+        options: [AppContainer, LPAC]
+        default: AppContainer
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    name: Synthetic AppContainer boundaries
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Compile and test the synthetic child
+        shell: powershell
+        env:
+          PROBE_MODE: ${{ inputs.mode || 'AppContainer' }}
+        run: |
+          .\experiments\servo\isolation\check-boundaries.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'servo-boundary-tests') -Mode $env:PROBE_MODE -Repeats 2
