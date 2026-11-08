@@ -32,21 +32,21 @@ catalog access and does not establish a unique root cause. Both workers
 fail OpenGL loading with error 1114 under Win32k lockdown. See
 `experiments/servo/isolation/DIAGNOSTICS_V010.md`.
 
-Baseline checkpoint commit is `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
+Baseline checkpoint: `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
+Initial diagnostic/IPC implementation: `de840e0cdb20528043e3a23e115ac157a55d6c63`.
+Follow-up changes verify non-elevation, UIAccess, enabled privileges, live-IPC
+broker termination, small-allocation controls and measured fault shutdown.
+The protocol remains synthetic and grants no privileged browser operation.
 
 ## Next stages
 
-1. Add read-only, fixed-target Windows diagnostics that compare standard
-   AppContainer and LPAC without granting broad capabilities.
-2. Investigate Winsock catalog/provider access and graphics dependencies.
-   Record API return codes separately from causal hypotheses.
-3. Prototype bounded, authenticated synthetic broker IPC and resource-limit
-   tests if those can preserve the existing creation-time mitigations.
-4. Assess a restricted rendering path against the threat model. Stop at a
-   documented blocker if required boundaries cannot be verified.
-5. Preserve input/fixture regressions, run production and dedicated native
-   validation, and record reproducible measurements.
-6. Update this checkpoint and the required documentation. Push verified
+1. Finish the rendering decision: pinned software/offscreen routes still
+   need Surfman/WGL. Retained Win32k prevents OpenGL DLL initialization in
+   synthetic workers. No real Servo renderer was contained; alternative
+   graphics architectures remain unverified.
+2. Repeat final native measurements sequentially, preserve the original
+   LPAC failure, and run Servo smoke/scale regressions.
+3. Update this checkpoint and the required documentation. Push verified
    commits, open a PR, and verify final CI. Leave review to the owner.
 
 ## Last successful checks
@@ -54,8 +54,18 @@ Baseline checkpoint commit is `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
 The baseline CI results above are verified. The native diagnostics compile
 with /W4 /WX and pass standard AppContainer and LPAC collection, protocol
 mutation tests, malformed/hang tests and broker-crash recovery locally.
-LPAC's failed Winsock operation remains reported. Production and Servo
-regression checks for the new branch are still pending.
+LPAC's failed Winsock operation remains reported. Production formatting,
+strict Clippy, regular tests, debug/release builds and audit passed locally.
+All seven native WebView2 regressions passed, including the updated shared
+fixture. Launcher safety checks and two Python fixture tests passed. The
+separate Servo example's seven unit tests and host build with warnings
+denied passed.
+
+Actual Windows fixture input showed native key down/up, pointer clicks,
+movement, wheel, focus, Unicode text entry, maximize/restore resizing and
+preserved text at device scale 1. Alt+F4 closed the owned window with exit 0
+and teardown_complete. Five owned run files remain for inspection. This
+does not verify native IME, OS autorepeat or mixed-monitor transitions.
 
 ## Constraints and continuation
 

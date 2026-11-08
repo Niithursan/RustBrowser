@@ -30,10 +30,13 @@
     const entry = document.getElementById('entry');
     const target = document.getElementById('target');
     const panel = document.getElementById('panel');
-    let keys = 0, pointers = 0, trusted = 0;
+    let keys = 0, keyUps = 0, repeats = 0, pointers = 0, trusted = 0;
     const composition = [];
     entry.addEventListener('keydown', event => {
-      check(event.key === 'a'); keys++; trusted += Number(event.isTrusted);
+      check(event.key === 'a'); keys++; repeats += Number(event.repeat); trusted += Number(event.isTrusted);
+    });
+    entry.addEventListener('keyup', event => {
+      check(event.key === 'a' && !event.repeat); keyUps++; trusted += Number(event.isTrusted);
     });
     for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
       entry.addEventListener(type, event => {
@@ -51,6 +54,8 @@
       entry.focus();
       check(document.activeElement === entry);
       entry.dispatchEvent(new KeyboardEvent('keydown', {key:'a', bubbles:true}));
+      entry.dispatchEvent(new KeyboardEvent('keydown', {key:'a', repeat:true, bubbles:true}));
+      entry.dispatchEvent(new KeyboardEvent('keyup', {key:'a', bubbles:true}));
     });
     stage = 3;
     let ime = null;
@@ -61,10 +66,14 @@
         }
         entry.value = '日本語';
         entry.dispatchEvent(new InputEvent('input', {data:'日本語', inputType:'insertCompositionText', bubbles:true}));
+        for (const [type, data] of [['compositionstart',''], ['compositionupdate','cancel'], ['compositionend','']]) {
+          entry.dispatchEvent(new CompositionEvent(type, {data, bubbles:true}));
+        }
       });
       check(entry.value === '日本語');
       check(JSON.stringify(composition) === JSON.stringify([
-        ['compositionstart',''], ['compositionupdate','日本語'], ['compositionend','日本語']]));
+        ['compositionstart',''], ['compositionupdate','日本語'], ['compositionend','日本語'],
+        ['compositionstart',''], ['compositionupdate','cancel'], ['compositionend','']]));
     }
     stage = 4;
     panel.style.transform = 'scale(1.25)';
@@ -76,7 +85,7 @@
     const pointer = await delay(() => target.dispatchEvent(
       new PointerEvent('pointerdown', {clientX:x, clientY:y, pointerType:'mouse', bubbles:true})));
     stage = 6;
-    check(keys === 1 && pointers === 1 && trusted === 0);
+    check(keys === 2 && keyUps === 1 && repeats === 1 && pointers === 1 && trusted === 0);
     stage = 7;
     check(typeof window.ipc === 'undefined');
     document.getElementById('status').textContent =

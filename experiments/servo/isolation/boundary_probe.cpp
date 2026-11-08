@@ -95,6 +95,16 @@ void verify_token(HANDLE process, PSID expected_sid) {
     require(!reinterpret_cast<const TOKEN_ELEVATION*>(elevation.data())->TokenIsElevated, "Worker is not elevated");
     const auto ui_access = token_value(token.value, TokenUIAccess);
     require(*reinterpret_cast<const DWORD*>(ui_access.data()) == 0, "Worker has no UIAccess");
+    LUID traversal{};
+    require(LookupPrivilegeValueW(nullptr, SE_CHANGE_NOTIFY_NAME, &traversal), "Traversal privilege identifier");
+    const auto privileges = token_value(token.value, TokenPrivileges);
+    const auto* privilege_list = reinterpret_cast<const TOKEN_PRIVILEGES*>(privileges.data());
+    for (DWORD index = 0; index < privilege_list->PrivilegeCount; ++index) {
+        const auto& privilege = privilege_list->Privileges[index];
+        require(!(privilege.Attributes & SE_PRIVILEGE_ENABLED) ||
+            (privilege.Luid.LowPart == traversal.LowPart && privilege.Luid.HighPart == traversal.HighPart),
+            "Only change-notify privilege may be enabled");
+    }
 }
 
 struct Attributes {
@@ -176,6 +186,21 @@ PROCESS_INFORMATION launch(const fs::path& exe, const std::wstring& args, const 
     return process;
 }
 
+void record_child_identity(DWORD identifier, HANDLE process, const fs::path& run) {
+    FILETIME created{}, exited{}, kernel{}, user_time{};
+    require(GetProcessTimes(process, &created, &exited, &kernel, &user_time), "Child creation time");
+    ULARGE_INTEGER stamp{};
+    stamp.LowPart = created.dwLowDateTime;
+    stamp.HighPart = created.dwHighDateTime;
+    const std::string identity = std::to_string(identifier) + " " + std::to_string(stamp.QuadPart);
+    Handle record(CreateFileW((run / L"child-identity.txt").c_str(), GENERIC_WRITE, 0,
+        nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    require(record.value != INVALID_HANDLE_VALUE, "Reserve child identity");
+    DWORD written = 0;
+    require(WriteFile(record.value, identity.data(), static_cast<DWORD>(identity.size()), &written, nullptr) &&
+        written == identity.size(), "Write child identity");
+}
+
 #include "diagnostics_broker.h"
 
 int wmain(int argc, wchar_t** argv) {
@@ -184,10 +209,12 @@ int wmain(int argc, wchar_t** argv) {
             std::wstring(argv[1]) == L"--lpac" || std::wstring(argv[1]) == L"--crash" ||
             std::wstring(argv[1]) == L"--cleanup" || std::wstring(argv[1]) == L"--diagnostics-appcontainer" ||
             std::wstring(argv[1]) == L"--diagnostics-lpac" || std::wstring(argv[1]) == L"--diagnostics-malformed" ||
-            std::wstring(argv[1]) == L"--diagnostics-hang"), "Select a fixed probe mode");
+            std::wstring(argv[1]) == L"--diagnostics-hang" || std::wstring(argv[1]) == L"--diagnostics-crash" ||
+            std::wstring(argv[1]) == L"--diagnostics-crash-lpac"), "Select a fixed probe mode");
         const bool diagnostic = std::wstring(argv[1]).find(L"--diagnostics-") == 0;
         const bool less_privileged = std::wstring(argv[1]) == L"--lpac" ||
-            std::wstring(argv[1]) == L"--diagnostics-lpac";
+            std::wstring(argv[1]) == L"--diagnostics-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-crash-lpac";
         const fs::path run = fs::current_path();
         require(fs::is_regular_file(run / L".rust-browser-isolation-probe"), "Fresh owned run marker");
         const fs::path exe = run / L"boundary-child.exe";
@@ -291,20 +318,7 @@ int wmain(int argc, wchar_t** argv) {
             Child child(info);
             verify_token(child.process.value, container.sid);
             require(ResumeThread(child.thread.value) != static_cast<DWORD>(-1), "Resume crash case");
-            FILETIME created{}, exited{}, kernel{}, user_time{};
-            require(GetProcessTimes(child.process.value, &created, &exited, &kernel, &user_time), "Child creation time");
-            ULARGE_INTEGER stamp{};
-            stamp.LowPart = created.dwLowDateTime;
-            stamp.HighPart = created.dwHighDateTime;
-            const std::string identity = std::to_string(info.dwProcessId) + " " + std::to_string(stamp.QuadPart);
-            Handle record(CreateFileW((run / L"child-identity.txt").c_str(), GENERIC_WRITE, 0,
-                nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
-            require(record.value != INVALID_HANDLE_VALUE, "Reserve child identity");
-            DWORD written = 0;
-            require(WriteFile(record.value, identity.data(), static_cast<DWORD>(identity.size()), &written, nullptr) &&
-                written == identity.size(), "Write child identity");
-            require(CloseHandle(record.value), "Close child identity");
-            record.value = nullptr;
+            record_child_identity(info.dwProcessId, child.process.value, run);
             TerminateProcess(GetCurrentProcess(), 74); // Deliberately bypass destructors to test recovery.
             return 99;
         }

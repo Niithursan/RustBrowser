@@ -120,10 +120,13 @@ int diagnostic_child(int argc, wchar_t** argv) {
     DWORD created = 0;
     const DWORD creation_status = child_creation_status(created);
     report(wire::Operation::ChildCreation, creation_status, created);
+    void* small_allocation = VirtualAlloc(nullptr, 1024 * 1024, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    require(small_allocation != nullptr, "Small allocation positive control");
+    require(VirtualFree(small_allocation, 0, MEM_RELEASE), "Release positive allocation");
     void* allocation = VirtualAlloc(nullptr, 128ULL * 1024 * 1024, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     const DWORD allocation_status = allocation ? ERROR_SUCCESS : GetLastError();
     if (allocation) VirtualFree(allocation, 0, MEM_RELEASE);
-    report(wire::Operation::Allocation, allocation_status, allocation ? 1 : 0);
+    report(wire::Operation::Allocation, allocation_status, allocation ? 1 : 0, 1);
     DWORD udp_status = ERROR_NOT_SUPPORTED;
     DWORD udp_sent = 0;
     if (startup == 0) {

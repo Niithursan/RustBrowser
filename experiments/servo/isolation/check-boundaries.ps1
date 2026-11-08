@@ -89,7 +89,11 @@ if ($Diagnostics) {
 }
 
 $run = New-OwnedProbeRun
-$crash = Invoke-OwnedProbe $run 'crash'
+$crashMode = 'crash'
+if ($Diagnostics) {
+    $crashMode = if ($Mode -eq 'LPAC') { 'diagnostics-crash-lpac' } else { 'diagnostics-crash' }
+}
+$crash = Invoke-OwnedProbe $run $crashMode
 if ($crash.exit_code -ne 74) { throw "Broker crash case failed. Inspect $run." }
 $identity = Get-Content -LiteralPath (Join-Path $run 'child-identity.txt') -Raw
 if ($identity -notmatch '^(\d+) (\d+)$') { throw 'Invalid owned child identity.' }

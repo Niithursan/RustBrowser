@@ -70,8 +70,9 @@ void run_diagnostics(const fs::path& exe, const fs::path& run, PSID sid, HANDLE 
         L" \"" + (run / L"apps-readable.txt").wstring() + L"\" \"" + (run / L"private-sentinel.txt").wstring() + L"\"";
     LARGE_INTEGER frequency{}, started{}, resumed{}, first_reply{}, finished{};
     require(QueryPerformanceFrequency(&frequency) && QueryPerformanceCounter(&started), "Monotonic probe clock");
-    Child child(launch(exe, args, run, sid, job, lpac,
-        {channel.child_read.value, channel.child_write.value}));
+    const auto child_info = launch(exe, args, run, sid, job, lpac,
+        {channel.child_read.value, channel.child_write.value});
+    Child child(child_info);
     verify_token(child.process.value, sid);
     BOOL in_job = FALSE;
     require(IsProcessInJob(child.process.value, job, &in_job) && in_job, "Creation-time job membership");
@@ -89,23 +90,36 @@ void run_diagnostics(const fs::path& exe, const fs::path& run, PSID sid, HANDLE 
             require(QueryPerformanceCounter(&after), "IPC end clock");
             if (sequence == 0) first_reply = after;
             roundtrips.push_back(milliseconds(before, after, frequency));
+            if (mode == L"crash" || mode == L"crash-lpac") {
+                record_child_identity(child_info.dwProcessId, child.process.value, run);
+                TerminateProcess(GetCurrentProcess(), 74);
+                throw std::runtime_error("Intentional broker termination failed");
+            }
         }
         if (mode == L"malformed" || mode == L"hang") {
             throw std::runtime_error("Fault fixture unexpectedly completed the valid protocol");
         }
     } catch (const ProtocolFailure&) {
         if (mode != L"malformed") throw;
+        LARGE_INTEGER shutdown_start{}, shutdown_end{};
+        require(QueryPerformanceCounter(&shutdown_start), "Malformed shutdown start");
         require(TerminateJobObject(job, 76), "Terminate malformed worker");
         require(child.wait() == 76, "Malformed worker exited");
+        require(QueryPerformanceCounter(&shutdown_end), "Malformed shutdown end");
         closesocket(udp);
         std::cout << "malformed_worker_reply_rejected=passed\n";
+        std::cout << "malformed_shutdown_ms=" << milliseconds(shutdown_start, shutdown_end, frequency) << "\n";
         return;
     } catch (const WinFailure& error) {
         if (mode != L"hang" || error.code != ERROR_TIMEOUT) throw;
+        LARGE_INTEGER shutdown_start{}, shutdown_end{};
+        require(QueryPerformanceCounter(&shutdown_start), "Hang shutdown start");
         require(TerminateJobObject(job, 75), "Terminate hung worker");
         require(child.wait() == 75, "Hung worker exited");
+        require(QueryPerformanceCounter(&shutdown_end), "Hang shutdown end");
         closesocket(udp);
         std::cout << "hung_worker_deadline_and_exit=passed\n";
+        std::cout << "hang_shutdown_ms=" << milliseconds(shutdown_start, shutdown_end, frequency) << "\n";
         return;
     }
     std::array<wire::Frame, wire::max_diagnostics> reports{};
@@ -136,7 +150,7 @@ void run_diagnostics(const fs::path& exe, const fs::path& run, PSID sid, HANDLE 
     require(creation[10] == 0 && (creation[9] == ERROR_ACCESS_DENIED ||
         creation[9] == ERROR_CHILD_PROCESS_BLOCKED || creation[9] == ERROR_NOT_ENOUGH_QUOTA), "Child creation actually denied");
     const auto& allocation = reports[static_cast<uint32_t>(wire::Operation::Allocation)];
-    require(allocation[10] == 0 && (allocation[9] == ERROR_NOT_ENOUGH_MEMORY ||
+    require(allocation[10] == 0 && allocation[11] == 1 && (allocation[9] == ERROR_NOT_ENOUGH_MEMORY ||
         allocation[9] == ERROR_COMMITMENT_LIMIT), "Allocation exceeded the measured job limit");
     FD_ZERO(&readable);
     FD_SET(udp, &readable);
@@ -158,13 +172,15 @@ void run_diagnostics(const fs::path& exe, const fs::path& run, PSID sid, HANDLE 
     require(limits.ProcessMemoryLimit == 64ULL * 1024 * 1024 &&
         (limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_PROCESS_MEMORY),
         "Measured worker memory limit is 64 MiB");
-    std::sort(roundtrips.begin(), roundtrips.end());
+    auto sorted_roundtrips = roundtrips;
+    std::sort(sorted_roundtrips.begin(), sorted_roundtrips.end());
+    const size_t middle = sorted_roundtrips.size() / 2;
     std::cout << "worker_mode=" << (lpac ? "lpac" : "appcontainer") <<
         " startup_first_reply_ms=" << milliseconds(started, first_reply, frequency) <<
         " resume_to_exit_ms=" << milliseconds(resumed, finished, frequency) <<
         " cpu_ms=" << static_cast<double>(ticks(kernel_time) + ticks(user_time)) / 10000.0 <<
         " peak_private_mib=" << static_cast<double>(limits.PeakProcessMemoryUsed) / (1024.0 * 1024.0) <<
-        " ipc_median_ms=" << roundtrips[roundtrips.size() / 2] << "\n";
+        " ipc_median_ms=" << (sorted_roundtrips[middle - 1] + sorted_roundtrips[middle]) / 2.0 << "\n";
     for (const double value : roundtrips) std::cout << "ipc_roundtrip_ms=" << value << "\n";
     std::cout << "diagnostic_ipc_and_limits=passed\n";
 }
