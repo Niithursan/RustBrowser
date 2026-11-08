@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0
+
+- Native linked popup tabs preserve opener relationships, profile/cookie sharing,
+  `noopener`, and script-created tab closure. Runtime-marked non-user requests stay
+  blocked; no external URI or certificate security boundary is relaxed.
+- Conservative native upload/media/request protection, linked-popup safeguards,
+  event-loop pause recovery and fullscreen integration with the origin toolbar kept.
+- Actionable renderer-failure feedback and a native crash/reload regression.
+- Interrupted first-save and corrupt-session recovery from validated temporary data;
+  committed sessions take precedence and I/O errors do not reset profiles.
+- Locked download staging leases and bounded empty-abandoned-folder cleanup when a
+  destination is selected. Potential payloads and unrecognized/legacy data are kept.
+- Process-kill/SQLite rollback, recovery and six native Windows regressions in CI.
+- Controlled loopback upload/auth/media/WebRTC fixtures, an extended churn soak and
+  repeatable interactive compatibility/accessibility procedures with explicit gaps.
+
 ## 0.5.0
 
 - Best-effort native sleeping tabs, protected activity checks, Keep awake, configurable

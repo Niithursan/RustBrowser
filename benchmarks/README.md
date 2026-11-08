@@ -104,9 +104,10 @@ Keep outliers and failed runs documented. Do not publish raw user-profile data.
 
 ## Extended and interactive validation
 
-Run a separate 20-tab soak with `-TabCounts 20 -SoakSeconds 180 -Repeats 3`, then do
-a longer manual session with ordinary browsing. The current automated cap is three
-minutes per soak; it does not establish hours-long reliability. Revisit all tabs,
+Run a separate 20-tab soak with `-TabCounts 20 -SoakSeconds 1800 -FreshOnly -Churn`,
+then perform the [interactive procedure](../validation/README.md). v0.6 raises the
+automated cap to sixty minutes and adds tab creation/closure/switching every ten
+seconds. This does not establish everyday real-site reliability. Revisit all tabs,
 verify forms and in-page state, play audio, keep a slow download active, request a
 permission without granting it, and check that protected tabs stay awake. Compare
 timer activity with automation disabled, and use Keep awake for live-site work.

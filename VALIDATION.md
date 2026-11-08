@@ -1,5 +1,59 @@
 # Validation
 
+## Version 0.6.0
+
+PR #8 was verified squash-merged at `a8b24fa79e18cefa8b8d64d6d9bf0788c3432140`,
+package version 0.5.0, with a tree identical to the previously validated v0.5 branch.
+Its [Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42401923750)
+and [dependency security](https://github.com/Niithursan/RustBrowser/actions/runs/42401923693)
+passed, as did all 35 baseline regular tests locally. Development uses
+`feat/v0.6-compatibility-reliability`; no merge, release tag or publication is authorized.
+
+Local Windows x64 validation: Rust 1.99.1/MSVC and WebView2 157.0.4341.42.
+
+- Formatting, strict all-target/all-feature Clippy, 42 regular tests, six separately
+  selected native tests, Windows debug/release builds and dependency audit passed.
+  The audit scanned 369 locked dependencies and 1422 advisories with the existing
+  reviewed exceptions unchanged. Cargo.lock changes only the package version.
+- Native loopback tests verify runtime-marked popup blocking, same-profile opener,
+  shared cookie/message/script-close behavior, `noopener`, no remote IPC, POST upload
+  protection, actual PCM media, fullscreen/redirects, two 1 MiB HTTP downloads with
+  collision-safe completion and an independent quiet-tab active-download guard.
+- A separate disposable renderer crash produced actionable feedback and recovered
+  through Reload. Test-only CDP user gestures/crash calls are not in the product.
+- Existing private isolation, permission/clearing, session retention and new-tab tests
+  remain passing. The sleep test checks actual suspension and an injected long pause
+  resuming the same native view/document; it does not simulate real hardware wake.
+- Recovery regressions cover missing/corrupt main sessions, valid temporary promotion,
+  empty/truncated invalid saves, preservation of originals, stale-temp privacy
+  precedence, I/O refusal, live/abandoned staging leases and no payload deletion.
+- A killed owned child holding session/SQLite state verified lock release, committed
+  snapshot/bookmark retention and rollback of an uncommitted SQLite transaction.
+  Five subsequent store open/close cycles passed. A helper test runs only in that
+  child; the regular test count includes its no-op parent invocation.
+
+Actual GUI automation on an isolated test profile verified the popup cookie/message
+flow, native selection/upload of the supplied synthetic file (313 multipart bytes),
+generated video, fullscreen with the origin toolbar visible, Escape exit, local
+WebRTC connected/advancing frames, and continued loopback after backgrounding over
+two minutes with Keep awake. The owned GUI process was intentionally terminated;
+the committed two-tab session restored after restarting, then closed normally.
+Accessible control/tab names and roles and all-tabs keyboard Home selection were
+observed. Desktop access initially failed; after the user confirmed it was unlocked
+and the automation session was reset, the GUI checks above were completed. No OS
+privacy/security settings or device grants changed.
+
+See [compatibility matrix](validation/COMPATIBILITY.md) for exact limits and
+[test procedures](validation/README.md) for repeatable 30–60 minute interactive and
+automated workloads. Physical sleep/wake, real accounts/devices, full-disk hardware
+failure, 125/150/200% mixed-DPI/multi-monitor and spoken screen-reader acceptance
+remain unverified. Historical v0.5 benchmark numbers below are not v0.6 measurements.
+The 30-minute automated soak passed 178 churn cycles, all twenty final responsiveness
+checks, close-to-one recovery and normal shutdown. It is distinct from the shorter
+actual GUI checks, and includes documented concurrent activity and sampling limits.
+See [SOAK.md](validation/SOAK.md) for numeric evidence and
+[PR #9](https://github.com/Niithursan/RustBrowser/pull/9) for final-commit CI results.
+
 ## Version 0.5.0
 
 Preservation baseline: PR #7 was confirmed squash-merged at

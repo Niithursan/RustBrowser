@@ -1,0 +1,960 @@
+{
+  "source_commit": "5de0d2149051fabf6f6ef27a84e08b69ad6d2635",
+  "probe_sha256": "79D9EA30B74AA02481F02843E943235D02C570F7A8D1FE46208D871A6A852E5B",
+  "hardware": {
+    "cpu": "AMD Ryzen 5 5600 6-Core Processor              ",
+    "logical_processors": 12,
+    "ram_gib": 31.93,
+    "os": "Microsoft Windows 11 Pro",
+    "os_version": "10.0.26200",
+    "architecture": "64-bit"
+  },
+  "webview2": "157.0.4341.42",
+  "rust": "1.99.1 MSVC",
+  "parameters": {
+    "recovery": 15,
+    "sample": 10,
+    "settle": 30,
+    "churn": true,
+    "soak": 1800
+  },
+  "metrics": {
+    "construction_ms": 1820.1486999999997,
+    "first_usable_ms": 2087.896,
+    "all_loaded_ms": 2223.8705,
+    "stage": "done",
+    "tick_delta": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40
+    ],
+    "switch_api_ms": [
+      25.564400000000003,
+      37.443999999999996,
+      42.4517,
+      39.403,
+      42.038199999999996,
+      44.8198,
+      43.6118,
+      46.9274,
+      39.6145,
+      45.6672,
+      46.7276,
+      43.5493,
+      42.4817,
+      38.951,
+      33.5861,
+      47.5048,
+      46.9776,
+      38.6759,
+      37.78,
+      70.9296
+    ],
+    "switch_responsive_ms": [
+      28.098499999999998,
+      41.7179,
+      45.7757,
+      43.3361,
+      46.7639,
+      48.8384,
+      46.440000000000005,
+      51.7443,
+      42.613699999999994,
+      49.120999999999995,
+      49.9609,
+      49.1736,
+      46.2342,
+      41.0607,
+      37.7708,
+      56.0855,
+      50.6757,
+      41.8932,
+      41.6717,
+      73.71610000000001
+    ],
+    "scale_factor": 1.0,
+    "tabs": 20,
+    "churn_cycles": 178
+  },
+  "sample_count": 1889,
+  "last_sample_seconds": 1858.462,
+  "max_sample_gap_seconds": 1.229,
+  "gaps_over_five_seconds": 0,
+  "stages": {
+    "startup": {
+      "samples": 3,
+      "cpu_interval_seconds": 1.97,
+      "cpu_one_core_percent": 118.972,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 414.94,
+        "min": 5.93,
+        "max": 805.01
+      },
+      "working_mib": {
+        "mean": 869.843,
+        "min": 33.16,
+        "max": 1677.8
+      },
+      "processes": {
+        "mean": 18.333,
+        "min": 2,
+        "max": 33
+      }
+    },
+    "settling": {
+      "samples": 29,
+      "cpu_interval_seconds": 28.451,
+      "cpu_one_core_percent": 23.78,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 843.814,
+        "min": 812.09,
+        "max": 864.56
+      },
+      "working_mib": {
+        "mean": 1790.966,
+        "min": 1706.08,
+        "max": 1824.1
+      },
+      "processes": {
+        "mean": 33,
+        "min": 33,
+        "max": 33
+      }
+    },
+    "idle": {
+      "samples": 10,
+      "cpu_interval_seconds": 8.975,
+      "cpu_one_core_percent": 12.361,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 818.46,
+        "min": 816.71,
+        "max": 821.14
+      },
+      "working_mib": {
+        "mean": 1807.728,
+        "min": 1806.01,
+        "max": 1809.66
+      },
+      "processes": {
+        "mean": 33,
+        "min": 33,
+        "max": 33
+      }
+    },
+    "soak": {
+      "samples": 1829,
+      "cpu_interval_seconds": 1799.489,
+      "cpu_one_core_percent": 29.665,
+      "unavailable_process_observations": 36,
+      "private_mib": {
+        "mean": 883.06,
+        "min": 821.81,
+        "max": 896.18
+      },
+      "working_mib": {
+        "mean": 975.081,
+        "min": 883.66,
+        "max": 1062.4
+      },
+      "processes": {
+        "mean": 33.979,
+        "min": 33,
+        "max": 34
+      }
+    },
+    "switching": {
+      "samples": 1,
+      "cpu_interval_seconds": 0,
+      "cpu_one_core_percent": null,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 843.07,
+        "min": 843.07,
+        "max": 843.07
+      },
+      "working_mib": {
+        "mean": 1094.36,
+        "min": 1094.36,
+        "max": 1094.36
+      },
+      "processes": {
+        "mean": 31,
+        "min": 31,
+        "max": 31
+      }
+    },
+    "after_close": {
+      "samples": 17,
+      "cpu_interval_seconds": 14.272,
+      "cpu_one_core_percent": 7.007,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 421.928,
+        "min": 414.85,
+        "max": 448.93
+      },
+      "working_mib": {
+        "mean": 764.398,
+        "min": 761.92,
+        "max": 771.2
+      },
+      "processes": {
+        "mean": 14,
+        "min": 14,
+        "max": 14
+      }
+    }
+  },
+  "first_five_minutes_soak": {
+    "samples": 297,
+    "cpu_interval_seconds": 299.208,
+    "cpu_one_core_percent": 31.881,
+    "unavailable_process_observations": 4,
+    "private_mib": {
+      "mean": 866.006,
+      "min": 821.81,
+      "max": 896.18
+    },
+    "working_mib": {
+      "mean": 997.714,
+      "min": 917.5,
+      "max": 1062.4
+    },
+    "processes": {
+      "mean": 33.987,
+      "min": 33,
+      "max": 34
+    }
+  },
+  "last_five_minutes_soak": {
+    "samples": 308,
+    "cpu_interval_seconds": 299.237,
+    "cpu_one_core_percent": 20.636,
+    "unavailable_process_observations": 5,
+    "private_mib": {
+      "mean": 889.848,
+      "min": 866.45,
+      "max": 894.92
+    },
+    "working_mib": {
+      "mean": 969.463,
+      "min": 884.49,
+      "max": 1003.1
+    },
+    "processes": {
+      "mean": 33.981,
+      "min": 33,
+      "max": 34
+    }
+  },
+  "last_five_seconds_after_close": {
+    "samples": 6,
+    "cpu_interval_seconds": 4.445,
+    "cpu_one_core_percent": 12.655,
+    "unavailable_process_observations": 0,
+    "private_mib": {
+      "mean": 415.422,
+      "min": 414.85,
+      "max": 416.45
+    },
+    "working_mib": {
+      "mean": 762.427,
+      "min": 761.92,
+      "max": 763.34
+    },
+    "processes": {
+      "mean": 14,
+      "min": 14,
+      "max": 14
+    }
+  },
+  "minute_bins": [
+    {
+      "minute": 0,
+      "samples": 60,
+      "cpu_interval_seconds": 59.816,
+      "cpu_one_core_percent": 19.278,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 846.706,
+        "min": 821.81,
+        "max": 854.97
+      },
+      "working_mib": {
+        "mean": 1001.044,
+        "min": 945.45,
+        "max": 1045.15
+      },
+      "processes": {
+        "mean": 33.983,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 1,
+      "samples": 57,
+      "cpu_interval_seconds": 58.246,
+      "cpu_one_core_percent": 19.395,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 856.347,
+        "min": 850.2,
+        "max": 861.95
+      },
+      "working_mib": {
+        "mean": 1004.69,
+        "min": 955.26,
+        "max": 1062.4
+      },
+      "processes": {
+        "mean": 34,
+        "min": 34,
+        "max": 34
+      }
+    },
+    {
+      "minute": 2,
+      "samples": 60,
+      "cpu_interval_seconds": 59.714,
+      "cpu_one_core_percent": 20.907,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 868.964,
+        "min": 857.08,
+        "max": 896.18
+      },
+      "working_mib": {
+        "mean": 1002.382,
+        "min": 946.29,
+        "max": 1031.2
+      },
+      "processes": {
+        "mean": 34,
+        "min": 34,
+        "max": 34
+      }
+    },
+    {
+      "minute": 3,
+      "samples": 60,
+      "cpu_interval_seconds": 58.674,
+      "cpu_one_core_percent": 39.759,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 878.099,
+        "min": 855.57,
+        "max": 883.54
+      },
+      "working_mib": {
+        "mean": 997.439,
+        "min": 917.5,
+        "max": 1051
+      },
+      "processes": {
+        "mean": 33.983,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 4,
+      "samples": 60,
+      "cpu_interval_seconds": 58.695,
+      "cpu_one_core_percent": 60.163,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 879.431,
+        "min": 859.11,
+        "max": 884.82
+      },
+      "working_mib": {
+        "mean": 983.364,
+        "min": 933.25,
+        "max": 1033.95
+      },
+      "processes": {
+        "mean": 33.967,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 5,
+      "samples": 61,
+      "cpu_interval_seconds": 59.403,
+      "cpu_one_core_percent": 60.077,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 881.71,
+        "min": 862.03,
+        "max": 886.1
+      },
+      "working_mib": {
+        "mean": 981.704,
+        "min": 931.61,
+        "max": 1013.46
+      },
+      "processes": {
+        "mean": 33.967,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 6,
+      "samples": 61,
+      "cpu_interval_seconds": 59.215,
+      "cpu_one_core_percent": 46.072,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 881.562,
+        "min": 859.68,
+        "max": 886.47
+      },
+      "working_mib": {
+        "mean": 981.065,
+        "min": 925.74,
+        "max": 1016.2
+      },
+      "processes": {
+        "mean": 33.967,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 7,
+      "samples": 61,
+      "cpu_interval_seconds": 58.358,
+      "cpu_one_core_percent": 20.241,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 879.852,
+        "min": 860.24,
+        "max": 882.34
+      },
+      "working_mib": {
+        "mean": 971.565,
+        "min": 933.83,
+        "max": 997.71
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 8,
+      "samples": 62,
+      "cpu_interval_seconds": 59.237,
+      "cpu_one_core_percent": 20.785,
+      "unavailable_process_observations": 3,
+      "private_mib": {
+        "mean": 880.725,
+        "min": 856.32,
+        "max": 885.88
+      },
+      "working_mib": {
+        "mean": 963.554,
+        "min": 909.09,
+        "max": 995.51
+      },
+      "processes": {
+        "mean": 33.952,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 9,
+      "samples": 62,
+      "cpu_interval_seconds": 59.112,
+      "cpu_one_core_percent": 20.776,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 884.749,
+        "min": 864.88,
+        "max": 890.08
+      },
+      "working_mib": {
+        "mean": 972.932,
+        "min": 917.4,
+        "max": 1021.71
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 10,
+      "samples": 61,
+      "cpu_interval_seconds": 59.04,
+      "cpu_one_core_percent": 20.405,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 883.966,
+        "min": 862.57,
+        "max": 889.46
+      },
+      "working_mib": {
+        "mean": 982.246,
+        "min": 894.81,
+        "max": 1009.3
+      },
+      "processes": {
+        "mean": 33.967,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 11,
+      "samples": 62,
+      "cpu_interval_seconds": 59.15,
+      "cpu_one_core_percent": 20.842,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 884.686,
+        "min": 880.79,
+        "max": 889.64
+      },
+      "working_mib": {
+        "mean": 980.426,
+        "min": 948.25,
+        "max": 1013.18
+      },
+      "processes": {
+        "mean": 34,
+        "min": 34,
+        "max": 34
+      }
+    },
+    {
+      "minute": 12,
+      "samples": 62,
+      "cpu_interval_seconds": 59.13,
+      "cpu_one_core_percent": 20.479,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 886.06,
+        "min": 866.2,
+        "max": 891.07
+      },
+      "working_mib": {
+        "mean": 973.289,
+        "min": 908.43,
+        "max": 1001.94
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 13,
+      "samples": 61,
+      "cpu_interval_seconds": 58.458,
+      "cpu_one_core_percent": 20.474,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 885.952,
+        "min": 863.5,
+        "max": 891.23
+      },
+      "working_mib": {
+        "mean": 968.635,
+        "min": 891.11,
+        "max": 999.41
+      },
+      "processes": {
+        "mean": 33.967,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 14,
+      "samples": 62,
+      "cpu_interval_seconds": 59.231,
+      "cpu_one_core_percent": 21.816,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 886.427,
+        "min": 863.2,
+        "max": 891.1
+      },
+      "working_mib": {
+        "mean": 967.633,
+        "min": 883.66,
+        "max": 997.2
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 15,
+      "samples": 62,
+      "cpu_interval_seconds": 59.605,
+      "cpu_one_core_percent": 19.346,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 884.531,
+        "min": 865,
+        "max": 886.91
+      },
+      "working_mib": {
+        "mean": 965.477,
+        "min": 898.62,
+        "max": 997.06
+      },
+      "processes": {
+        "mean": 33.968,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 16,
+      "samples": 61,
+      "cpu_interval_seconds": 58.428,
+      "cpu_one_core_percent": 22.143,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 885.419,
+        "min": 864.65,
+        "max": 888.82
+      },
+      "working_mib": {
+        "mean": 964.004,
+        "min": 902.64,
+        "max": 996.34
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 17,
+      "samples": 62,
+      "cpu_interval_seconds": 59.289,
+      "cpu_one_core_percent": 19.871,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 885.89,
+        "min": 863.86,
+        "max": 888.59
+      },
+      "working_mib": {
+        "mean": 963.073,
+        "min": 901.46,
+        "max": 989.34
+      },
+      "processes": {
+        "mean": 33.968,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 18,
+      "samples": 62,
+      "cpu_interval_seconds": 59.29,
+      "cpu_one_core_percent": 19.133,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 886.648,
+        "min": 865.01,
+        "max": 890.58
+      },
+      "working_mib": {
+        "mean": 968.433,
+        "min": 896.84,
+        "max": 995.18
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 19,
+      "samples": 61,
+      "cpu_interval_seconds": 58.45,
+      "cpu_one_core_percent": 18.472,
+      "unavailable_process_observations": 3,
+      "private_mib": {
+        "mean": 886.967,
+        "min": 862.95,
+        "max": 894.26
+      },
+      "working_mib": {
+        "mean": 961.742,
+        "min": 885,
+        "max": 994.36
+      },
+      "processes": {
+        "mean": 33.951,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 20,
+      "samples": 62,
+      "cpu_interval_seconds": 59.277,
+      "cpu_one_core_percent": 20.323,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 889.444,
+        "min": 868.5,
+        "max": 894.1
+      },
+      "working_mib": {
+        "mean": 975.835,
+        "min": 912.52,
+        "max": 998.79
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 21,
+      "samples": 59,
+      "cpu_interval_seconds": 58.603,
+      "cpu_one_core_percent": 59.671,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 891.252,
+        "min": 888.49,
+        "max": 895.72
+      },
+      "working_mib": {
+        "mean": 977.397,
+        "min": 937.39,
+        "max": 1000.79
+      },
+      "processes": {
+        "mean": 34,
+        "min": 34,
+        "max": 34
+      }
+    },
+    {
+      "minute": 22,
+      "samples": 61,
+      "cpu_interval_seconds": 59.795,
+      "cpu_one_core_percent": 64.596,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 890.29,
+        "min": 869.87,
+        "max": 893.74
+      },
+      "working_mib": {
+        "mean": 968.866,
+        "min": 913.16,
+        "max": 1002.32
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 23,
+      "samples": 60,
+      "cpu_interval_seconds": 58.787,
+      "cpu_one_core_percent": 64.667,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 888.111,
+        "min": 869.34,
+        "max": 894.87
+      },
+      "working_mib": {
+        "mean": 968.636,
+        "min": 919.18,
+        "max": 1001.75
+      },
+      "processes": {
+        "mean": 33.983,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 24,
+      "samples": 59,
+      "cpu_interval_seconds": 58.679,
+      "cpu_one_core_percent": 47.185,
+      "unavailable_process_observations": 2,
+      "private_mib": {
+        "mean": 885.813,
+        "min": 864.23,
+        "max": 890.31
+      },
+      "working_mib": {
+        "mean": 963.609,
+        "min": 886.85,
+        "max": 998.11
+      },
+      "processes": {
+        "mean": 33.966,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 25,
+      "samples": 61,
+      "cpu_interval_seconds": 58.904,
+      "cpu_one_core_percent": 19.47,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 887.42,
+        "min": 866.45,
+        "max": 890.72
+      },
+      "working_mib": {
+        "mean": 964.972,
+        "min": 884.49,
+        "max": 992.02
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 26,
+      "samples": 62,
+      "cpu_interval_seconds": 59.138,
+      "cpu_one_core_percent": 19.737,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 890.074,
+        "min": 870.59,
+        "max": 893.21
+      },
+      "working_mib": {
+        "mean": 966.255,
+        "min": 901.11,
+        "max": 993.73
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 27,
+      "samples": 62,
+      "cpu_interval_seconds": 59.696,
+      "cpu_one_core_percent": 21.751,
+      "unavailable_process_observations": 1,
+      "private_mib": {
+        "mean": 890.927,
+        "min": 870.95,
+        "max": 894.36
+      },
+      "working_mib": {
+        "mean": 968.99,
+        "min": 900.6,
+        "max": 997.26
+      },
+      "processes": {
+        "mean": 33.984,
+        "min": 33,
+        "max": 34
+      }
+    },
+    {
+      "minute": 28,
+      "samples": 61,
+      "cpu_interval_seconds": 58.403,
+      "cpu_one_core_percent": 20.092,
+      "unavailable_process_observations": 0,
+      "private_mib": {
+        "mean": 891.418,
+        "min": 888.31,
+        "max": 894.92
+      },
+      "working_mib": {
+        "mean": 979.707,
+        "min": 954.47,
+        "max": 1003.1
+      },
+      "processes": {
+        "mean": 34,
+        "min": 34,
+        "max": 34
+      }
+    },
+    {
+      "minute": 29,
+      "samples": 62,
+      "cpu_interval_seconds": 59.205,
+      "cpu_one_core_percent": 21.641,
+      "unavailable_process_observations": 3,
+      "private_mib": {
+        "mean": 889.386,
+        "min": 868.74,
+        "max": 893.73
+      },
+      "working_mib": {
+        "mean": 967.485,
+        "min": 889.83,
+        "max": 1000.84
+      },
+      "processes": {
+        "mean": 33.952,
+        "min": 33,
+        "max": 34
+      }
+    }
+  ],
+  "notes": [
+    "Single fresh-profile run; twenty stable tabs plus at most one scratch.",
+    "Root plus recursively discovered descendants; CPU is one-core utilization, working set double-counts shared pages.",
+    "Early GUI/media tests and a five-second sampler smoke overlapped; OS/power conditions not controlled.",
+    "Numeric aggregates only; profiles, command lines, URLs, titles, request data and logs excluded.",
+    "No claim of speed improvement, leak absence, physical sleep/wake or thirty minutes of human interaction."
+  ]
+}

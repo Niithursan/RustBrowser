@@ -171,6 +171,16 @@ impl Probe {
                     {
                         return Err("Sleeping UI disagrees with native state".into());
                     }
+                    s.last_background = Instant::now() - Duration::from_secs(31);
+                    s.next_background = Instant::now();
+                    s.background_tick();
+                    if native_background::suspended(
+                        &s.tabs.get_mut(bg).ok_or("No tab")?.content.engine.view,
+                    )
+                    .map_err(|_| "Pause recovery query")?
+                    {
+                        return Err("Event-loop pause recovery left a view suspended".into());
+                    }
                     s.command(Command::SelectTab(bg))
                         .map_err(|_| "Resume failed")?;
                     let tab = s.tabs.active().ok_or("No tab")?;
@@ -391,6 +401,7 @@ fn run(private: bool) {
     let failure = probe.failure.clone();
     let phase = probe.phase;
     drop(probe);
+    assert!(failure.is_none(), "{failure:?}");
     if private {
         assert_eq!(before, std::fs::read(root.join("session.json")).unwrap());
     } else {

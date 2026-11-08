@@ -61,6 +61,7 @@ pub struct Staged {
     pub folder: PathBuf,
     pub temporary: PathBuf,
     pub name: String,
+    lease: std::sync::Arc<crate::download_recovery::Lease>,
 }
 
 impl Staged {
@@ -84,10 +85,13 @@ impl Staged {
             ));
             match fs::create_dir(&directory) {
                 Ok(()) => {
+                    let lease =
+                        std::sync::Arc::new(crate::download_recovery::Lease::create(&directory)?);
                     return Ok(Self {
                         folder,
                         temporary: directory.join(&name),
                         name,
+                        lease,
                     });
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -124,9 +128,7 @@ impl Staged {
             let target = self.folder.join(name);
             match move_without_replace(&self.temporary, &target) {
                 Ok(()) => {
-                    if let Some(parent) = self.temporary.parent() {
-                        let _ = fs::remove_dir(parent);
-                    }
+                    self.lease.clean_empty();
                     return Ok(target);
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists || target.exists() => {
@@ -144,9 +146,7 @@ impl Staged {
     /// Only call after WebView2 has reported a terminal/cancelled operation.
     pub fn clean_partial(&self) {
         let _ = fs::remove_file(&self.temporary);
-        if let Some(parent) = self.temporary.parent() {
-            let _ = fs::remove_dir(parent);
-        }
+        self.lease.clean_empty();
     }
 }
 

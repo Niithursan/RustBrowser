@@ -17,6 +17,11 @@ use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebView
 
 pub struct Engine {
     pub view: WebView,
+    pub activity: std::rc::Rc<crate::native_activity::Activity>,
+}
+pub struct Options {
+    pub private: bool,
+    pub environment: Option<ICoreWebView2Environment>,
 }
 
 impl Engine {
@@ -27,12 +32,19 @@ impl Engine {
         id: TabId,
         downloads: crate::native_downloads::Shared,
         permissions: crate::native_security::Shared,
-        private: bool,
+        options: Options,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let nav_proxy = proxy.clone();
-        let popup_proxy = proxy.clone();
         let load_proxy = proxy.clone();
-        let view = WebViewBuilder::new_with_web_context(context)
+        let private = options.private;
+        let related = options.environment.is_some();
+        let builder = WebViewBuilder::new_with_web_context(context);
+        let builder = if let Some(environment) = options.environment {
+            builder.with_environment(environment)
+        } else {
+            builder
+        };
+        let view = builder
             // Preserve WebView2 security defaults instead of Wry's default browser arguments.
             .with_additional_browser_args("")
             .with_autoplay(false)
@@ -48,10 +60,6 @@ impl Engine {
                     ));
                 }
                 allowed
-            })
-            .with_new_window_req_handler(move |url, _| {
-                let _ = popup_proxy.send_event(Event::OpenTab(id, url));
-                wry::NewWindowResponse::Deny
             })
             .with_on_page_load_handler(move |event, _| {
                 if matches!(event, wry::PageLoadEvent::Started) {
@@ -102,6 +110,7 @@ impl Engine {
                 })),
                 &mut token,
             )?;
+            let completed_proxy = proxy.clone();
             core.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                 if let Some(args) = args {
                     let mut success = BOOL::default();
@@ -117,12 +126,17 @@ impl Engine {
                         let mut source=windows::core::PWSTR::null();sender.Source(&mut source)?;url=webview2_com::take_pwstr(source);
                         let mut value=windows::core::PWSTR::null();sender.DocumentTitle(&mut value)?;title=webview2_com::take_pwstr(value);
                     }
-                    let _ = proxy.send_event(Event::Page(id, PageEvent::Completed { error,navigation_id,url,title }));
+                    let _ = completed_proxy.send_event(Event::Page(id, PageEvent::Completed { error,navigation_id,url,title }));
                 }
                 Ok(())
             })), &mut token)?;
         }
-        Ok(Self { view })
+        let activity = std::rc::Rc::new(crate::native_activity::Activity::default());
+        crate::native_activity::install(&view, activity.clone(), proxy.clone(), id)?;
+        if !related {
+            crate::native_activity::watch_resources(&view, activity.clone())?;
+        }
+        Ok(Self { view, activity })
     }
 
     pub fn history(&self) -> (bool, bool) {
@@ -176,7 +190,8 @@ pub fn accelerators(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::co
                     let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
                     let command = crate::ui::shortcut(key, ctrl, alt, shift);
                     if let Some(command) = command {
-                        args.SetHandled(true)?;
+                        // Escape must also reach HTML fullscreen, selects and dialogs.
+                        args.SetHandled(key != 0x1b)?;
                         let _ = proxy.send_event(Event::Command(command));
                     }
                 }

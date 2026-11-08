@@ -1,4 +1,5 @@
 pub mod background;
+pub mod download_recovery;
 pub mod downloads;
 pub mod library;
 pub mod navigation;

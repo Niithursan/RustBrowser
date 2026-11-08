@@ -6,7 +6,9 @@ param(
     [ValidateRange(1,10)][int]$Repeats = 1,
     [ValidateRange(15,180)][int]$SettleSeconds = 30,
     [ValidateRange(5,180)][int]$SampleSeconds = 10,
-    [ValidateRange(0,180)][int]$SoakSeconds = 120,
+    [ValidateRange(0,3600)][int]$SoakSeconds = 120,
+    [switch]$FreshOnly,
+    [switch]$Churn,
     [ValidateRange(5,180)][int]$RecoverySeconds = 15
 )
 $ErrorActionPreference = 'Stop'
@@ -21,27 +23,7 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $output '.rust-browser-benchmark') -Value 'Disposable synthetic benchmark only' -Encoding utf8
 foreach ($count in $TabCounts) { if ($count -lt 1 -or $count -gt 20) { throw 'Tab counts must be between 1 and 20.' } }
 
-function Read-SharedText([string]$Path) {
-    $stream = [IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-    try { $reader=[IO.StreamReader]::new($stream); return $reader.ReadToEnd() } finally { $stream.Dispose() }
-}
-function Sample-Tree([int]$RootId,$CpuState,[double]$Elapsed,[string]$Stage) {
-    $all=Get-CimInstance Win32_Process
-    $ids=[Collections.Generic.HashSet[int]]::new();[void]$ids.Add($RootId)
-    do { $before=$ids.Count; foreach($item in $all) {if($ids.Contains([int]$item.ParentProcessId)){[void]$ids.Add([int]$item.ProcessId)}} } while($before -ne $ids.Count)
-    $working=0L;$private=0L;$cpu=0.0;$alive=0;$unavailable=0
-    foreach($processId in $ids) {
-        try {
-            $item=Get-Process -Id $processId -ErrorAction Stop
-            $key="$processId/$($item.StartTime.ToUniversalTime().Ticks)"
-            $total=$item.TotalProcessorTime.TotalSeconds
-            # Explicit doubles avoid PowerShell choosing Math.Max's integer overload.
-            if($CpuState.ContainsKey($key)){$cpu+=[math]::Max([double]0,[double]($total-$CpuState[$key]))}
-            $CpuState[$key]=$total;$working+=$item.WorkingSet64;$private+=$item.PrivateMemorySize64;$alive++
-        } catch { $unavailable++ }
-    }
-    [pscustomobject]@{seconds=[math]::Round($Elapsed,3);stage=$Stage;processes=$alive;unavailable=$unavailable;working_mib=[math]::Round($working/1MB,2);private_mib=[math]::Round($private/1MB,2);cpu_seconds=$cpu;ids=@($ids)}
-}
+. (Join-Path $PSScriptRoot 'process-tree.ps1')
 $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1
 $os=Get-CimInstance Win32_OperatingSystem
 $hardware=[ordered]@{cpu=$cpu.Name;logical_processors=$cpu.NumberOfLogicalProcessors;ram_gib=[math]::Round($os.TotalVisibleMemorySize/1MB,2);os=$os.Caption;os_version=$os.Version;architecture=$os.OSArchitecture}
@@ -50,9 +32,11 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
     $case=Join-Path $output ("tabs-$count-repeat-$repeat-"+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $case | Out-Null
     Set-Content -LiteralPath (Join-Path $case '.rust-browser-benchmark') -Value 'Synthetic benchmark' -Encoding utf8
-    foreach($mode in @('fresh-profile','warm-profile')) {
+    $modes=if($FreshOnly){@('fresh-profile')}else{@('fresh-profile','warm-profile')}
+    foreach($mode in $modes) {
         $env:RUST_BROWSER_BENCH_ROOT=$case;$env:RUST_BROWSER_BENCH_TABS="$count"
         $env:RUST_BROWSER_BENCH_SETTLE="$SettleSeconds";$env:RUST_BROWSER_BENCH_SAMPLE="$SampleSeconds";$env:RUST_BROWSER_BENCH_SOAK="$SoakSeconds";$env:RUST_BROWSER_BENCH_RECOVERY="$RecoverySeconds"
+        $env:RUST_BROWSER_BENCH_CHURN=if($Churn){'1'}else{'0'}
         $metricsPath=Join-Path $case 'metrics.json'
         if(Test-Path -LiteralPath $metricsPath){Remove-Item -LiteralPath $metricsPath}
         $start=Get-Date
@@ -66,6 +50,8 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
             $stage=if($lastMetrics){$lastMetrics.stage}else{'startup'}
             $sample=Sample-Tree $process.Id $cpuState $clock.Elapsed.TotalSeconds $stage;$treeIds=$sample.ids
             $samples.Add(($sample | Select-Object -ExcludeProperty ids))
+            # Preserve numeric evidence even if the probe later fails or is interrupted.
+            $sample | Select-Object -ExcludeProperty ids | Export-Csv -LiteralPath (Join-Path $case "$mode.samples.csv") -Append -NoTypeInformation -Encoding utf8
             Start-Sleep -Milliseconds 750
             $process.Refresh()
         }
@@ -80,8 +66,8 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
         }
         if($remaining.Count -gt 0){throw 'Previous WebView2 children remained alive; measurements would be incomplete.'}
         $results.Add([ordered]@{label=$Label;tabs=$count;mode=$mode;repeat=$repeat;metrics=$metrics;samples=@($samples.ToArray())})
-        [ordered]@{hardware=$hardware;parameters=@{settle=$SettleSeconds;sample=$SampleSeconds;soak=$SoakSeconds;recovery=$RecoverySeconds};runs=@($results.ToArray())} | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $output 'results.json') -Encoding utf8
+        [ordered]@{hardware=$hardware;parameters=@{settle=$SettleSeconds;sample=$SampleSeconds;soak=$SoakSeconds;recovery=$RecoverySeconds;churn=$Churn.IsPresent};runs=@($results.ToArray())} | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $output 'results.json') -Encoding utf8
         Write-Output "$Label / $count tabs / ${mode}: usable $([math]::Round($metrics.first_usable_ms)) ms; run finished in $([math]::Round(((Get-Date)-$start).TotalSeconds)) s"
     }
 } }
-Remove-Item Env:RUST_BROWSER_BENCH_ROOT,Env:RUST_BROWSER_BENCH_TABS,Env:RUST_BROWSER_BENCH_SETTLE,Env:RUST_BROWSER_BENCH_SAMPLE,Env:RUST_BROWSER_BENCH_SOAK,Env:RUST_BROWSER_BENCH_RECOVERY
+Remove-Item Env:RUST_BROWSER_BENCH_ROOT,Env:RUST_BROWSER_BENCH_TABS,Env:RUST_BROWSER_BENCH_SETTLE,Env:RUST_BROWSER_BENCH_SAMPLE,Env:RUST_BROWSER_BENCH_SOAK,Env:RUST_BROWSER_BENCH_RECOVERY,Env:RUST_BROWSER_BENCH_CHURN

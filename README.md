@@ -1,4 +1,4 @@
-# Rust Browser 0.5.0
+# Rust Browser 0.6.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
@@ -131,8 +131,9 @@ Unsupported permissions are denied. HTTP(S) downloads require destination select
 Wry's default extra browser arguments are replaced with an empty argument string to
 retain the Runtime's default security features. Media autoplay is disabled.
 
-HTTP(S) new-window requests open a tab in the same window and browsing mode. This supports
-basic target=_blank links but can break popup-based sign-in flows. There are no
+Runtime-marked user-initiated HTTP(S) and blank popup requests open a linked tab in
+the same window and browsing mode. Native opener relationships and `noopener` rules
+are preserved. See compatibility limits below. There are no
 extensions, printing UI, sync, full crash recovery or default-browser
 registration. Threat protections and compatibility
 need a dedicated review before everyday browsing. Runtime behavior remains dependent
@@ -173,6 +174,48 @@ there because no website connection is established.
 See [benchmarks/README.md](benchmarks/README.md) for reproducible Windows measurement
 instructions, measured results and their limits. Performance results describe the
 documented synthetic workload, not general website or everyday-browser performance.
+
+## Compatibility and recovery
+
+Popup tabs use the opener's exact native environment/profile. Native same-origin
+rules still apply; `postMessage`, shared cookies and script-created tab closure work
+in the controlled authentication fixture. Closing the active popup returns to its
+opener when it still exists. Requests not marked user initiated by WebView2 are
+blocked. Popup sizes/positions are not honored because popups are tabs. Opener and
+JavaScript relationships are not restored across application restarts. Real OAuth
+providers can restrict embedded browsers, third-party cookies or popups; no provider
+or personal-account compatibility guarantee is made. External OS-protocol callbacks
+remain blocked, and certificate validation is unchanged.
+
+Native observation adds conservative protection for non-read HTTP methods, media
+requests and WebSocket contexts **when reported by the Runtime**, including supported
+worker request sources. It reads only method/context classifications, retains a
+boolean, and does not read request bodies or log URLs. Protection lasts until the
+tab closes, so a completed upload or past media request can keep a tab awake. Linked
+popup pairs and pending requests are also protected. If request observation is
+unavailable, automatic sleeping is disabled for that view. Not every stream, upload,
+worker, WebSocket or WebRTC operation is observable: use **Keep awake** for live work,
+especially generated/muted media or calls. Private views use the same conservative
+policy within their isolated context.
+
+HTML fullscreen expands the native window while retaining the browser toolbar and
+origin indicator. Escape reaches the document's fullscreen handling and native
+controls. A renderer failure shows an actionable error; try Reload, then restart if
+the engine cannot recover. Recovery can lose unsaved forms and JavaScript state.
+After a long event-loop pause the browser resumes pending/sleeping views and delays
+new sleep attempts. This guard was tested with an injected timing gap; physical
+Windows sleep/wake remains a separate validation task.
+
+A valid committed session wins over a leftover temporary save. If the main session
+is missing or corrupt, a valid `session.json.tmp` can be recovered. Invalid files are
+preserved under unused recovery names. Access and other I/O errors fail visibly
+instead of resetting the profile. SQLite remains transactional with the existing
+schema. Process-termination tests cover committed snapshot recovery and rollback of
+an uncommitted SQLite transaction; this does not establish recovery from every OS,
+storage-device or power failure.
+
+See [validation/README.md](validation/README.md) for controlled fixtures, the
+compatibility matrix, and repeatable 30–60 minute interactive and automated procedures.
 
 ## Private browsing
 
@@ -284,6 +327,12 @@ errors can fail a download; no certificate or security check is bypassed.
 
 Abrupt browser termination can leave a `.rust-browser-download-*` staging directory.
 Finalization failures preserve the staged file instead of overwriting another file.
+New staging directories carry a locked ownership lease. Selecting a destination
+checks up to 256 immediate entries off the UI thread and removes only recognized,
+unlocked, empty abandoned staging directories. Live transfers, reparse points,
+legacy/unrecognized directories and every directory containing a payload are kept.
+Review nonempty staging folders manually: their files may be incomplete or complete.
+No disk-wide/startup scan or automatic deletion of potentially completed files occurs.
 Do not manually remove staging directories while transfers are active. Prefer a download
 folder outside the source checkout. Downloaded content remains untrusted.
 
@@ -301,6 +350,8 @@ src/navigation.rs     URL normalization and scheme policy, with unit tests
 src/tabs.rs           Engine-independent tab IDs, ordering and selection
 src/background.rs     Engine-independent sleeping eligibility and callback generations
 src/native_background.rs Optional WebView2 suspend/resume/audio adapter
+src/native_activity.rs Native activity classification, fullscreen and process failures
+src/native_popup.rs   Bounded UI-thread popup deferrals and linked native views
 src/settings.rs       Search provider settings and query encoding
 src/storage.rs        Validated snapshots, profile lock and background persistence
 src/privacy.rs        Private profile leases and clearing/retention policy
@@ -309,6 +360,7 @@ src/native_security.rs Windows permission deferrals and confirmed engine data cl
 src/library.rs        SQLite bookmark/folder/history model and migrations
 src/library_worker.rs Bounded database worker and application replies
 src/downloads.rs      Filename policy, stall tracking and no-overwrite finalization
+src/download_recovery.rs Locked staging ownership and bounded empty-folder recovery
 src/native_downloads.rs Windows picker and WebView2 download operations
 src/lib.rs            Testable core shared by application and integration tests
 src/engine.rs         Wry content view and Windows COM adapter

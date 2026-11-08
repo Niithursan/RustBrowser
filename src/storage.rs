@@ -96,7 +96,8 @@ pub fn load(path: &Path) -> io::Result<Snapshot> {
             "Session file is too large",
         ));
     }
-    let snapshot: Snapshot = serde_json::from_slice(&bytes)?;
+    let snapshot: Snapshot = serde_json::from_slice(&bytes)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid session JSON"))?;
     snapshot.validate()?;
     Ok(snapshot)
 }
@@ -148,20 +149,41 @@ impl Store {
             .open(profile.join("session.lock"))?;
         lock.try_lock().map_err(|_| io::Error::new(io::ErrorKind::WouldBlock, "This profile is already open. Close the other browser or use RUST_BROWSER_PROFILE."))?;
         let path = profile.join("session.json");
+        let temporary = path.with_extension("json.tmp");
+        let missing = !path.try_exists()?;
         let (snapshot, recovered) = match load(&path) {
+            Ok(_) if missing && temporary.try_exists()? => match load(&temporary) {
+                Ok(snapshot) => {
+                    fs::rename(&temporary, &path)?;
+                    (snapshot, true)
+                }
+                Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                    preserve_invalid(&temporary, profile)?;
+                    (Snapshot::default(), true)
+                }
+                Err(error) => return Err(error),
+            },
             Ok(snapshot) => (snapshot, false),
-            Err(_) => {
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
                 // Preserve invalid data for recovery; do not silently overwrite it.
-                let backup = profile.join(format!(
-                    "session-invalid-{}.json",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos()
-                ));
-                fs::rename(&path, backup)?;
-                (Snapshot::default(), true)
+                preserve_invalid(&path, profile)?;
+                if temporary.try_exists()? {
+                    match load(&temporary) {
+                        Ok(snapshot) => {
+                            fs::rename(&temporary, &path)?;
+                            (snapshot, true)
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                            preserve_invalid(&temporary, profile)?;
+                            (Snapshot::default(), true)
+                        }
+                        Err(error) => return Err(error),
+                    }
+                } else {
+                    (Snapshot::default(), true)
+                }
             }
+            Err(error) => return Err(error),
         };
         let latest = Arc::new(Mutex::new(None::<Snapshot>));
         let stored_path = path.clone();
@@ -242,6 +264,27 @@ impl Store {
             },
         )
     }
+}
+
+fn preserve_invalid(path: &Path, profile: &Path) -> io::Result<()> {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let backup = profile.join(format!("session-invalid-{nonce}.json"));
+    // Reserve a previously unused name; replace only our own empty reservation.
+    // This also works on filesystems that do not implement hard links.
+    drop(
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&backup)?,
+    );
+    if let Err(error) = fs::rename(path, &backup) {
+        let _ = fs::remove_file(&backup);
+        return Err(error);
+    }
+    Ok(())
 }
 
 impl Drop for Store {
