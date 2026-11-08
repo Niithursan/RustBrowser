@@ -191,7 +191,7 @@ impl Session {
         )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.7.0")
+                .with_title("Rust Browser 0.8.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -592,11 +592,11 @@ impl Session {
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
         let title = if self.private {
-            "Private — Rust Browser 0.7.0"
+            "Private — Rust Browser 0.8.0"
         } else if active.content.state.loading {
-            "Loading… — Rust Browser 0.7.0"
+            "Loading… — Rust Browser 0.8.0"
         } else {
-            "Rust Browser 0.7.0"
+            "Rust Browser 0.8.0"
         };
         if self.last_title.borrow().as_str() != title {
             self.window.set_title(title);
