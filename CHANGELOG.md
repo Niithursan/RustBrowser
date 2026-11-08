@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0
+
+- Small engine-independent content navigation/event interface, used by the existing
+  WebView2 adapter and covered by regular and native navigation regressions.
+- Separate opt-in, digest-pinned official servoshell prototype with unique disposable
+  profiles, controlled HTML/input/storage fixtures and a fixed HTTPS test target.
+- Launcher/archive refusal and output-isolation tests plus loopback fixture tests in
+  Windows CI, without downloading Servo or changing the production dependency graph.
+- Official API/build/security research, repeatable source-build procedure, integration
+  plan and measured capability/resource findings with explicit unavailable comparisons.
+- WebView2 remains the only production engine; no Servo tab selector, browser profile
+  migration, certificate bypass or native bridge is added to experimental content.
+
 ## 0.6.0
 
 - Native linked popup tabs preserve opener relationships, profile/cookie sharing,

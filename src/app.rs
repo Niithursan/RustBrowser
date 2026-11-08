@@ -7,6 +7,7 @@ use crate::{
 use base64::Engine as _;
 use rust_browser::{
     background::{Lifecycle, Phase, Protection},
+    engine_api::{ContentEngine, LoadTarget, NavigationCommand},
     library::{Action, Data, Filter},
     navigation,
     privacy::{self, ClearRequest, PrivateLease},
@@ -32,19 +33,7 @@ use winit::{
 use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 
-#[derive(Debug)]
-pub enum PageEvent {
-    Loading,
-    Changed,
-    Completed {
-        error: Option<String>,
-        navigation_id: u64,
-        url: String,
-        title: String,
-    },
-    Error(String),
-    Title(String),
-}
+pub use rust_browser::engine_api::PageEvent;
 #[derive(Debug)]
 pub enum Event {
     SuspensionResult {
@@ -73,6 +62,14 @@ pub enum Event {
     DownloadDestination(u64, Result<Option<PathBuf>, String>),
     DownloadFinished(u64, Result<PathBuf, String>),
     DownloadRecovery(String),
+}
+
+fn content_target(url: &str) -> Result<LoadTarget, rust_browser::engine_api::InvalidLocation> {
+    if matches!(url, navigation::HOME | "about:blank") {
+        Ok(LoadTarget::Blank)
+    } else {
+        LoadTarget::web(url)
+    }
 }
 
 struct Page {
@@ -194,7 +191,7 @@ impl Session {
         )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.6.0")
+                .with_title("Rust Browser 0.7.0")
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -366,11 +363,7 @@ impl Session {
         engine::accelerators(&engine.view, self.proxy.clone())?;
         native_popup::install(&engine.view, self.popups.clone(), self.proxy.clone(), id)?;
         if self.ready && environment.is_none() {
-            engine.view.load_url(if url == navigation::HOME {
-                "about:blank"
-            } else {
-                url
-            })?;
+            engine.load(&content_target(url)?)?;
         }
         let state = State {
             url: url.into(),
@@ -482,14 +475,13 @@ impl Session {
             }
             tab.content
                 .engine
-                .view
                 .set_visible(index == active && panel.is_none())?;
         }
         self.resize()?;
         if panel.is_some() {
             self.toolbar.focus()?;
         } else if let Some(tab) = self.tabs.active() {
-            tab.content.engine.view.focus()?;
+            tab.content.engine.focus()?;
         }
         Ok(())
     }
@@ -600,11 +592,11 @@ impl Session {
             Err(_) => eprintln!("Could not encode browser toolbar state."),
         }
         let title = if self.private {
-            "Private — Rust Browser 0.6.0"
+            "Private — Rust Browser 0.7.0"
         } else if active.content.state.loading {
-            "Loading… — Rust Browser 0.6.0"
+            "Loading… — Rust Browser 0.7.0"
         } else {
-            "Rust Browser 0.6.0"
+            "Rust Browser 0.7.0"
         };
         if self.last_title.borrow().as_str() != title {
             self.window.set_title(title);
@@ -898,13 +890,13 @@ impl Session {
                 self.notice.clear();
                 self.panel = None;
                 if let Some(tab) = self.tabs.active_mut() {
-                    tab.content.engine.view.load_url(&url)?;
+                    tab.content.engine.load(&LoadTarget::web(&url)?)?;
                     tab.url = url.clone();
                     tab.content.state.url = url;
                     tab.content.state.message = "Connecting…".into();
                     tab.content.state.loading = true;
                     tab.content.state.failed = false;
-                    tab.content.engine.view.focus()?;
+                    tab.content.engine.focus()?;
                 }
                 if panel_open {
                     self.activate()?;
@@ -921,7 +913,7 @@ impl Session {
                     tab.title = "New tab".into();
                     tab.content.state.url = tab.url.clone();
                     tab.content.state.failed = false;
-                    tab.content.engine.view.load_url("about:blank")?;
+                    tab.content.engine.load(&LoadTarget::Blank)?;
                 }
                 self.activate()?;
                 if self.settings.show_recent && !self.private {
@@ -952,7 +944,7 @@ impl Session {
                     self.toolbar
                         .evaluate_script("document.getElementById('home-query').focus()")?;
                 } else if let Some(tab) = self.tabs.active() {
-                    tab.content.engine.view.focus()?;
+                    tab.content.engine.focus()?;
                 }
             }
             other => {
@@ -962,7 +954,14 @@ impl Session {
                     {
                         return Ok(());
                     }
-                    tab.content.engine.command(&other)?;
+                    let action = match other {
+                        Command::Back => NavigationCommand::Back,
+                        Command::Forward => NavigationCommand::Forward,
+                        Command::Reload => NavigationCommand::Reload,
+                        Command::Stop => NavigationCommand::Stop,
+                        _ => return Ok(()),
+                    };
+                    tab.content.engine.navigate(action)?;
                     if matches!(other, Command::Stop) {
                         tab.content.state.loading = false;
                         tab.content.state.message = "Stopped.".into();
@@ -1504,7 +1503,7 @@ impl ApplicationHandler<Event> for App {
             Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
                 if startup {
-                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if tab.content.engine.view.load_url(if tab.url==navigation::HOME {"about:blank"}else{&tab.url}).is_err(){session.notice="A restored tab could not load.".into();}}}
+                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){session.notice="A restored tab could not load.".into();}}}
                     else {session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
                 } else if let Some(clear)=&mut session.clearing && clear.ticket==ticket {
                     clear.engine_done=true;clear.failed |= !success;

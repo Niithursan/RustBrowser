@@ -109,7 +109,7 @@ impl Probe {
                     s.started = Instant::now() - Duration::from_secs(200);
                     s.settings.suspend_after_seconds = 15;
                     let tab = s.tabs.get_mut(bg).ok_or("No background tab")?;
-                    tab.content.lifecycle = Lifecycle::default();
+                    tab.content.lifecycle.reset();
                     tab.content.lifecycle.visible(false, Duration::ZERO);
                     tab.keep_awake = true;
                     s.next_background = Instant::now();
@@ -132,15 +132,19 @@ impl Probe {
                         return Err("Disabled suspension still slept".into());
                     }
                     s.settings.automatic_suspension = true;
-                    s.next_background = Instant::now();
-                    s.background_tick();
+                    // Model the late result without queuing a second, real COM result.
+                    // The next phase independently tests actual WebView2 suspension.
+                    let now = s.started.elapsed();
+                    let delay = Duration::from_secs(s.settings.suspend_after_seconds);
+                    let protection = s.suspension_protection(bg, false);
                     let ticket = s
                         .tabs
                         .get_mut(bg)
                         .ok_or("No tab")?
                         .content
                         .lifecycle
-                        .generation;
+                        .request(now, delay, true, protection)
+                        .ok_or("Could not create pending suspension for late-result check")?;
                     s.command(Command::SelectTab(bg))
                         .map_err(|_| "Could not select pending tab")?;
                     s.suspension_result(bg, ticket, true);
@@ -153,9 +157,9 @@ impl Probe {
                     }
                     s.command(Command::SelectTab(self.ids[1]))
                         .map_err(|_| "Could not select other tab")?;
-                    let tab = s.tabs.get_mut(bg).ok_or("No tab")?;
-                    tab.content.lifecycle = Lifecycle::default();
-                    tab.content.lifecycle.visible(false, Duration::ZERO);
+                    let lifecycle = &mut s.tabs.get_mut(bg).ok_or("No tab")?.content.lifecycle;
+                    lifecycle.reset();
+                    lifecycle.visible(false, Duration::ZERO);
                     s.next_background = Instant::now();
                     s.background_tick();
                     self.phase = 2;
@@ -164,12 +168,16 @@ impl Probe {
             2 => {
                 let bg = self.ids[0];
                 if s.tabs.get_mut(bg).ok_or("No tab")?.content.lifecycle.phase == Phase::Sleeping {
-                    if !native_background::suspended(
-                        &s.tabs.get_mut(bg).ok_or("No tab")?.content.engine.view,
-                    )
-                    .map_err(|_| "No native suspension state")?
-                    {
-                        return Err("Sleeping UI disagrees with native state".into());
+                    let tab = s.tabs.get_mut(bg).ok_or("No tab")?;
+                    let phase = tab.content.lifecycle.phase;
+                    let generation = tab.content.lifecycle.generation;
+                    let native_suspended =
+                        native_background::suspended(&tab.content.engine.view)
+                            .map_err(|_| "Could not query native suspension state")?;
+                    if !native_suspended {
+                        return Err(format!(
+                            "Sleeping UI disagrees with native state (phase={phase:?}, generation={generation}, native_suspended={native_suspended})"
+                        ));
                     }
                     s.last_background = Instant::now() - Duration::from_secs(31);
                     s.next_background = Instant::now();
@@ -291,6 +299,51 @@ impl Probe {
                 if s.effective_panel().is_some() {
                     return Err("Back navigation did not leave local UI".into());
                 }
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                if engine.integration()
+                    != (rust_browser::engine_api::HostIntegration {
+                        presentation: rust_browser::engine_api::Presentation::NativeChild,
+                        input: rust_browser::engine_api::InputRouting::Native,
+                    })
+                    || !engine.history().1
+                {
+                    return Err("Native engine boundary lost input mode or forward history".into());
+                }
+                engine
+                    .navigate(NavigationCommand::Forward)
+                    .map_err(|_| "Engine boundary Forward failed")?;
+                self.phase = 11;
+            }
+            11 if s.tabs.active().is_some_and(|t| {
+                !t.content.state.loading
+                    && t.content.engine.view.url().ok().as_deref() == Some("about:blank")
+            }) =>
+            {
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                engine
+                    .navigate(NavigationCommand::Back)
+                    .map_err(|_| "Engine boundary Back failed")?;
+                self.phase = 12;
+            }
+            12 if s.tabs.active().is_some_and(|t| {
+                !t.content.state.loading
+                    && t.content.engine.view.url().ok().as_deref() == Some(FIXTURE_URL)
+            }) =>
+            {
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                engine
+                    .navigate(NavigationCommand::Stop)
+                    .map_err(|_| "Engine boundary Stop failed")?;
+                engine
+                    .set_visible(false)
+                    .map_err(|_| "Engine boundary hide failed")?;
+                engine
+                    .set_visible(true)
+                    .map_err(|_| "Engine boundary show failed")?;
+                engine.focus().map_err(|_| "Engine boundary focus failed")?;
                 s.command(Command::Home)
                     .map_err(|_| "Could not return to local page")?;
                 s.persist();

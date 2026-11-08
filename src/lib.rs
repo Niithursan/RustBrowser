@@ -1,6 +1,7 @@
 pub mod background;
 pub mod download_recovery;
 pub mod downloads;
+pub mod engine_api;
 pub mod library;
 pub mod navigation;
 pub mod privacy;

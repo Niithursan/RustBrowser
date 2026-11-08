@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rust Browser engine fixture</title>
+<style>
+  body { font: 18px system-ui, sans-serif; color: #182638; background: #f3f6fa; margin: 0; }
+  main { max-width: 900px; padding: 32px; margin: auto; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { padding: 22px; background: white; border: 2px solid #406a97; border-radius: 12px; }
+  button, input { font: inherit; padding: 12px; margin: 10px 6px 10px 0; }
+  input { width: min(90%, 380px); }
+  #status { background: #dcebdc; padding: 16px; }
+  canvas { max-width: 100%; background: #173452; }
+  .spacer { height: 650px; border-left: 4px solid #406a97; margin: 24px; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Experimental engine fixture</h1>
+  <p>Controlled content only. No accounts, permissions, external resources, or native bridge.</p>
+  <div class="grid"><div class="card">CSS grid</div><div class="card">Text and borders</div><div class="card">Responsive layout</div></div>
+  <label for="entry">Keyboard input</label><br><input id="entry" autocomplete="off" placeholder="Type synthetic text">
+  <button id="count">Count click</button>
+  <p id="status" role="status">Initializing fixture…</p>
+  <p id="echo">Typed: </p><p id="bridge"></p><p id="storage"></p>
+  <canvas id="canvas" width="640" height="100" aria-label="Synthetic moving bar"></canvas>
+  <p>Only the animation and interaction status change; there are no network callbacks.</p>
+  <div class="spacer"></div><h2>Scroll target reached</h2><a href="#top" id="top">Return to top</a>
+</main>
+<script>
+  let count = 0, frame = 0;
+  const status = document.getElementById('status'), entry = document.getElementById('entry');
+  document.getElementById('count').onclick = () => status.textContent = 'Clicks: ' + (++count);
+  entry.oninput = () => document.getElementById('echo').textContent = 'Typed: ' + entry.value;
+  document.getElementById('bridge').textContent = 'Native IPC exposed: ' + (typeof window.ipc !== 'undefined');
+  try { localStorage.setItem('servo-spike-fixture', 'synthetic'); document.getElementById('storage').textContent = 'Fixture storage round trip: ' + (localStorage.getItem('servo-spike-fixture') === 'synthetic'); }
+  catch { document.getElementById('storage').textContent = 'Storage unavailable for this origin'; }
+  const ctx = document.getElementById('canvas').getContext('2d');
+  setInterval(() => { ctx.fillStyle = '#173452'; ctx.fillRect(0, 0, 640, 100); ctx.fillStyle = '#78c3b8'; ctx.fillRect((++frame * 8) % 560, 20, 80, 60); }, 250);
+  status.textContent = 'Fixture ready';
+</script>
+</html>

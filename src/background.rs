@@ -44,6 +44,14 @@ pub struct Lifecycle {
     retry_at: Duration,
 }
 impl Lifecycle {
+    /// Reset the model after the view is awake, keeping previously issued tickets stale.
+    pub fn reset(&mut self) {
+        self.generation += 1;
+        self.phase = Phase::Awake;
+        self.hidden_at = None;
+        self.retry_at = Duration::ZERO;
+    }
+
     pub fn visible(&mut self, active: bool, now: Duration) {
         if active {
             self.hidden_at = None;
@@ -102,5 +110,31 @@ impl Lifecycle {
     }
     pub fn defer(&mut self, now: Duration) {
         self.retry_at = now + Duration::from_secs(30);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resetting_lifecycle_invalidates_outstanding_suspend_results() {
+        let mut lifecycle = Lifecycle::default();
+        lifecycle.visible(false, Duration::ZERO);
+        let first = lifecycle
+            .request(Duration::ZERO, Duration::ZERO, true, Protection::default())
+            .expect("an eligible hidden tab should request suspension");
+
+        lifecycle.reset();
+        lifecycle.visible(false, Duration::ZERO);
+        let second = lifecycle
+            .request(Duration::ZERO, Duration::ZERO, true, Protection::default())
+            .expect("reset should allow a fresh suspension request");
+
+        assert_ne!(first, second);
+        assert!(!lifecycle.complete(first, true, Duration::ZERO));
+        assert_eq!(lifecycle.phase, Phase::Pending);
+        assert!(lifecycle.complete(second, true, Duration::ZERO));
+        assert_eq!(lifecycle.phase, Phase::Sleeping);
     }
 }
