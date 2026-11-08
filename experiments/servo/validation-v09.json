@@ -1,0 +1,256 @@
+{
+    "date":  "2026-11-08",
+    "fixture_sha256":  "cf08d99139e14343fc039c6020726bf5fe03f1b18cc53fab90e82a8ef2e7b4e5",
+    "servo_executable_sha256":  "dc85de25006a7b124d5cd03c4946fbead5cbfcaa5dfdd6e6628a901510f1c3b2",
+    "method":  "Three fresh-profile runs per engine, four scales in ascending order. Synthetic dispatch to requestAnimationFrame callbacks. WebView2 first, then Servo. No builds or other test suites during runs.",
+    "results":  [
+                    {
+                        "engine":  "servo",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  55.87,
+                        "pointer_raf_ms":  17.44,
+                        "keyboard_raf_ms":  43.22,
+                        "composition_raf_ms":  null,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  21.21,
+                        "pointer_raf_ms":  13.76,
+                        "keyboard_raf_ms":  14.42,
+                        "composition_raf_ms":  null,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.5,
+                        "viewport":  "800x546",
+                        "ready_raf_ms":  17.11,
+                        "pointer_raf_ms":  12.5,
+                        "keyboard_raf_ms":  8.7,
+                        "composition_raf_ms":  null,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  17.23,
+                        "pointer_raf_ms":  14.35,
+                        "keyboard_raf_ms":  23.97,
+                        "composition_raf_ms":  null,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  20.59,
+                        "pointer_raf_ms":  117.04,
+                        "keyboard_raf_ms":  41.34,
+                        "composition_raf_ms":  null,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  23.41,
+                        "pointer_raf_ms":  14.02,
+                        "keyboard_raf_ms":  15.21,
+                        "composition_raf_ms":  null,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.5,
+                        "viewport":  "800x546",
+                        "ready_raf_ms":  17.25,
+                        "pointer_raf_ms":  13.54,
+                        "keyboard_raf_ms":  8.72,
+                        "composition_raf_ms":  null,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  20.87,
+                        "pointer_raf_ms":  13.85,
+                        "keyboard_raf_ms":  14.54,
+                        "composition_raf_ms":  null,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  21.06,
+                        "pointer_raf_ms":  69.87,
+                        "keyboard_raf_ms":  41.85,
+                        "composition_raf_ms":  null,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  24.24,
+                        "pointer_raf_ms":  13.46,
+                        "keyboard_raf_ms":  16.36,
+                        "composition_raf_ms":  null,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  1.5,
+                        "viewport":  "800x546",
+                        "ready_raf_ms":  17.41,
+                        "pointer_raf_ms":  14.23,
+                        "keyboard_raf_ms":  9.33,
+                        "composition_raf_ms":  null,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "servo",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  16.98,
+                        "pointer_raf_ms":  13.16,
+                        "keyboard_raf_ms":  10.29,
+                        "composition_raf_ms":  null,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  113.9,
+                        "pointer_raf_ms":  3.6,
+                        "keyboard_raf_ms":  3.3,
+                        "composition_raf_ms":  117.3,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  17.2,
+                        "pointer_raf_ms":  0.7,
+                        "keyboard_raf_ms":  3,
+                        "composition_raf_ms":  6.3,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.5,
+                        "viewport":  "800x547",
+                        "ready_raf_ms":  14.4,
+                        "pointer_raf_ms":  0.6,
+                        "keyboard_raf_ms":  3.1,
+                        "composition_raf_ms":  6.7,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  14.5,
+                        "pointer_raf_ms":  0.6,
+                        "keyboard_raf_ms":  2.4,
+                        "composition_raf_ms":  6.5,
+                        "trial":  1
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  108,
+                        "pointer_raf_ms":  0.9,
+                        "keyboard_raf_ms":  3.2,
+                        "composition_raf_ms":  109.3,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  14.5,
+                        "pointer_raf_ms":  0.8,
+                        "keyboard_raf_ms":  3.1,
+                        "composition_raf_ms":  6.1,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.5,
+                        "viewport":  "800x547",
+                        "ready_raf_ms":  14.3,
+                        "pointer_raf_ms":  0.6,
+                        "keyboard_raf_ms":  3,
+                        "composition_raf_ms":  6.9,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  16.1,
+                        "pointer_raf_ms":  2.5,
+                        "keyboard_raf_ms":  3.1,
+                        "composition_raf_ms":  7.9,
+                        "trial":  2
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1,
+                        "viewport":  "1200x820",
+                        "ready_raf_ms":  106.4,
+                        "pointer_raf_ms":  0.5,
+                        "keyboard_raf_ms":  3.2,
+                        "composition_raf_ms":  114.2,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.25,
+                        "viewport":  "960x656",
+                        "ready_raf_ms":  13.7,
+                        "pointer_raf_ms":  3.3,
+                        "keyboard_raf_ms":  3.2,
+                        "composition_raf_ms":  7,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  1.5,
+                        "viewport":  "800x547",
+                        "ready_raf_ms":  17.1,
+                        "pointer_raf_ms":  0.6,
+                        "keyboard_raf_ms":  3.1,
+                        "composition_raf_ms":  6.7,
+                        "trial":  3
+                    },
+                    {
+                        "engine":  "webview2",
+                        "scale":  2,
+                        "viewport":  "600x410",
+                        "ready_raf_ms":  16,
+                        "pointer_raf_ms":  0.8,
+                        "keyboard_raf_ms":  3.1,
+                        "composition_raf_ms":  6,
+                        "trial":  3
+                    }
+                ],
+    "environment":  {
+                        "os":  "Windows 11 Pro 10.0.26200 x64",
+                        "cpu":  "AMD Ryzen 5 5600",
+                        "ram_gib":  31.93,
+                        "webview2_runtime":  "157.0.4341.42",
+                        "servo_revision":  "65d058b9c6543840c1d986f7cae4520605bf5b5c",
+                        "rust_toolchain":  "1.99.1-x86_64-pc-windows-msvc"
+                    }
+}

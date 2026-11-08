@@ -51,6 +51,12 @@ profile formats. See [measured capabilities and limits](EMBEDDER_RESULTS.md).
 
 ## Future shared driver boundary
 
+The [v0.9 threat model](isolation/THREAT_MODEL.md) evaluates a trusted broker
+and an AppContainer worker. The standalone synthetic probe tests Windows
+mechanisms independently of Servo. The current Servo executable continues
+to host content in its own user-privileged process. The new numeric report
+channel carries fixture results only and grants no native actions.
+
 If both engines eventually share a host, keep the rendering driver separate
 from per-page navigation.
 
