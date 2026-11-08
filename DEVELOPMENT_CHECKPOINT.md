@@ -36,6 +36,7 @@ Baseline checkpoint: `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
 Initial diagnostic/IPC implementation: `de840e0cdb20528043e3a23e115ac157a55d6c63`.
 IPC recovery/input controls: `deb5eb1e7f4f298e0a2cbcb386966d052a3719a1`.
 LPAC-specific fault cases: `195c7774967fe98aef0fec4a58ad5148d4a3cd1d`.
+Documented decision and numeric evidence: `ec0f627b9c6da864ea565e7edb3ab7ba10457545`.
 Follow-up changes verify non-elevation, UIAccess, enabled privileges, live-IPC
 broker termination, small-allocation controls and measured fault shutdown.
 The protocol remains synthetic and grants no privileged browser operation.
@@ -49,9 +50,15 @@ Three sequential diagnostic samples per mode, the preserved original LPAC
 failure, Servo smoke and shared scale regressions are documented in
 `experiments/servo/VALIDATION_V010.md` and the numeric measurement file.
 
-Local implementation and documentation are ready for remote review. Push
-this feature branch, open one PR into main, and inspect checks on its exact
-head. If a PR already exists, continue it. Do not merge, tag or publish.
+The branch is pushed and [PR #13](https://github.com/Niithursan/RustBrowser/pull/13)
+is open into main. Baseline remains `bba82c9`; no merge, tag or publication
+was performed. Continue this PR rather than creating another one.
+
+The PR check suite is the live remote CI record. On continuation, fetch the
+PR's current head and check its Windows, dependency, synthetic-boundary and
+security results before reporting success. The final response/PR validation
+summary must identify the exact tested head. This checkpoint records local
+results; it does not substitute for checking a newer remote commit.
 
 ## Last successful checks
 
