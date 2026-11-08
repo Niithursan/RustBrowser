@@ -78,10 +78,15 @@ int child_probe(int argc, wchar_t** argv) {
     return 0;
 }
 
+#include "diagnostics_child.h"
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     const int argc = __argc;
     wchar_t** argv = __wargv;
     try {
+        if (argc > 1 && std::wstring(argv[1]).find(L"--diagnostic-") == 0) {
+            return diagnostic_child(argc, argv);
+        }
         if (argc == 2 && std::wstring(argv[1]) == L"--hold") {
             HANDLE raw = nullptr;
             require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw) != FALSE, "Self token");

@@ -20,7 +20,19 @@ The pinned Servo host accepts its owned fixtures. The v0.9 AppContainer
 control passes, but the LPAC suite fails Winsock startup with error 10107.
 There is no verified restricted Servo renderer.
 
-No new isolation mechanism is implemented at this checkpoint.
+The synthetic worker now has a fixed numeric diagnostic protocol through
+two explicitly inherited pipe endpoints. Its token, Win32k and child-process
+mitigations are retained. Diagnostics additionally enforce a 64 MiB
+committed-memory cap, actual child-creation denial, file controls with IPC
+enabled, malformed-reply rejection and a hung-worker deadline.
+
+LPAC can read/load the provider DLL, but cannot open the Winsock catalog
+keys and returns WSAStartup error 10107. This correlates with missing
+catalog access and does not establish a unique root cause. Both workers
+fail OpenGL loading with error 1114 under Win32k lockdown. See
+`experiments/servo/isolation/DIAGNOSTICS_V010.md`.
+
+Baseline checkpoint commit is `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
 
 ## Next stages
 
@@ -39,9 +51,11 @@ No new isolation mechanism is implemented at this checkpoint.
 
 ## Last successful checks
 
-The baseline CI results above are verified. New local v0.10 checks have
-not run yet. Prior v0.9 validation recorded 47 regular tests, seven native
-WebView2 tests, six Servo example unit tests and three smoke runs.
+The baseline CI results above are verified. The native diagnostics compile
+with /W4 /WX and pass standard AppContainer and LPAC collection, protocol
+mutation tests, malformed/hang tests and broker-crash recovery locally.
+LPAC's failed Winsock operation remains reported. Production and Servo
+regression checks for the new branch are still pending.
 
 ## Constraints and continuation
 
