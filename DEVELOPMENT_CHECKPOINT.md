@@ -34,20 +34,24 @@ fail OpenGL loading with error 1114 under Win32k lockdown. See
 
 Baseline checkpoint: `64deb8093629c7859ff0e4b296d0d04c2351d1b1`.
 Initial diagnostic/IPC implementation: `de840e0cdb20528043e3a23e115ac157a55d6c63`.
+IPC recovery/input controls: `deb5eb1e7f4f298e0a2cbcb386966d052a3719a1`.
+LPAC-specific fault cases: `195c7774967fe98aef0fec4a58ad5148d4a3cd1d`.
 Follow-up changes verify non-elevation, UIAccess, enabled privileges, live-IPC
 broker termination, small-allocation controls and measured fault shutdown.
 The protocol remains synthetic and grants no privileged browser operation.
 
-## Next stages
+## Completed investigation and delivery stage
 
-1. Finish the rendering decision: pinned software/offscreen routes still
-   need Surfman/WGL. Retained Win32k prevents OpenGL DLL initialization in
-   synthetic workers. No real Servo renderer was contained; alternative
-   graphics architectures remain unverified.
-2. Repeat final native measurements sequentially, preserve the original
-   LPAC failure, and run Servo smoke/scale regressions.
-3. Update this checkpoint and the required documentation. Push verified
-   commits, open a PR, and verify final CI. Leave review to the owner.
+The rendering decision is in `experiments/servo/SECURE_RENDERING_V010.md`.
+The pinned software/offscreen routes still need Surfman/WGL. No real Servo
+renderer was contained and alternative graphics paths remain unverified.
+Three sequential diagnostic samples per mode, the preserved original LPAC
+failure, Servo smoke and shared scale regressions are documented in
+`experiments/servo/VALIDATION_V010.md` and the numeric measurement file.
+
+Local implementation and documentation are ready for remote review. Push
+this feature branch, open one PR into main, and inspect checks on its exact
+head. If a PR already exists, continue it. Do not merge, tag or publish.
 
 ## Last successful checks
 
@@ -55,22 +59,28 @@ The baseline CI results above are verified. The native diagnostics compile
 with /W4 /WX and pass standard AppContainer and LPAC collection, protocol
 mutation tests, malformed/hang tests and broker-crash recovery locally.
 LPAC's failed Winsock operation remains reported. Production formatting,
-strict Clippy, regular tests, debug/release builds and audit passed locally.
+strict Clippy, 47 regular tests, debug/release builds and audit passed locally.
 All seven native WebView2 regressions passed, including the updated shared
 fixture. Launcher safety checks and two Python fixture tests passed. The
 separate Servo example's seven unit tests and host build with warnings
-denied passed.
+denied passed. Three fresh Servo smoke runs and profile-reuse refusal
+passed. The four-scale shared fixture passed in three runs per engine.
+Original standard AppContainer boundaries passed three final runs.
+Both diagnostic modes passed token/file/process/resource controls, protocol
+fault termination and live-IPC broker/profile recovery. The source package's
+strict Clippy still fails on upstream GenericSender, and its lock audit
+still reports rsa RUSTSEC-2023-0071 plus 11 unmaintained warnings.
 
 Actual Windows fixture input showed native key down/up, pointer clicks,
 movement, wheel, focus, Unicode text entry, maximize/restore resizing and
 preserved text at device scale 1. Alt+F4 closed the owned window with exit 0
-and teardown_complete. Five owned run files remain for inspection. This
+and teardown_complete. Five owned profile files remain for inspection. This
 does not verify native IME, OS autorepeat or mixed-monitor transitions.
 
 ## Constraints and continuation
 
 Read this file, AGENTS.md and `git status --short --branch` first.
-Review `experiments/servo/isolation/`, `VALIDATION_V09.md` and the separate
+Review `experiments/servo/isolation/`, `VALIDATION_V010.md` and the separate
 source-build procedure. Keep all build output and profiles outside the repo.
 Use the pinned Servo revision and lockfile when rebuilding the example.
 

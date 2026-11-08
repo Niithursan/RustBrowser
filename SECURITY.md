@@ -1,5 +1,25 @@
 # Security
 
+The v0.10 [rendering decision](experiments/servo/SECURE_RENDERING_V010.md)
+keeps the Servo host fixture-only. The synthetic diagnostic workers retain
+Win32k and child-process restrictions, zero capabilities and verified token
+limits. They receive exactly two anonymous pipe endpoints through an
+explicit handle list. The protocol accepts fixed numeric reports only and
+grants no filesystem, network or browser operation. A run identifier and
+fixture-origin number are not website authentication. Worker-reported
+metadata must never authorize privileges.
+
+Malformed frames, worker hangs, allocation limits and live-IPC broker
+termination have controlled tests. LPAC still fails Winsock startup; its
+inability to query catalog keys is evidence for investigation, not a proven
+unique cause. No network timeout/nonreceipt establishes general containment.
+OpenGL initialization fails under retained Win32k lockdown, and the pinned
+offscreen/software paths still depend on WGL. No real Servo renderer was
+launched under these restrictions. See [diagnostics](experiments/servo/isolation/DIAGNOSTICS_V010.md).
+The separate upstream lockfile audit and strict minimal-feature Clippy
+remain failing as recorded in [validation](experiments/servo/VALIDATION_V010.md).
+Production audit and strict Clippy pass independently.
+
 The v0.9 [threat model](experiments/servo/isolation/THREAT_MODEL.md) keeps
 arbitrary Servo browsing blocked. A separate synthetic worker validates
 selected AppContainer and Job Object mechanisms. Its standard AppContainer

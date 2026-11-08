@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.10 investigation
+
+- Added fixed-target AppContainer/LPAC diagnostics for Winsock catalogs,
+  services, system DLLs and privilege/resource boundaries, without extra
+  capabilities or relaxed mitigations.
+- Added explicitly scoped pipe handles, fixed numeric frames, protocol
+  mutation tests, malformed/hung-worker rejection, live-IPC broker-crash
+  recovery and measured resource limits in the experimental Windows job.
+- Documented the pinned WGL/offscreen rendering blocker. No real Servo
+  renderer is contained; LPAC Winsock and general network policy remain open.
+- Expanded key down/up/repeat and composition/cancellation fixtures, added
+  a visible native-input observation panel, and recorded actual Windows
+  input/resize/closure checks with explicit IME/DPI limitations.
+- Recorded repeated synthetic worker/IPC and shared frame-callback samples.
+  Kept WebView2, existing profiles/dependencies and package version 0.8.0.
+
 ## v0.9 investigation
 
 - Documented the Windows Servo threat model, candidate broker/worker design,

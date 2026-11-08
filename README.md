@@ -177,12 +177,13 @@ documented synthetic workload, not general website or everyday-browser performan
 
 ## Experimental Servo foundation
 
-The v0.9 planning and validation work is under
-[Windows isolation](experiments/servo/isolation/README.md). It includes a
-threat model, synthetic AppContainer probes, broker-crash recovery checks,
-and a [shared fixture](experiments/servo/VALIDATION_V09.md) for event and
-engine-scale validation. Production package version remains 0.8.0 pending
-verification of a usable Servo containment architecture.
+The v0.10 investigation adds [LPAC diagnostics and scoped synthetic IPC](experiments/servo/isolation/DIAGNOSTICS_V010.md),
+resource/failure tests, native fixture input observations and repeated numeric
+samples. The [rendering assessment](experiments/servo/SECURE_RENDERING_V010.md)
+records the WGL/Win32k blocker: no real Servo renderer has been contained.
+See the [validation record](experiments/servo/VALIDATION_V010.md) and
+[threat model](experiments/servo/isolation/THREAT_MODEL.md). Production package
+version remains 0.8.0; arbitrary Servo content remains blocked.
 
 Normal Rust Browser tabs use WebView2. v0.8 adds a standalone Windows executable
 that embeds one Servo view and opens two built-in local fixtures. Its separate

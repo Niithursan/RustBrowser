@@ -14,8 +14,9 @@ The new collector records that failure as diagnostic data.
 
 The script uses the same pinned mitigation configuration and fresh-profile
 rules as v0.9. It additionally compiles protocol tests. It runs a collector,
-an actual malformed-worker reply, a worker hang, and the existing
-broker-crash recovery test. Every diagnostic API target is compiled in.
+an actual malformed-worker reply, a worker hang, and a broker crash while
+the scoped IPC worker is alive. These cases retain the selected mode's
+AppContainer or LPAC controls. Every diagnostic API target is compiled in.
 No registry values, provider names, user files, credentials, or website
 contents are included in reports.
 
@@ -33,7 +34,7 @@ contents are included in reports.
 | Load opengl32.dll with Win32k lockdown | DLL initialization failure, 1114 | DLL initialization failure, 1114 |
 | WSAStartup return value | 0 | WSASYSCALLFAILURE, 10107 |
 | Create a synthetic descendant | Child process blocked, 367 | Child process blocked, 367 |
-| Commit 128 MiB under a verified 64 MiB job cap | Commitment limit, 1455 | Commitment limit, 1455 |
+| Commit 1 MiB / 128 MiB under verified 64 MiB cap | Success / commitment limit, 1455 | Success / commitment limit, 1455 |
 | Token elevation / UIAccess | 0 / 0 | 0 / 0 |
 | Private file read/write with IPC enabled | Denied | Denied |
 | ALL APPLICATION PACKAGES file read | Allowed | Denied |
@@ -43,7 +44,9 @@ capability and is a plausible explanation for Winsock startup failure.
 Provider DLL loading itself succeeded. These observations do not prove
 which internal Winsock call produces error 10107. The NSI query failure
 also occurs in the working AppContainer control, so it is not evidence
-that the NSI service is absent or stopped.
+that the NSI service is absent or stopped. A separate read-only query from
+the normal test session reported the NSI service running. No service,
+registry ACL, loopback exemption or firewall setting was changed.
 
 AppContainer's UDP send reported eight bytes accepted, but its datagram
 was not observed within the 200 ms receive window after a successful
@@ -77,7 +80,12 @@ Read deadlines and fixed message counts bound protocol work. Total
 broker writes fit below the pipe capacity even if the worker stops
 reading. The worker has a 64 MiB committed-memory cap and a one-process
 job. Malformed replies and hangs are terminated through that job.
-The profile creation journal and cleanup rules are retained.
+The profile creation journal and cleanup rules are retained. In the
+intentional broker-crash case the supervisor verifies the exact child's
+PID/creation time after job closure and recovers only the generated profile.
+The launcher also verifies non-elevation, UIAccess off and an enabled
+privilege allowlist containing only change-notify. This is not a claim that
+every Windows object accessible to the worker has been enumerated.
 
 ## Measurements and open work
 
@@ -87,8 +95,12 @@ sixteen echo round trips. The pipe uses 1 ms polling requests; actual
 Windows timer scheduling can be much coarser. These are synthetic
 worker/IPC measurements and do not measure browser or display latency.
 
-Repeatable final samples and rendering feasibility results are still
-pending at this checkpoint.
+Three final samples per mode, the original LPAC failure, actual Windows GUI
+scope and metric definitions are in [v0.10 validation](../VALIDATION_V010.md).
+The [sanitized numeric data](measurements-v010.json) retain all sixteen echo
+times per run and typed operation results without profiles or identifiers.
+The [rendering decision](../SECURE_RENDERING_V010.md) documents why a real
+Servo worker was not launched under these restrictions.
 
 ## Primary references
 

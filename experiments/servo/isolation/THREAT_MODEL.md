@@ -11,13 +11,13 @@ The renderer's own policy checks can then be bypassed.
 | Asset or boundary | Threat | Required control | Current evidence |
 | --- | --- | --- | --- |
 | Normal browser profiles, credentials, and user files | Renderer reads or modifies data with the current user's access | OS access checks against a dedicated package identity, limited file grants, no profile sharing | Servo fixture host still runs with user access. Synthetic AppContainer tests cover only owned sentinel files. |
-| Network, local services, and credentials | Exfiltration, loopback requests, intranet access, authentication | No renderer network capabilities, explicitly scoped broker, DNS/redirect/credential policy | Probe token has zero capabilities. A loopback timeout is inconclusive. DNS, UDP, IPv6, and remote endpoints are untested. |
-| Broker process and Windows objects | Memory access, handle reuse, impersonation, unwanted child processes | Restricted token, empty handle inheritance, explicit standard handles, child policy, authenticated IPC | Synthetic worker cannot open its parent for memory/duplicate access or signal the parent sentinel. No broker protocol exists yet. |
-| Renderer-to-broker messages | Deserialization bugs, path traversal, replay, resource exhaustion | Bounded typed messages, per-instance identity, strict state machine, no arbitrary paths or execution | Only fixed numeric fixture reports and a synthetic process identity record are implemented. They grant no browser capabilities. |
-| Graphics and input | Malicious surfaces, shared-memory handles, GPU/Win32k attack surface | Separate graphics broker, narrowly scoped surface rights, validated dimensions and input routing | Existing Servo WGL host needs native window/graphics APIs. Synthetic headless worker uses Win32k lockdown. Compatibility between them is unverified. |
+| Network, local services, and credentials | Exfiltration, loopback requests, intranet access, authentication | No renderer network capabilities, explicitly scoped broker, DNS/redirect/credential policy | Probe token has zero capabilities. TCP timeout and UDP nonreceipt after positive parent controls are inconclusive. LPAC WSAStartup fails 10107. DNS, IPv6 and remote endpoints are untested. |
+| Broker process and Windows objects | Memory access, handle reuse, impersonation, unwanted child processes | Restricted token, explicit handle allowlist, null standard handles, child policy, scoped IPC | Synthetic worker cannot open its parent for memory/duplicate access or signal an unlisted inheritable sentinel. Diagnostics inherit exactly two pipe endpoints. Actual descendant creation is denied; elevation/UIAccess are off and enabled privileges checked. |
+| Renderer-to-broker messages | Deserialization bugs, path traversal, replay, resource exhaustion | Bounded typed messages, per-instance identity, strict state machine, no arbitrary paths or execution | Fixed 48-byte diagnostic frames check sequence, run identity, fixture identifier, type, size and opcode. Twelve-field mutation, malformed reply, hang and live-IPC broker-crash tests pass. No browser operations or content-origin authorization exist. |
+| Graphics and input | Malicious surfaces, shared-memory handles, GPU/Win32k attack surface | Separate graphics broker, narrowly scoped surface rights, validated dimensions and input routing | Pinned software/offscreen paths still use WGL. System OpenGL initialization fails 1114 under Win32k lockdown in both synthetic workers. No real Servo surface/renderer was created there. |
 | Process and profile lifetime | Orphan workers, PID reuse, persistent data after broker crash | Job at creation, no inherited job handles, process identity checks, owned cleanup journal | Synthetic worker termination, last-job-handle closure, broker termination, and exact-profile recovery passed locally. |
 | Privileged browser UI | Untrusted content invokes bookmark, filesystem, or application actions | Keep UI in another process/profile, expose no Rust Browser IPC to content | Servo remains a standalone fixture host with no application IPC. The test report parser accepts bounded numbers only. |
-| Availability | Infinite loops, allocation bombs, process storms, broker starvation | Process count/resource budgets, deadlines, cancellation | Synthetic job limits active processes to one and tests use deadlines. Renderer CPU, memory, GPU budgets and stress limits are unverified. |
+| Availability | Infinite loops, allocation bombs, process storms, broker starvation | Process count/resource budgets, deadlines, cancellation | Diagnostic job limits active processes to one and private commit to 64 MiB; 1 MiB allocation succeeds and 128 MiB fails. Fixed IPC counts and deadlines bound the synthetic workload. Real renderer/GPU budgets and long stress remain unverified. |
 
 The threat model covers compromise of a renderer under an otherwise trusted,
 updated Windows installation. It does not establish protection against a
@@ -31,7 +31,7 @@ permissions would need additional designs and tests.
    immutable worker deployment. It grants execute/read access only to that
    package and leaves normal profiles outside the grants.
 2. The worker starts suspended with a minimal environment, no inherited
-   handles, explicit empty standard handles, a creation-time Job Object,
+   handles except explicitly reviewed IPC endpoints, null standard handles, a creation-time Job Object,
    child-process restrictions, and compatible mitigations. The launcher
    validates the resulting token before resuming it.
 3. A content worker receives controlled document bytes through a reviewed
@@ -62,11 +62,18 @@ all of the following work.
   compatible with selected process mitigations. The probe's Win32k
   lockdown prevents native UI creation and cannot simply be applied to
   the working WGL window.
+  The [v0.10 source assessment](../SECURE_RENDERING_V010.md) also finds that
+  the pinned software adapter is a low-power WGL adapter and offscreen
+  rendering retains a parent window context. No verified alternate route
+  has been substituted.
 - A documented minimal dependency/capability inventory. The capability-free
   LPAC worker failed Winsock initialization with `WSASYSCALLFAILURE 10107`.
   The direct LPAC token query also returned error 87 in an initial attempt.
   Neither result justifies granting registry, networking, or broad file
   capabilities to get Servo running.
+  Read-only v0.10 diagnostics find denied catalog access despite successful
+  provider DLL loading. This supports investigation, not a unique causal
+  explanation. No extra capability is added.
 - Positive and negative tests for all network transports, allowed object
   access, profile persistence, broker message fuzzing, handle rights,
   renderer crashes, and resource exhaustion. A two-second loopback

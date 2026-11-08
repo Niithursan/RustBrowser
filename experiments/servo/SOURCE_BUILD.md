@@ -178,7 +178,25 @@ the executable refuses to reuse a run.
 
 The validation script runs the shared synthetic event fixture at four engine
 device scales. It records frame-callback timings and explicitly reports missing
-composition support. See [validation scope and results](VALIDATION_V09.md).
+composition support. See the latest [validation scope and results](VALIDATION_V010.md).
+
+For v0.10, refresh the staged `input.rs`, `second.html` and `validation.html`
+from this branch before rebuilding. The second fixture includes visible
+trusted-input counters. Enter synthetic text, click its target, scroll,
+resize/maximize/restore and inspect focus/key/wheel delivery. Composition
+constructors remain disabled by the pinned preferences; native IME needs
+a separately available Windows input method and actual candidate testing.
+Engine scale overrides do not replace physical monitor checks.
+
+The same pinned source and lockfile remain in use. The standalone host's
+own code compiles with warnings denied, but strict Clippy for the upstream
+minimal-feature package fails on an unused `GenericSender` import. Its
+separate lock audit reports rsa advisory RUSTSEC-2023-0071 and unmaintained
+dependencies. Preserve those failures; do not add production exceptions.
+The [synthetic diagnostic procedure](isolation/DIAGNOSTICS_V010.md) compiles
+small SDK executables independently and must not be used to launch Servo.
+The [rendering decision](SECURE_RENDERING_V010.md) explains why the working
+WGL fixture host is not moved into the restricted worker.
 
 Keep both executables on the supplied local fixtures. See
 [measured results and limits](EMBEDDER_RESULTS.md) before using the experiment.
