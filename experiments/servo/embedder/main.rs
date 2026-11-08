@@ -11,16 +11,17 @@ use std::{
 
 use euclid::Scale;
 use servo::{
-    AllowOrDenyRequest, CreateNewWebViewRequest, DevicePoint, InputEvent, LoadStatus, MouseButton,
-    MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, NavigationRequest,
-    Opts, PermissionRequest, RenderingContext, Servo, ServoBuilder, ServoDelegate, ServoError,
-    WebResourceLoad, WebResourceResponse, WebView, WebViewBuilder, WebViewDelegate, WheelDelta,
-    WheelEvent, WheelMode, WindowRenderingContext,
+    AllowOrDenyRequest, CreateNewWebViewRequest, DevicePoint, EmbedderControl, EmbedderControlId,
+    InputEvent, LoadStatus, MouseButton, MouseButtonAction, MouseButtonEvent,
+    MouseLeftViewportEvent, MouseMoveEvent, NavigationRequest, Opts, PermissionRequest,
+    RenderingContext, Servo, ServoBuilder, ServoDelegate, ServoError, WebResourceLoad,
+    WebResourceResponse, WebView, WebViewBuilder, WebViewDelegate, WheelEvent,
+    WindowRenderingContext,
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
-    event::{ElementState, KeyEvent, MouseButton as NativeButton, MouseScrollDelta, WindowEvent},
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
+    event::{ElementState, Ime, KeyEvent, MouseButton as NativeButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     keyboard::{Key, ModifiersState, NamedKey},
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -28,9 +29,11 @@ use winit::{
 };
 
 pub mod engine_api;
+mod input;
 #[path = "../../../../ports/servoshell/desktop/keyutils.rs"]
 mod keyutils;
 mod policy;
+mod validation;
 
 use engine_api::NavigationCommand;
 use policy::Fixtures;
@@ -39,14 +42,17 @@ const TITLE: &str = "Rust Browser Servo Embedder";
 const CSP: &str = "<meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">";
 const FIXTURE: &str = include_str!("fixture.html");
 const SECOND: &str = include_str!("second.html");
+const SCALES: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum Event {
     Wake,
     Frame,
     Status(&'static str),
     Failed,
     Close,
+    Report(String),
+    Ime(Option<(i32, i32, u32, u32)>),
 }
 
 #[derive(Clone)]
@@ -65,6 +71,7 @@ struct Delegate {
     proxy: EventLoopProxy<Event>,
     fixtures: Fixtures,
     loaded: Cell<bool>,
+    ime: Cell<Option<EmbedderControlId>>,
 }
 
 impl Delegate {
@@ -101,6 +108,36 @@ impl ServoDelegate for Delegate {
 }
 
 impl WebViewDelegate for Delegate {
+    fn notify_page_title_changed(&self, _view: WebView, title: Option<String>) {
+        if let Some(title) = title.filter(|title| title.starts_with("RBVALID1|")) {
+            if title.len() <= 256 {
+                self.post(Event::Report(title));
+            } else {
+                self.post(Event::Failed);
+            }
+        }
+    }
+
+    fn show_embedder_control(&self, _view: WebView, control: EmbedderControl) {
+        if let EmbedderControl::InputMethod(method) = control {
+            self.ime.set(Some(method.id()));
+            let rect = method.position();
+            self.post(Event::Ime(Some((
+                rect.min.x,
+                rect.min.y,
+                rect.width().max(0) as u32,
+                rect.height().max(0) as u32,
+            ))));
+        }
+    }
+
+    fn hide_embedder_control(&self, _view: WebView, id: EmbedderControlId) {
+        if self.ime.get() == Some(id) {
+            self.ime.set(None);
+            self.post(Event::Ime(None));
+        }
+    }
+
     fn notify_new_frame_ready(&self, _view: WebView) {
         self.post(Event::Frame);
     }
@@ -166,8 +203,9 @@ impl Session {
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         run: &Path,
+        validate: bool,
     ) -> Result<Self, Box<dyn Error>> {
-        let fixtures = prepare_fixtures(run)?;
+        let fixtures = prepare_fixtures(run, validate)?;
         let window = event_loop.create_window(
             Window::default_attributes()
                 .with_title(TITLE)
@@ -197,11 +235,16 @@ impl Session {
             proxy,
             fixtures,
             loaded: Cell::new(false),
+            ime: Cell::new(None),
         });
         servo.set_delegate(delegate.clone());
         let view = WebViewBuilder::new(&servo, context.clone())
             .url(delegate.fixtures.page(0).clone())
-            .hidpi_scale_factor(Scale::new(window.scale_factor() as f32))
+            .hidpi_scale_factor(Scale::new(if validate {
+                1.0
+            } else {
+                window.scale_factor() as f32
+            }))
             .delegate(delegate.clone())
             .build();
         view.set_focused(window.has_focus());
@@ -284,14 +327,15 @@ impl Session {
     }
 }
 
-fn prepare_fixtures(run: &Path) -> Result<Fixtures, Box<dyn Error>> {
+fn prepare_fixtures(run: &Path, validate: bool) -> Result<Fixtures, Box<dyn Error>> {
     if !run.join(".rust-browser-servo-spike").is_file() {
         return Err("Use a newly allocated experimental run directory".into());
     }
     // Fails if an existing profile would be reused.
     fs::create_dir(run.join("profile"))?;
     let pages = ["fixture.html", "second.html"];
-    for (name, content) in pages.iter().zip([FIXTURE, SECOND]) {
+    let first = if validate { validation::HTML } else { FIXTURE };
+    for (name, content) in pages.iter().zip([first, SECOND]) {
         let (head, body) = content
             .split_once("<meta charset=\"utf-8\">")
             .ok_or("Fixture is missing its security-header insertion point")?;
@@ -312,6 +356,8 @@ struct App {
     started: Instant,
     first_ready_present: bool,
     smoke: bool,
+    validation_index: Option<usize>,
+    pending_report: Option<validation::Report>,
     failure: Option<String>,
 }
 
@@ -329,7 +375,12 @@ impl ApplicationHandler<Event> for App {
         if self.session.is_some() {
             return;
         }
-        match Session::new(event_loop, self.proxy.clone(), &self.run) {
+        match Session::new(
+            event_loop,
+            self.proxy.clone(),
+            &self.run,
+            self.validation_index.is_some(),
+        ) {
             Ok(session) => self.session = Some(session),
             Err(error) => {
                 self.failure = Some(error.to_string());
@@ -349,11 +400,34 @@ impl ApplicationHandler<Event> for App {
                 self.finish(event_loop);
             }
             Event::Close => self.finish(event_loop),
+            Event::Ime(rect) => {
+                session.window.set_ime_allowed(rect.is_some());
+                if let Some((x, y, width, height)) = rect {
+                    session.window.set_ime_cursor_area(
+                        PhysicalPosition::new(x, y),
+                        PhysicalSize::new(width, height),
+                    );
+                }
+            }
+            Event::Report(title) if self.validation_index.is_some() => {
+                match validation::parse(&title) {
+                    Ok(Some(report)) => {
+                        self.pending_report = Some(report);
+                        session.window.request_redraw();
+                    }
+                    result => {
+                        self.failure =
+                            Some(result.err().unwrap_or("Missing fixture report").into());
+                        self.finish(event_loop);
+                    }
+                }
+            }
+            Event::Report(_) => {}
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if self.smoke && !self.first_ready_present {
+        if (self.smoke && !self.first_ready_present) || self.validation_index.is_some() {
             let deadline = self.started + Duration::from_secs(30);
             if Instant::now() >= deadline {
                 self.failure = Some("Timed out waiting for the first ready fixture frame".into());
@@ -390,6 +464,16 @@ impl ApplicationHandler<Event> for App {
                 session.servo.spin_event_loop();
             }
             WindowEvent::ModifiersChanged(state) => session.modifiers = state.state(),
+            WindowEvent::Ime(ime) => {
+                let active = if matches!(ime, Ime::Disabled) {
+                    session.delegate.ime.take().is_some()
+                } else {
+                    session.delegate.ime.get().is_some()
+                };
+                for event in input::ime_events(ime, active) {
+                    session.input(event);
+                }
+            }
             WindowEvent::KeyboardInput {
                 event,
                 is_synthetic: false,
@@ -430,16 +514,8 @@ impl ApplicationHandler<Event> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 if let Some(point) = session.pointer {
-                    let (x, y, mode) = match delta {
-                        MouseScrollDelta::LineDelta(x, y) => (
-                            f64::from(x) * 76.0,
-                            f64::from(y) * 76.0,
-                            WheelMode::DeltaLine,
-                        ),
-                        MouseScrollDelta::PixelDelta(p) => (p.x, p.y, WheelMode::DeltaPixel),
-                    };
                     session.input(InputEvent::Wheel(WheelEvent::new(
-                        WheelDelta { x, y, z: 0.0, mode },
+                        input::wheel_delta(delta),
                         point.into(),
                         keyutils::keyboard_modifiers_from_winit_modifiers(session.modifiers),
                     )));
@@ -460,6 +536,29 @@ impl ApplicationHandler<Event> for App {
                 session.view.paint();
                 session.window.pre_present_notify();
                 session.context.present();
+                if let (Some(report), Some(index)) =
+                    (self.pending_report.take(), self.validation_index)
+                {
+                    if (report.scale - SCALES[index]).abs() > 0.01
+                        || (report.width * report.scale - f64::from(size.width)).abs() > 2.0
+                        || (report.height * report.scale - f64::from(size.height)).abs() > 2.0
+                    {
+                        self.failure = Some("Servo device scale did not reach the fixture".into());
+                        self.finish(event_loop);
+                        return;
+                    }
+                    println!("servo {report}");
+                    if index + 1 == SCALES.len() {
+                        self.finish(event_loop);
+                        return;
+                    }
+                    self.validation_index = Some(index + 1);
+                    session
+                        .view
+                        .set_hidpi_scale_factor(Scale::new(SCALES[index + 1] as f32));
+                    session.view.reload();
+                    session.servo.spin_event_loop();
+                }
                 if !self.first_ready_present
                     && session.delegate.loaded.get()
                     && session.view.page_title().as_deref() == Some("Rust Browser engine fixture")
@@ -481,10 +580,11 @@ impl ApplicationHandler<Event> for App {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
-    let smoke = match (args.next().as_deref(), args.next()) {
-        (None, None) => false,
-        (Some("--smoke"), None) => true,
-        _ => return Err("Usage: rust_browser_embedder [--smoke]".into()),
+    let (smoke, validate) = match (args.next().as_deref(), args.next()) {
+        (None, None) => (false, false),
+        (Some("--smoke"), None) => (true, false),
+        (Some("--validate"), None) => (false, true),
+        _ => return Err("Usage: rust_browser_embedder [--smoke | --validate]".into()),
     };
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -498,6 +598,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         started: Instant::now(),
         first_ready_present: false,
         smoke,
+        validation_index: validate.then_some(0),
+        pending_report: None,
         failure: None,
     };
     event_loop.run_app(&mut app)?;
