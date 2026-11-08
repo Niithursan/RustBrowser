@@ -22,6 +22,25 @@ does not grant privileged capabilities to content. See
 application's locked Rust dependencies, **not** the downloaded Servo distribution
 or all of its native libraries; a green application audit is not Servo certification.
 
+The v0.8 source embedder runs as a separate executable with its own fresh marked
+run directory, temporary storage, and a generated profile. Servo's content
+runs in the embedder process with the pinned single-process defaults. The
+pinned revision has no supported Windows content-process sandbox. Treat its
+process as running with the current user's access. Supply only the two
+built-in fixture pages and keep real data out of the experiment. Five profile
+files remained after each verified shutdown. The run directory remains
+available for inspection.
+
+The host allows navigation to the two exact generated file URLs, with optional
+fragments. The resource delegates allow only GET for those main documents. The
+fixtures restrict subresources with CSP. The host denies permissions and devtools
+requests, refuses new views, and supplies no external launcher, native file picker,
+download destination, or Rust Browser IPC. Download refusal relies on the fixed
+fixture and navigation/resource policy. The pinned API exposes no dedicated
+download decision hook in this host. The experiment has no TLS bypass and permits
+only the local fixture URLs. See [Servo results](experiments/servo/EMBEDDER_RESULTS.md)
+for the separate upstream dependency audit and the limits of these checks.
+
 Session URLs and provider settings are saved
 in plain text within the user's local profile, protected by OS account permissions.
 URLs may contain sensitive query parameters or tokens. Session files and backups

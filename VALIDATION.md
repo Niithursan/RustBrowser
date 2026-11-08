@@ -1,5 +1,29 @@
 # Validation
 
+## Version 0.8.0
+
+Windows 11 x64 validation on 2026-11-08. The branch starts at the
+PR #10 squash commit `37037fc358d22a16af7ee7c1cc1a4635782cea94`.
+Its [Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42456476269)
+and [dependency audit](https://github.com/Niithursan/RustBrowser/actions/runs/42456476396)
+passed.
+
+- Production formatting, strict all-target/all-feature Clippy, 46 regular
+  tests, native Windows debug/release builds, and the production dependency
+  audit passed.
+- All six native WebView2 regressions passed individually, including the
+  sleeping-tab late-callback regression. The v0.7 PowerShell launcher tests
+  and both Python fixture-server tests passed.
+- The pinned upstream Windows example compiled before the host was written.
+  Its controlled local variant ran successfully. The standalone host compiled,
+  its two fixture policy tests passed, and three fresh smoke runs reached
+  presentation and exited cleanly. Reusing a run was refused.
+- Actual Windows GUI checks exercised the local fixture, input, resize,
+  navigation, popup refusal, and normal closure. The separate source
+  build procedure and [detailed results](experiments/servo/EMBEDDER_RESULTS.md)
+  document the exact manual scope, upstream lockfile findings, and
+  measurements. Production CI retains the existing WebView2 gates.
+
 ## Version 0.7.0
 
 Local validation on 2026-11-07 and 2026-11-08, Windows 11 x64, Rust 1.99.1/MSVC and WebView2

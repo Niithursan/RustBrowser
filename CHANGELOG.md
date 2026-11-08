@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Added an opt-in Windows Servo embedder with a pinned, separate source build.
+- Rendered two local fixtures in one winit window with pointer, wheel, keyboard,
+  resize, Back, Forward, and Reload support.
+- Added fixture-only navigation and resource policy, disposable profiles, and
+  checks for presentation, shutdown, and profile reuse refusal.
+- Recorded Windows source-build costs, GUI validation, and the upstream sandbox
+  and dependency limits. Normal browser tabs continue to use WebView2.
+
 ## 0.7.0
 
 - Small engine-independent content navigation/event interface, used by the existing

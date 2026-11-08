@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Servo navigation fixture</title>
+<style>
+  body { margin: 40px; font: 20px system-ui, sans-serif; color: #1d2838; }
+  button, a { display: block; margin: 20px 0; }
+  button { padding: 10px; font: inherit; }
+</style>
+<h1>Servo navigation fixture</h1>
+<p>F1 opens the first fixture. Alt+Left and Alt+Right traverse history. F5 reloads.</p>
+<a href="fixture.html">Open first fixture</a>
+<a href="https://example.invalid/">Try a blocked external page</a>
+<button onclick="window.open('about:blank'); document.getElementById('status').textContent = 'Popup requested'">Try a blocked popup</button>
+<p id="status" role="status"></p>
+</html>
