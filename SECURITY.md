@@ -13,6 +13,32 @@ URI launches rejected. The app uses an internal blank page during clearing. Rest
 normal tabs makes network requests to those sites unless session retention is disabled.
 Hidden tabs share storage within their window and can continue background activity.
 
+Linked popup tabs use the exact opener environment/profile and native same-origin
+and `noopener` behavior. The host only closes script-created popup tabs in response
+to native window-close requests. Popup decisions use the Runtime's user-initiation
+flag, validated HTTP(S)/blank URLs, bounded deferrals and the existing tab limit.
+Opener access is standard browser access, not access to the Rust bridge. Some identity
+providers reject embedded browsers; no user-agent spoofing, cookie-policy bypass,
+external-protocol launch or certificate exception is installed for authentication.
+
+Native activity observation reads request method/context classifications only; it
+does not inspect payloads or record request URLs. Conservative protection can persist
+for a view's lifetime after uploads/media. Unsupported observation disables automatic
+sleeping for the view. Native heuristics and Keep awake are still required for
+unobservable activity, including arbitrary calls, streams and generated media.
+Fullscreen keeps the origin toolbar visible. Renderer recovery is user initiated
+and may lose unsaved page state; browser-process failures can require a restart.
+
+Session recovery validates temporary snapshots before promotion and preserves
+corrupt originals using newly reserved backup names. A valid committed snapshot,
+including its retention preference, always takes precedence over stale temporary
+data. I/O failures are not treated as corruption or permission to reset data.
+Download recovery is limited to an explicitly selected folder and recognized unlocked
+ownership leases. It removes only empty directories/lease metadata, never payloads,
+live transfers, reparse points or legacy unmarked staging folders. No download path
+registry is added, including for private downloads. This is logical cleanup, not
+secure erasure; downloaded files and abandoned payloads remain untrusted.
+
 Eligible background views can use WebView2's optional native suspension APIs. Sleeping
 does not isolate, clear or destroy a view, profile, cookies or page memory. The engine
 may refuse suspension. The app protects active/pinned/Keep awake/loading views, audio,
