@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     app::run()?;
     #[cfg(not(windows))]
-    return Err("Rust Browser 0.6 currently supports Windows only".into());
+    return Err("Rust Browser 0.7 currently supports Windows only".into());
     #[cfg(windows)]
     Ok(())
 }

@@ -291,6 +291,51 @@ impl Probe {
                 if s.effective_panel().is_some() {
                     return Err("Back navigation did not leave local UI".into());
                 }
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                if engine.integration()
+                    != (rust_browser::engine_api::HostIntegration {
+                        presentation: rust_browser::engine_api::Presentation::NativeChild,
+                        input: rust_browser::engine_api::InputRouting::Native,
+                    })
+                    || !engine.history().1
+                {
+                    return Err("Native engine boundary lost input mode or forward history".into());
+                }
+                engine
+                    .navigate(NavigationCommand::Forward)
+                    .map_err(|_| "Engine boundary Forward failed")?;
+                self.phase = 11;
+            }
+            11 if s.tabs.active().is_some_and(|t| {
+                !t.content.state.loading
+                    && t.content.engine.view.url().ok().as_deref() == Some("about:blank")
+            }) =>
+            {
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                engine
+                    .navigate(NavigationCommand::Back)
+                    .map_err(|_| "Engine boundary Back failed")?;
+                self.phase = 12;
+            }
+            12 if s.tabs.active().is_some_and(|t| {
+                !t.content.state.loading
+                    && t.content.engine.view.url().ok().as_deref() == Some(FIXTURE_URL)
+            }) =>
+            {
+                let engine: &dyn ContentEngine =
+                    &s.tabs.active().ok_or("No contract view")?.content.engine;
+                engine
+                    .navigate(NavigationCommand::Stop)
+                    .map_err(|_| "Engine boundary Stop failed")?;
+                engine
+                    .set_visible(false)
+                    .map_err(|_| "Engine boundary hide failed")?;
+                engine
+                    .set_visible(true)
+                    .map_err(|_| "Engine boundary show failed")?;
+                engine.focus().map_err(|_| "Engine boundary focus failed")?;
                 s.command(Command::Home)
                     .map_err(|_| "Could not return to local page")?;
                 s.persist();

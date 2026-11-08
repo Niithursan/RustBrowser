@@ -1,9 +1,13 @@
 //! Windows engine adapter. Keep COM and WebView2 details out of application state.
-use crate::{
-    app::{Event, PageEvent},
-    ui::Command,
+use crate::app::{Event, PageEvent};
+use rust_browser::{
+    engine_api::{
+        ContentEngine, EngineResult, HostIntegration, InputRouting, LoadTarget, NavigationCommand,
+        Presentation,
+    },
+    navigation,
+    tabs::TabId,
 };
-use rust_browser::{navigation, tabs::TabId};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
     AcceleratorKeyPressedEventHandler, HistoryChangedEventHandler,
@@ -138,8 +142,28 @@ impl Engine {
         }
         Ok(Self { view, activity })
     }
+}
 
-    pub fn history(&self) -> (bool, bool) {
+impl ContentEngine for Engine {
+    fn integration(&self) -> HostIntegration {
+        HostIntegration {
+            presentation: Presentation::NativeChild,
+            input: InputRouting::Native,
+        }
+    }
+    fn load(&self, target: &LoadTarget) -> EngineResult<()> {
+        self.view.load_url(target.as_str())?;
+        Ok(())
+    }
+    fn set_visible(&self, visible: bool) -> EngineResult<()> {
+        self.view.set_visible(visible)?;
+        Ok(())
+    }
+    fn focus(&self) -> EngineResult<()> {
+        self.view.focus()?;
+        Ok(())
+    }
+    fn history(&self) -> (bool, bool) {
         // SAFETY: UI thread owns a live WebView2 COM object; outputs are valid BOOLs.
         unsafe {
             let mut back = BOOL::default();
@@ -151,17 +175,16 @@ impl Engine {
         }
     }
 
-    pub fn command(&self, command: &Command) -> Result<(), Box<dyn std::error::Error>> {
+    fn navigate(&self, command: NavigationCommand) -> EngineResult<()> {
         // Native history preserves redirects, POST navigation and same-document entries.
         // SAFETY: all calls happen on the event-loop/COM apartment thread.
         unsafe {
             let core = self.view.webview();
             match command {
-                Command::Back => core.GoBack()?,
-                Command::Forward => core.GoForward()?,
-                Command::Reload => core.Reload()?,
-                Command::Stop => core.Stop()?,
-                _ => {}
+                NavigationCommand::Back => core.GoBack()?,
+                NavigationCommand::Forward => core.GoForward()?,
+                NavigationCommand::Reload => core.Reload()?,
+                NavigationCommand::Stop => core.Stop()?,
             }
         }
         Ok(())
