@@ -1,4 +1,4 @@
-# Rust Browser 0.6.0
+# Rust Browser 0.7.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
@@ -174,6 +174,28 @@ there because no website connection is established.
 See [benchmarks/README.md](benchmarks/README.md) for reproducible Windows measurement
 instructions, measured results and their limits. Performance results describe the
 documented synthetic workload, not general website or everyday-browser performance.
+
+## Experimental Servo foundation
+
+WebView2 remains the only engine used by normal Rust Browser tabs. v0.7 adds a small,
+tested navigation/event boundary and a separate opt-in **official servoshell**
+prototype; it does not embed Servo into the application or provide an engine selector.
+No Servo dependency is added to the normal Cargo build, and profile/schema formats
+remain compatible with v0.6.
+
+See [experiments/servo/README.md](experiments/servo/README.md) for verified-package
+setup, controlled local/HTTPS tests, source-build instructions and resource sampling.
+[Research](experiments/servo/RESEARCH.md) covers the actual upstream APIs and Windows
+constraints; [architecture](experiments/servo/ARCHITECTURE.md) defines the implemented
+boundary and future rendering/input driver. [Results](experiments/servo/RESULTS.md)
+record the single-run resource observations and their limits; they are not evidence
+that Servo is inherently faster than WebView2.
+
+The pinned upstream Servo release has **no supported Windows OS sandbox**. The
+prototype uses fresh disposable data and no Rust IPC bridge, but its process retains
+the user's OS privileges. It is for controlled content only. Run directories can
+retain data after exit; no private-mode cleanup, daily-use suitability or security
+equivalence with WebView2 is claimed. Do not use real accounts or browser profiles.
 
 ## Compatibility and recovery
 
@@ -364,6 +386,7 @@ src/download_recovery.rs Locked staging ownership and bounded empty-folder recov
 src/native_downloads.rs Windows picker and WebView2 download operations
 src/lib.rs            Testable core shared by application and integration tests
 src/engine.rs         Wry content view and Windows COM adapter
+src/engine_api.rs     Validated engine-independent navigation and owned page events
 src/ui/mod.rs         Toolbar commands and serializable view state
 src/ui/toolbar.html   Local accessible toolbar
 ```

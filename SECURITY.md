@@ -4,6 +4,24 @@ This is an experimental browser. Report suspected vulnerabilities privately thro
 
 The browser uses the installed Microsoft WebView2 Runtime. Keep that runtime and Windows updated. Remote content receives no application IPC handler; the local toolbar has a separate profile and restricted navigation. HTTP traffic is unencrypted. HTTPS does not establish trustworthiness, and certificate validation is never bypassed.
 
+The v0.7 Servo spike is a separately launched official servoshell package, not a
+production engine. Its pinned source explicitly lacks Windows OS sandbox support.
+A disposable profile separates data but does not restrict the process's OS access.
+Use controlled content only, without real accounts/files/device permissions. No
+normal browser or Servo profile is reused. Run directories can retain cookies,
+authentication metadata and SQLite data even with `--temporary-storage`; the launcher
+does not claim erasure or private-mode guarantees and never deletes arbitrary data.
+
+Preparation verifies a fixed official archive SHA-256 before extraction; launch also
+checks the fixed executable digest. The adjacent native DLLs/resources must remain
+from that verified extraction. No TLS bypass, arbitrary command-line flags, devtools,
+WebDriver, user scripts or Rust IPC bridge is enabled. The static loopback fixture
+has no host/file API or network callbacks. The small shared navigation interface
+does not grant privileged capabilities to content. See
+[Servo security findings](experiments/servo/RESEARCH.md). Cargo audit covers the
+application's locked Rust dependencies, **not** the downloaded Servo distribution
+or all of its native libraries; a green application audit is not Servo certification.
+
 Session URLs and provider settings are saved
 in plain text within the user's local profile, protected by OS account permissions.
 URLs may contain sensitive query parameters or tokens. Session files and backups

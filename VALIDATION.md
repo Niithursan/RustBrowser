@@ -1,5 +1,35 @@
 # Validation
 
+## Version 0.7.0
+
+Local validation on 2026-11-07, Windows 11 x64, Rust 1.99.1/MSVC and WebView2
+Runtime 157.0.4341.42, on `feat/v0.7-servo-spike`. WebView2 remains the only
+production engine; Servo is an isolated opt-in experiment with no Cargo dependency.
+
+- `cargo fmt --all -- --check`, strict all-target/all-feature Clippy,
+  `cargo test --locked --all-targets --all-features`, and debug/release builds passed.
+  The regular suite had 45 passing and seven ignored tests.
+- All six documented native WebView2 regressions passed when run individually:
+  storage/engine deletion, application clearing, tab sleep/security, private new-tab,
+  popup/upload/audio/fullscreen/redirects, and renderer crash/reload recovery.
+- `tests/servo_tools.ps1` passed output-isolation, profile-preservation, reparse-point,
+  digest-refusal, argument-quoting and PowerShell syntax checks. The two Python
+  loopback fixture tests passed.
+- The pinned Servo v0.7.0 release archive and executable matched their SHA-256 pins.
+  A local loopback launch displayed a native window whose title matched the fixture.
+  This smoke test did not verify manual keyboard, pointer, storage or permission flows.
+- The sanitized one-run resource sample in
+  [Servo results](experiments/servo/RESULTS.md) was checked against its raw values
+  and fixture digest. It is not a controlled engine-only or statistical comparison.
+- A full Servo source build (`mach bootstrap`/`mach build`) was not performed. The
+  required dedicated native-toolchain environment and pinned Servo toolchain are
+  separate from Rust Browser's; feasibility constraints are in
+  [Servo research](experiments/servo/RESEARCH.md). Real-site compatibility,
+  in-process embedding, Windows OS isolation, daily-use security, and equivalent
+  startup/input latency remain unverified. No Servo engine selector or profile
+  migration is implemented.
+- Remote CI status is pending publication of this feature branch.
+
 ## Version 0.6.0
 
 PR #8 was verified squash-merged at `a8b24fa79e18cefa8b8d64d6d9bf0788c3432140`,
