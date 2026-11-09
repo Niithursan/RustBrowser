@@ -34,7 +34,8 @@ jobs:
         run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
       - name: Verify cargo-audit version
         run: |
+          # Prints e.g. "cargo-audit-audit 0.22.2" when run as a cargo subcommand.
           actual="$(cargo audit --version)"
           echo "$actual"
-          test "$actual" = "cargo-audit $CARGO_AUDIT_VERSION"
+          test "${actual##* }" = "$CARGO_AUDIT_VERSION"
       - run: cargo audit --deny warnings
