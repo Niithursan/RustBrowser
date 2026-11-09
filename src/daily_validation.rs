@@ -148,7 +148,7 @@ impl Probe {
                 })
                 .map_err(|_| "Bookmark setup failed")?;
                 s.render();
-                self.eval(true,"document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(23, 43, 67)' && !document.getElementById('clear-diagnostics').disabled")?;
+                self.eval(true,"document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(27, 36, 48)' && !document.getElementById('clear-diagnostics').disabled")?;
                 self.phase = 1;
             }
             1 if value.is_some() => {
@@ -379,12 +379,12 @@ impl Probe {
                 }
                 // Text scaling: 150% zoom must not overflow the narrow window, and
                 // the active tab keeps a non-color accent bar plus bold label.
-                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const chrome=document.getElementById('chrome');const fits=chrome.scrollWidth<=chrome.clientWidth+1;document.body.style.zoom='';return marked&&fits})()")?;
+                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const chrome=document.getElementById('chrome');const fits=chrome.scrollWidth<=chrome.clientWidth+1;document.body.style.zoom='';const more=document.getElementById('more'),actions=document.getElementById('tab-actions');more.click();const opened=more.getAttribute('aria-expanded')==='true'&&!actions.hidden;more.click();const closed=more.getAttribute('aria-expanded')==='false'&&actions.hidden;const draft=input.value;input.value='https://user:pw@example.test/path?q=1';updateAddressView();const view=document.getElementById('address-view');const host=!view.hidden&&view.firstChild.textContent==='example.test'&&view.lastChild.textContent==='/path?q=1'&&!view.textContent.includes('pw');input.value=draft;updateAddressView();return marked&&fits&&opened&&closed&&host})()")?;
                 self.phase = 20;
             }
             20 if value.is_some() => {
                 if value.as_deref() != Some("true") {
-                    return Err("Active-tab indicator or 150% text scaling layout failed".into());
+                    return Err("Active-tab indicator, 150% scaling, More disclosure or address view failed".into());
                 }
                 self.emulate(serde_json::json!([
                     {"name": "forced-colors", "value": "active"},
