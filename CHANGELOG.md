@@ -14,7 +14,8 @@
   narrow-window tweaks; Windows high-contrast (forced-colors) styling.
 - Accessibility: assertive announcement of navigation failures; item-specific
   names for library/download/favorite/permission actions; focus moves to the
-  heading of an opened panel; WCAG contrast test for all four themes. See
+  heading of an opened panel; WCAG contrast test for all four themes; native
+  checks of forced-colors and reduced-motion styling under media emulation. See
   validation/ACCESSIBILITY.md for the verified scope and manual gaps.
 - Compatibility: controlled fixture now covers service workers, Cache Storage,
   structuredClone, AbortController and BroadcastChannel.

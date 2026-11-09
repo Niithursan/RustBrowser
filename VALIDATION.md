@@ -26,8 +26,9 @@ scaling, after the 0.12.0 version bump. **Passed:**
 - Portable package metadata and safety tests.
 - `cargo audit --deny warnings`.
 
-Every new native assertion except the zoom check was mutation-checked: it fails when
-its feature is removed. Real-window captures (PrintWindow, disposable profiles) confirmed the
+Every new native assertion was mutation-checked: it fails when its feature is removed.
+This found and fixed one vacuous zoom check. Forced-colors and reduced-motion styling
+are asserted under DevTools media emulation. Real-window captures (PrintWindow, disposable profiles) confirmed the
 Dark, Light, multi-tab and 640 px error layouts. Accessibility scope and manual gaps:
 [ACCESSIBILITY.md](validation/ACCESSIBILITY.md). Compatibility additions:
 [COMPATIBILITY.md](validation/COMPATIBILITY.md). CI changes and cold/warm timings:

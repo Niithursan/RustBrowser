@@ -1,10 +1,14 @@
 //! Controlled production-application checks. Run through validation/windows-daily.ps1.
 use super::*;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::SystemTime,
 };
-use windows::core::Interface;
+use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+use windows::core::{HSTRING, Interface};
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use wry::WebViewExtWindows;
 
@@ -22,8 +26,30 @@ struct Probe {
     other: TabId,
     core: usize,
     navigation_failures: Vec<String>,
+    emulated: Arc<AtomicBool>,
 }
 impl Probe {
+    /// Test-only CDP media emulation on the trusted toolbar; sets `emulated` on success.
+    fn emulate(&self, features: serde_json::Value) -> Result<(), String> {
+        let session = self.app.session.as_ref().ok_or("No session")?;
+        let done = self.emulated.clone();
+        done.store(false, Ordering::SeqCst);
+        let params = serde_json::json!({ "features": features }).to_string();
+        // SAFETY: UI-thread call on the live toolbar WebView2 owned by this fixture.
+        unsafe {
+            session.toolbar.webview().CallDevToolsProtocolMethod(
+                &HSTRING::from("Emulation.setEmulatedMedia"),
+                &HSTRING::from(params),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, _| {
+                    if result.is_ok() {
+                        done.store(true, Ordering::SeqCst);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|_| "Media emulation request failed".into())
+    }
     fn eval(&self, toolbar: bool, script: &str) -> Result<(), String> {
         let session = self.app.session.as_ref().ok_or("No session")?;
         let view = if toolbar {
@@ -353,13 +379,30 @@ impl Probe {
                 }
                 // Text scaling: 150% zoom must not overflow the narrow window, and
                 // the active tab keeps a non-color accent bar plus bold label.
-                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const fits=document.getElementById('chrome').scrollWidth<=innerWidth+1;document.body.style.zoom='';return marked&&fits})()")?;
+                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const chrome=document.getElementById('chrome');const fits=chrome.scrollWidth<=chrome.clientWidth+1;document.body.style.zoom='';return marked&&fits})()")?;
                 self.phase = 20;
             }
             20 if value.is_some() => {
                 if value.as_deref() != Some("true") {
                     return Err("Active-tab indicator or 150% text scaling layout failed".into());
                 }
+                self.emulate(serde_json::json!([
+                    {"name": "forced-colors", "value": "active"},
+                    {"name": "prefers-reduced-motion", "value": "reduce"}
+                ]))?;
+                self.phase = 24;
+            }
+            24 if self.emulated.load(Ordering::SeqCst) => {
+                // Windows high contrast keeps a non-colour active-tab outline; reduced
+                // motion stops the loading animation even while loading is shown.
+                self.eval(true, "(()=>{const media=matchMedia('(forced-colors: active)').matches&&matchMedia('(prefers-reduced-motion: reduce)').matches;const tab=getComputedStyle(document.querySelector('.tab.active'));const progress=document.getElementById('load-progress');progress.setAttribute('aria-hidden','false');const animation=getComputedStyle(progress,'::after').animationName;progress.setAttribute('aria-hidden','true');return media&&tab.outlineStyle==='solid'&&tab.outlineWidth==='2px'&&animation==='none'})()")?;
+                self.phase = 25;
+            }
+            25 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("High-contrast or reduced-motion styling failed".into());
+                }
+                // Emulation ends with this session's toolbar view.
                 s.persist();
                 self.app.session = None;
                 self.phase = 100;
@@ -454,6 +497,7 @@ fn native_daily_navigation_diagnostics_and_modern_sites() {
         other: 0,
         core: 0,
         navigation_failures: Vec::new(),
+        emulated: Arc::new(AtomicBool::new(false)),
     };
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
