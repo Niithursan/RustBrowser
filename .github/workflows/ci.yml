@@ -27,6 +27,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          .\tests\process_tree.ps1
           .\tests\servo_tools.ps1 -TestRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-servo-tests')
           python -m unittest discover -s experiments/servo -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { throw 'Experimental fixture tests failed' }

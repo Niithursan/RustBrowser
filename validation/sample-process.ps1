@@ -8,6 +8,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../benchmarks/process-tree.ps1')
 $process=Get-Process -Id $RootProcessId -ErrorAction Stop
 $null=$process.Handle
+$created=$process.StartTime.ToUniversalTime()
 $root=[IO.Path]::GetFullPath($OutputRoot)
 if(Test-Path -LiteralPath $root){
     if(@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0 -and -not(Test-Path -LiteralPath (Join-Path $root '.rust-browser-samples'))){throw 'Choose an empty or previously marked measurement directory, never a browser profile.'}
@@ -23,8 +24,8 @@ $duration=if($Seconds){$Seconds}else{60*$Minutes}
 $clock=[Diagnostics.Stopwatch]::StartNew();$state=@{};$count=0
 try {
     while($clock.Elapsed.TotalSeconds -lt $duration -and -not $process.HasExited){
-        $sample=Sample-Tree $RootProcessId $state $clock.Elapsed.TotalSeconds 'interactive'
-        $sample|Select-Object -ExcludeProperty ids|Export-Csv -LiteralPath (Join-Path $run 'samples.csv') -NoTypeInformation -Append -Encoding utf8
+        $sample=Sample-Tree $RootProcessId $state $clock.Elapsed.TotalSeconds 'interactive' $created
+        Public-ResourceSample $sample | Export-Csv -LiteralPath (Join-Path $run 'samples.csv') -NoTypeInformation -Append -Encoding utf8
         $count++
         Start-Sleep -Milliseconds 750
         $process.Refresh()
