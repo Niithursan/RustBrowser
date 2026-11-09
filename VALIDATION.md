@@ -1,5 +1,50 @@
 # Validation
 
+## Version 0.11.0
+
+Verified baseline PR #13 squash `729198d023384103da0464f1148031aa6e681566`,
+production 0.8.0, with passing merged Windows CI and production audit. Work is
+isolated on `feat/v0.11-daily-driver`; main, release tags and existing profiles
+are preserved. The package intentionally advances to 0.11.0 for production
+diagnostic/navigation/UI/Windows metadata improvements. No Servo development.
+
+Local Windows 11 x64 / Rust 1.99.1 / WebView2 157.0.4341.42 checks passed on
+2026-11-09, production code `58cdef9e9017e76a03c01baebbf9b44ad17dffcd`:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-targets --all-features`: **58 passed**, zero failures.
+  Nine main tests are opt-in (eight native, one performance probe); one diagnostic
+  child helper is ignored in the general suite and exercised by its parent test.
+- `cargo build --locked` and `cargo build --locked --release` passed natively.
+- `cargo audit --deny warnings`: **369 dependencies**, 1,422 current advisory
+  records, no denied warnings. No new Cargo dependency; root lock version changed.
+- All **eight native Windows regressions** passed as separate processes. The new
+  daily suite checks modern APIs, cross-origin/SPA navigation, native navigation
+  ID/Stop state, diagnostics, light/address/compact UI and untrusted TLS rejection.
+- Existing PowerShell experimental launcher/output safety and **two Python tests**
+  passed; no Servo source build, sandbox modification or new experimental result.
+- Portable package tests passed equal-input ZIP hash equality, checksum/manifest
+  hashes, exact file allowlist and version/PE/profile/reparse refusals. Actual PE
+  reports 0.11.0, x64 and **NotSigned**; extracted manifest is **asInvoker**, no UIAccess.
+- Actual shipping Windows GUI: HTTPS pages/redirect, loading feedback, Light,
+  Ctrl+L/T/W/Tab/D/H/J/Shift+O/Shift+P, drag reordering, bookmark/history/download
+  panels and normal restart with URLs/active tab/pin/theme/bookmark preserved.
+  See [the acceptance matrix](validation/DAILY_DRIVER.md) for precise limits.
+
+[Matched numeric screening](benchmarks/V011_RESULTS.md) records two fresh/warm
+repeats at 1/5/10/20 tabs against unchanged baseline, with Runtime/hardware/method
+and variability. A separate 30-minute synthetic soak is in progress; it is not
+yet a passing result. True OS-cold startup, pixel presentation latency, real
+accounts/devices/DRM, physical sleep/wake, mixed-DPI/screen-reader acceptance and
+clean-machine installation remain unverified. No broad performance or readiness
+claim follows from the native fixtures or public-site smoke checks.
+
+The pushed code checkpoint's [Windows CI passed](https://github.com/Niithursan/RustBrowser/actions/runs/42566063522).
+Final PR/head CI and final soak results will be recorded before review delivery.
+Release packaging control flow is reviewed and locally tested at the producer
+level; no tag, workflow publication, installer or GitHub release was executed.
+
 ## v0.10 investigation
 
 Based on verified PR #12 squash commit

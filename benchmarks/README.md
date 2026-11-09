@@ -1,5 +1,10 @@
 # Windows performance procedure
 
+Current [v0.11 matched results](V011_RESULTS.md) and
+[sanitized per-run numbers](v011-screening.json) compare unchanged production
+0.8.0 with 0.11.0 under the same probe. [RESULTS.md](RESULTS.md) retains historical
+v0.4/v0.5 findings. Fresh-profile startup is not an OS-cold measurement.
+
 Use a current Windows x64 machine with MSVC, the pinned Rust toolchain and WebView2.
 Run from the repository root. Close other Rust Browser test windows and avoid builds,
 updates and other heavy work while measuring. Leave the test window unobstructed and

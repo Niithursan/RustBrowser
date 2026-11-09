@@ -1,9 +1,16 @@
-# Rust Browser 0.8.0
+# Rust Browser 0.11.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.11 adds bounded local application diagnostics, improved navigation/Stop
+feedback, AltGr-safe shortcuts, a light theme and a controlled modern-site
+regression suite. The version intentionally jumps from 0.8.0 because v0.9
+and v0.10 were research milestones. Existing profile locations and storage
+schemas remain unchanged. See [Windows installation and upgrades](INSTALL_WINDOWS.md)
+and [the daily-driver acceptance record](validation/DAILY_DRIVER.md).
 
 ## Setup on Windows
 
@@ -35,10 +42,12 @@ cargo build --release --locked
 .\target\release\rust-browser.exe
 ```
 
-CI stores an x64 Windows executable as a build artifact. Version tags generate a
-portable release ZIP with a SHA-256 checksum. It still requires WebView2 Runtime.
-It is unsigned and has no installer. Run it from PowerShell to see startup errors.
-The console remains available intentionally for diagnostics in this initial version.
+CI stores an x64 Windows executable as a build artifact and tests portable
+packaging. Approved version tags produce package/checksum Actions artifacts;
+publishing a GitHub Release requires an explicit manual workflow action.
+The executable is unsigned and has no installer. It still requires WebView2
+Runtime. Release startup failures use a Windows message; debug builds keep
+console feedback. See [installation, package contents and removal](INSTALL_WINDOWS.md).
 
 ## Controls
 
@@ -159,7 +168,7 @@ disable automation, or change the delay. Pinning also protects a tab. Performanc
 preferences are separate from permission and privacy decisions.
 
 Home and new tabs show bundled local UI with search, up to twelve named HTTP(S)
-favorites, Dark/Slate/Plum themes and quick access to bookmarks. Recent history is
+favorites, Dark/Slate/Plum/Light themes and quick access to bookmarks. Recent history is
 **off by default**; enabling it displays up to six eligible cached library entries.
 It follows history recording/filtering rules and is unavailable in private windows.
 Favorite titles/URLs and themes are saved in normal settings independently of session
@@ -177,13 +186,16 @@ documented synthetic workload, not general website or everyday-browser performan
 
 ## Experimental Servo foundation
 
+v0.11 makes no Servo changes. Experimental source-build and sandbox failures
+remain documented; they do not describe production WebView2 validation.
+
 The v0.10 investigation adds [LPAC diagnostics and scoped synthetic IPC](experiments/servo/isolation/DIAGNOSTICS_V010.md),
 resource/failure tests, native fixture input observations and repeated numeric
 samples. The [rendering assessment](experiments/servo/SECURE_RENDERING_V010.md)
 records the WGL/Win32k blocker: no real Servo renderer has been contained.
 See the [validation record](experiments/servo/VALIDATION_V010.md) and
 [threat model](experiments/servo/isolation/THREAT_MODEL.md). Production package
-version remains 0.8.0; arbitrary Servo content remains blocked.
+version remained 0.8.0 during that research; arbitrary Servo content remains blocked.
 
 Normal Rust Browser tabs use WebView2. v0.8 adds a standalone Windows executable
 that embeds one Servo view and opens two built-in local fixtures. Its separate
@@ -406,6 +418,31 @@ Multiple named normal profiles remain future work. Add an engine
 trait only when a second backend's actual requirements are known. Servo would need
 its own embedding, rendering/input integration and compatibility testing; it cannot
 simply be substituted into Wry. No Servo dependency is included.
+
+## Local diagnostics
+
+**Privacy & security → Local application diagnostics** shows fixed application
+event categories, timestamps and counts. Refresh reads the current bounded
+snapshot; Clear requires confirmation and removes only diagnostic records.
+Bookmarks, history, cookies, sessions and downloaded files remain. New events
+may be recorded after clearing. Nothing is uploaded automatically.
+
+Normal profiles store `local-diagnostics/journal.json` (at most 128 entries and
+32 KiB), a bounded temporary file, a lock and a run marker. Writes are coalesced
+off the UI thread. No URL, page title, form data, cookie, password, token, file
+path or arbitrary error payload is accepted by this diagnostic API. Private
+windows do not open the journal or its worker. Local times/counts can still reveal
+application usage; protect the profile with your Windows account permissions.
+Unreadable or unsupported records are preserved until explicitly cleared.
+
+A leftover run marker produces a recovery notice on the next normal startup.
+It is a best-effort unclean-exit hint, not a crash dump or proof that every
+storage flush succeeded. Unsaved page state is not recovered. Release panic
+feedback omits payloads and paths; debug startup failures use a static console
+message. There is no remote crash-reporting service.
+
+See [production architecture](ARCHITECTURE.md), [acceptance results](validation/DAILY_DRIVER.md)
+and [v0.11 measurements](benchmarks/V011_RESULTS.md) for the verified scope.
 
 ## Development checks
 

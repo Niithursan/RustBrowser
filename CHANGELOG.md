@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.11.0
+
+- Intentionally advances production 0.8.0 to 0.11.0 after the v0.9/v0.10 research
+  milestones. WebView2 remains the default; Servo and existing profile/storage
+  formats are unchanged.
+- Added bounded local application diagnostics with fixed categories/times/counts,
+  asynchronous coalesced writes, inspect/confirmed-clear UI, corrupt-data
+  preservation and best-effort unclean-exit notice. Private windows open no journal;
+  no URL, arbitrary error payload, crash upload or remote telemetry is collected.
+- Fixed Ctrl+Alt/AltGr interception and repeated native tab-action routing. Guarded
+  navigation completion by native ID and distinguished explicit Stop/cancellation
+  from stale completion and actual network/certificate failures.
+- Added status-specific navigation recovery advice, Light chrome, stronger keyboard
+  focus outlines, reduced-motion-aware loading progress and dismissible notices.
+- Added controlled modern JavaScript/storage/SPA/cross-origin/TLS/native regression
+  coverage and a daily-driver acceptance record separating automation from actual
+  Windows GUI results and untested account/device/accessibility scenarios.
+- Added Windows x64 version resources and an `asInvoker` manifest, GUI release startup
+  feedback and static privacy-conscious panic/startup errors. Executables remain
+  unsigned; no installer, service or automatic updater is installed.
+- Added allowlisted portable ZIP/manifest/checksum packaging with metadata/path/profile
+  safety tests, manual upgrade/removal instructions, and explicit manual GitHub Release
+  publication after approved tagging. Tag pushes only create Actions package artifacts.
+- Recorded matched baseline/current Windows resource/startup screening and a separate
+  synthetic extended-stability procedure. These do not establish a general performance
+  improvement or everyday-browser replacement readiness.
+
 ## v0.10 investigation
 
 - Added fixed-target AppContainer/LPAC diagnostics for Winsock catalogs,

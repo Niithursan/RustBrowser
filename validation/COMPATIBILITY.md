@@ -1,4 +1,13 @@
-# v0.6 compatibility matrix
+# Compatibility matrix
+
+Current v0.11 results are in [DAILY_DRIVER.md](DAILY_DRIVER.md): the new native
+modern-site/certificate/navigation/diagnostic suite and all seven previous native
+regressions passed, with actual release GUI HTTPS/tab/bookmark/theme/restart checks.
+Real provider/device/accessibility limitations remain open. The historical matrix
+below is retained with its original v0.6 evidence dates and scope; it must not be
+interpreted as freshly repeated v0.11 manual testing.
+
+## v0.6 historical matrix
 
 This is a measured working subset, not certification as a daily-use browser. The
 local test environment is Windows 11 Pro x64, Rust 1.99.1/MSVC and WebView2

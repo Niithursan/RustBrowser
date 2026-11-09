@@ -72,11 +72,40 @@ There is no bounded local application diagnostic journal or installer.
   new Cargo dependency. Release build and strict Clippy passed; PE reports
   version 0.11.0 and NotSigned. Release uses GUI startup failure feedback;
   debug retains console feedback. Panic payloads are never printed.
-- Formatting, strict Clippy and the complete regular suite passed locally
-  at this stage (54 regular tests; opt-in native helpers remain separate).
-- Native GUI/privacy checks for the new UI, modern compatibility fixtures,
-  light theme, packaging, matched current benchmarks, extended soak and
-  final CI/PR delivery are still pending. Version remains 0.8.0 for now.
+- Metadata/startup checkpoint `58cdef9e9017e76a03c01baebbf9b44ad17dffcd`
+  is pushed. Its Windows CI run 42566063522 passed.
+- Final local fmt, strict Clippy, **58 regular tests**, debug/release builds
+  and current production audit (369 dependencies, no denied warnings) passed.
+  All **eight** separate native Windows cases passed, including daily TLS.
+  Preserved launcher safety and two Python tests passed.
+- Actual isolated release GUI on 2026-11-09: public HTTPS example.com and
+  rust-lang.org redirect/render, loading feedback, Light dropdown selection,
+  address focus, Ctrl+T/W/Tab/D/H/J/Shift+O/Shift+P, drag reorder, pin and
+  bookmark/history/download panels. Normal close/restart retained two tabs,
+  active selection, pin, Light and bookmark. No personal credentials, privacy
+  settings changes, permission grants, uploads or data deletion were automated.
+- All 16 matched candidate benchmark cases finished, using the fixed release
+  test executable at 58cdef9 (SHA-256
+  `5127be5cc284c351dfdd5dbd7120458f9e3bfccda9e31c5e5d11bf4df339bda6`).
+  Two repeats each fresh/warm at 1/5/10/20 tabs. No broad speedup established.
+- Portable producer/safety tests passed, including equal-input ZIP identity,
+  hashes, x64/version metadata and unsafe/profile/reparse output refusal.
+  Packaging/workflow/install guide checkpoint `dd257c7` is pushed; CI pending.
+  Ancestor-profile refusal assertions were added and await final/CI verification.
+  No publication was invoked.
+- Active 30-minute candidate synthetic soak: exec session 21582; raw output
+  outside Git at work/v11/soak-results. Command below. Do not run competing
+  local builds/native tests/GUI during sampling. Do not rerun completed cases.
+- Documentation and sanitized matched screening are prepared for checkpoint.
+  Three new Python port-handshake assertions plus atomic TLS port publication
+  and empty-read-safe polling are prepared but not yet tested/committed. An
+  earlier CI run 42565551944 failed with InvokeMethodOnNull in the wrapper;
+  an existing-but-empty buffered port file is a concrete race consistent with
+  that error. Verify this fix after the soak; do not dismiss intermittent failure
+  because the subsequent 58cdef9 CI happened to pass.
+- Remaining: finish/inspect soak, record numeric findings/final acceptance,
+  review diff/links/workflow syntax, commit/push, open main PR and verify exact
+  final head Windows PR/push, dependency security and secret checks. Do not merge.
 
 Historical results below must not be presented as new v0.11 validation.
 
@@ -85,6 +114,18 @@ Historical results below must not be presented as new v0.11 validation.
 Read this section, AGENTS.md and git status first. Preserve user changes.
 Use fresh marked scratch profiles outside Git. Resume completed stages
 from later checkpoint entries and commits; do not restart them.
+
+Active soak command (already launched; first inspect output/process completion):
+
+```powershell
+.\benchmarks\windows.ps1 -ProbeExecutable <scratch>/work/v11/candidate.exe `
+  -OutputRoot <scratch>/work/v11/soak-results -Label v0.11-58cdef9-soak `
+  -TabCounts 20 -Repeats 1 -SettleSeconds 30 -SampleSeconds 10 `
+  -SoakSeconds 1800 -RecoverySeconds 15 -FreshOnly -Churn
+```
+
+The full request remains in attachment c561271f-eb1c-400e-aef2-8f0b20a58f3a.
+Test/build/user profiles and raw measurement paths must stay out of Git/PR uploads.
 
 ---
 
