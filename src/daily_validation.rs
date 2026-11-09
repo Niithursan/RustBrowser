@@ -134,13 +134,13 @@ impl Probe {
                 self.phase = 2;
             }
             2 if loaded => {
-                self.eval(false,"JSON.stringify(window.controlled)==='{}' ? false : controlled.data===42 && controlled.worker===42 && controlled.digest===32 && controlled.cookie && controlled.storage==='ready' && controlled.ipc==='undefined' && (localStorage.setItem('origin_only','first'),true)")?;
+                self.eval(false,"JSON.stringify(window.controlled)==='{}' ? false : controlled.data===42 && controlled.worker===42 && controlled.digest===32 && controlled.serviceWorker===42 && controlled.cache==='cached-synthetic' && controlled.cloned===3 && controlled.aborted===true && controlled.broadcast==='broadcast-ok' && controlled.cookie && controlled.storage==='ready' && controlled.ipc==='undefined' && (localStorage.setItem('origin_only','first'),true)")?;
                 self.phase = 3;
             }
             3 if value.is_some() => {
                 if value.as_deref() != Some("true") {
                     return Err(
-                        "Modules/fetch/worker/crypto/storage or remote IPC fixture failed".into(),
+                        "Modules/fetch/worker/service worker/cache/crypto/storage/modern API or remote IPC fixture failed".into(),
                     );
                 }
                 self.eval(

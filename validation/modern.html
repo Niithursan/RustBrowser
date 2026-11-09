@@ -27,11 +27,33 @@ try {
   const worker = new Worker('/worker.js');
   const answer = await new Promise((resolve,reject) => {worker.onmessage=e=>resolve(e.data);worker.onerror=reject;worker.postMessage(21)});
   worker.terminate();
+  window.controlledStage='service_worker';
+  const registration = await navigator.serviceWorker.register('/sw.js', {scope:'/'});
+  const active = (await navigator.serviceWorker.ready).active;
+  const swEcho = await new Promise((resolve, reject) => {
+    const channel = new MessageChannel(); channel.port1.onmessage = e => resolve(e.data);
+    setTimeout(() => reject(new Error('ServiceWorkerTimeout')), 5000); active.postMessage(20, [channel.port2]);
+  });
+  window.controlledStage='cache_storage';
+  const cache = await caches.open('controlled-fixture');
+  await cache.put('/cached', new Response('cached-synthetic'));
+  const cached = await (await cache.match('/cached')).text();
+  await caches.delete('controlled-fixture');
+  await registration.unregister();
+  window.controlledStage='modern_apis';
+  const cloned = structuredClone(new Map([['k', new Uint8Array([1,2,3])]])).get('k').length;
+  const aborter = new AbortController(); aborter.abort();
+  const aborted = await fetch('/data.json', {signal: aborter.signal}).then(() => false, e => e.name === 'AbortError');
+  const broadcast = await new Promise(resolve => {
+    const a = new BroadcastChannel('controlled'), b = new BroadcastChannel('controlled');
+    b.onmessage = e => { a.close(); b.close(); resolve(e.data); }; a.postMessage('broadcast-ok');
+  });
   document.cookie = 'controlled_session=ready; SameSite=Lax; path=/';
   localStorage.setItem('controlled', 'ready');
   document.getElementById('route').onclick=()=>{history.pushState({fixture:true},'', '/modern.html?route=2');document.getElementById('status').textContent='SPA route 2'};
   window.controlled = {data:data.value, digest:bytes.byteLength, worker:answer,
-    ipc:typeof window.ipc, cookie:document.cookie.includes('controlled_session=ready'), storage:localStorage.getItem('controlled')};
+    ipc:typeof window.ipc, cookie:document.cookie.includes('controlled_session=ready'), storage:localStorage.getItem('controlled'),
+    serviceWorker:swEcho, cache:cached, cloned, aborted, broadcast};
   document.getElementById('status').textContent=JSON.stringify(window.controlled,null,2);
   document.title='Modern compatibility ready';
   window.controlledStage='ready';
