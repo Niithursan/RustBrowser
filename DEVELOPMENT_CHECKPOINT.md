@@ -47,9 +47,15 @@ There is no bounded local application diagnostic journal or installer.
   invalid/oversized data preservation, concurrency, I/O failure and bounds.
 - Reproduced AltGr interception with a failing regression, then fixed
   Ctrl+Alt routing and native repeated tab actions. Both input tests pass.
+- Diagnostics/input implementation is pushed at
+  `06ba97e94d4bb25602fee720f5d809ff05c2bf3b`.
+- Navigation now guards completion by the current native navigation ID,
+  distinguishes cancellation from failure and provides status-specific
+  advice. Strict Clippy, 56 regular tests and the four affected native
+  sleep/private-newtab/popup-media/renderer-recovery checks passed.
 - Formatting, strict Clippy and the complete regular suite passed locally
   at this stage (54 regular tests; opt-in native helpers remain separate).
-- Native GUI/privacy checks for the new UI, navigation reliability work,
+- Native GUI/privacy checks for the new UI, modern compatibility fixtures,
   light theme, packaging, matched current benchmarks, extended soak and
   final CI/PR delivery are still pending. Version remains 0.8.0 for now.
 

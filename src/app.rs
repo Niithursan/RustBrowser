@@ -1012,6 +1012,14 @@ impl Session {
                 tab.content.state.failed = false;
                 tab.content.state.message = "Loading…".into();
             }
+            PageEvent::Cancelled => {
+                if tab.content.state.loading {
+                    tab.content.state.loading = false;
+                    tab.content.state.failed = false;
+                    tab.content.state.message =
+                        "Navigation cancelled. The previous page is kept when available.".into();
+                }
+            }
             PageEvent::Changed => {}
             PageEvent::Title(title) => {
                 tab.title = if tab.url == navigation::HOME {
