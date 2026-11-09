@@ -28,6 +28,12 @@ impl Server {
         let thread = std::thread::spawn(move || {
             while !flag.load(Ordering::Relaxed) {
                 if let Ok((stream, _)) = listener.accept() {
+                    // Windows accepted sockets inherit the listener's
+                    // non-blocking mode; restore blocking reads so the read
+                    // timeout applies instead of an immediate WouldBlock.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
                     std::thread::spawn(move || {
                         let _ = serve(stream);
                     });
@@ -569,4 +575,32 @@ fn run(crash: bool) {
     assert!(result.is_ok());
     assert!(failure.is_none(), "{failure:?}");
     assert_eq!(phase, 100);
+}
+
+/// Regression: on Windows an accepted socket inherits the listener's
+/// non-blocking mode, so a request that arrives after `accept` used to fail
+/// the first read with `WouldBlock` and drop the connection without a
+/// response (WebView2 then reported navigation status 0 with no HTTP code).
+#[test]
+fn loopback_server_serves_requests_sent_after_accept() {
+    let server = Server::start();
+    let address = server
+        .url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
+    let mut client = TcpStream::connect(&address).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    // Give the accept loop (5 ms poll) time to accept before any bytes arrive.
+    std::thread::sleep(Duration::from_millis(150));
+    client
+        .write_all(b"GET /data.json HTTP/1.1\r\nHost: fixture\r\n\r\n")
+        .unwrap();
+    let mut response = Vec::new();
+    let _ = client.read_to_end(&mut response);
+    let text = String::from_utf8_lossy(&response);
+    assert!(text.starts_with("HTTP/1.1 200 OK"), "{text:?}");
+    assert!(text.ends_with("{\"value\":42}"), "{text:?}");
 }
