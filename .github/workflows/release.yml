@@ -101,5 +101,5 @@ jobs:
           if ($archives.Count -ne 1 -or $checksums.Count -ne 1) { throw 'Unexpected release artifact set' }
           $hash = (Get-FileHash $archives[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ((Get-Content $checksums[0].FullName -Raw).Trim() -cne "$hash  $($archives[0].Name)") { throw 'Release artifact checksum mismatch' }
-          gh release create "$env:RELEASE_TAG" package/*.zip package/*.sha256 --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
+          gh release create "$env:RELEASE_TAG" ($archives[0].FullName) ($checksums[0].FullName) --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

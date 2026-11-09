@@ -93,16 +93,25 @@ There is no bounded local application diagnostic journal or installer.
   Packaging/workflow/install guide checkpoint `dd257c7` is pushed; CI pending.
   Ancestor-profile refusal assertions were added and await final/CI verification.
   No publication was invoked.
-- Active 30-minute candidate synthetic soak: exec session 21582; raw output
-  outside Git at work/v11/soak-results. Command below. Do not run competing
-  local builds/native tests/GUI during sampling. Do not rerun completed cases.
+- The original soak was interrupted between turns: last sample 1176.707 s,
+  113 churn cycles, phase soak, no completion result or live probe on resume.
+  Preserve work/v11/soak-results as partial evidence; do not count it as a pass
+  or infer an application crash. No matching owned engine children remained.
+- A fresh 1800-second retry is active in work/v11/soak-retry-results using the
+  same fixed candidate. Do not run competing local builds/native tests/GUI.
 - Documentation and sanitized matched screening are prepared for checkpoint.
-  Three new Python port-handshake assertions plus atomic TLS port publication
-  and empty-read-safe polling are prepared but not yet tested/committed. An
+  Atomic TLS publication/empty-read polling checkpoint `dd00883` is pushed;
+  three new Python tests pass locally. The modern native fixture and updated
+  package/ancestor-output/runtime-manifest assertions pass locally too. An
   earlier CI run 42565551944 failed with InvokeMethodOnNull in the wrapper;
   an existing-but-empty buffered port file is a concrete race consistent with
-  that error. Verify this fix after the soak; do not dismiss intermittent failure
-  because the subsequent 58cdef9 CI happened to pass.
+  that error. A subsequent PR CI failed at modern fixture phase 2 while the
+  same-head push passed. Added per-API fixture failure stages and timeout state,
+  preserving all assertions. Fmt/strict Clippy/58 regular tests and the daily
+  native test pass locally; hosted evidence is still needed. Do not dismiss it.
+- PE import inspection found VCRUNTIME140.dll/VCRUNTIME140_1.dll. Installation
+  docs and package prerequisites now disclose x64 Visual C++ v14 as well as
+  WebView2. Neither runtime is bundled/installed; clean-machine testing remains open.
 - Documentation/screening checkpoint `3c0c975e8debd04971f45473c22aaf35522cdef1`
   is pushed. [PR #14](https://github.com/Niithursan/RustBrowser/pull/14) is open
   **as a draft**, targeting unchanged main. Do not mark ready before final checks.

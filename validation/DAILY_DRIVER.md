@@ -52,7 +52,7 @@ v0.11 manual results. No failing assertion was removed to obtain a pass.
 | Sleeping-tab lifecycle and protected activity | Pass | Existing native state/controller/resume tests plus guard/race unit tests. Arbitrary activity cannot always be detected; Keep awake remains necessary. |
 | Extended stability/resource sampling | Pending | Separate 30-minute 20-tab synthetic run is in progress; final result will replace this row. Not a 30-minute interactive real-site session. |
 | High DPI/mixed monitors/IME/screen-reader/system sleep | Not tested | Native fixture synthetic scale/composition checks preserved. Physical configurations and Windows sleep/wake remain separate work. |
-| Portable integrity/metadata/profile-output refusal | Pass | Two equal-input ZIP hashes, exact file allowlist, all manifest hashes and unsafe path/profile/reparse refusals passed. Unsigned x64/asInvoker resources inspected. |
+| Portable integrity/metadata/profile-output refusal | Pass | Two equal-input ZIP hashes, exact file allowlist, all manifest hashes and unsafe path/profile/reparse refusals passed. Unsigned x64/asInvoker resources and VC Runtime DLL imports inspected. |
 | Clean-machine install/uninstall/rollback/signing | Not tested | MSI/MSIX evaluated; portable manual procedure selected. No installer/registry/auto-update change or signed artifact. |
 
 ## Native reproduction

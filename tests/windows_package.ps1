@@ -19,6 +19,7 @@ try{
     $reader=[IO.StreamReader]::new($zip.GetEntry('package.json').Open())
     try{$manifest=$reader.ReadToEnd() | ConvertFrom-Json}finally{$reader.Dispose()}
     if($manifest.schema -ne 1 -or $manifest.version -cne $version -or $manifest.architecture -cne 'x64' -or $manifest.source_commit -cne $SourceCommit.ToLowerInvariant() -or @($manifest.files).Count -ne 7){throw 'Package manifest metadata is incorrect.'}
+    if($manifest.runtime -notlike '*WebView2*Visual C++ v14*neither bundled*'){throw 'Package must disclose both external runtime prerequisites.'}
     foreach($file in $manifest.files){
         if($file.name -notin $expected -or $file.sha256 -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid file manifest.'}
         $entry=$zip.GetEntry($file.name)

@@ -10,8 +10,8 @@ document. The same pre-existing probe and process-tree sampler were used.
 
 ## Environment and method
 
-Screening ran 2026-11-08 23:33–23:40 baseline, then 2026-11-09 00:15–00:21
-candidate (Toronto). Ryzen 5 5600, 12 logical processors, 31.93 GiB RAM,
+Screening result files were written during 2026-11-08 23:33–23:40 baseline,
+then 2026-11-09 00:15–00:21 candidate (Toronto). Ryzen 5 5600, 12 logical processors, 31.93 GiB RAM,
 Windows 11 Pro 10.0.26200 x64, Rust 1.99.1/MSVC, SDK 10.0.22621.0, 100% scale.
 WebView2 **157.0.4341.42** was checked before/after. Power plan was not changed
 or independently recorded. No competing local browser test/build ran in either

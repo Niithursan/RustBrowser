@@ -18,7 +18,9 @@ Local Windows 11 x64 / Rust 1.99.1 / WebView2 157.0.4341.42 checks passed on
   child helper is ignored in the general suite and exercised by its parent test.
 - `cargo build --locked` and `cargo build --locked --release` passed natively.
 - `cargo audit --deny warnings`: **369 dependencies**, 1,422 current advisory
-  records, no denied warnings. No new Cargo dependency; root lock version changed.
+  records, no denied warnings under the unchanged three reviewed non-Windows
+  exceptions in `.cargo/audit.toml`. No dependency/exception added; root lock
+  version changed.
 - All **eight native Windows regressions** passed as separate processes. The new
   daily suite checks modern APIs, cross-origin/SPA navigation, native navigation
   ID/Stop state, diagnostics, light/address/compact UI and untrusted TLS rejection.
@@ -27,6 +29,9 @@ Local Windows 11 x64 / Rust 1.99.1 / WebView2 157.0.4341.42 checks passed on
 - Portable package tests passed equal-input ZIP hash equality, checksum/manifest
   hashes, exact file allowlist and version/PE/profile/reparse refusals. Actual PE
   reports 0.11.0, x64 and **NotSigned**; extracted manifest is **asInvoker**, no UIAccess.
+  PE imports also show `VCRUNTIME140.dll`/`VCRUNTIME140_1.dll`; the x64 Visual C++
+  v14 prerequisite is now disclosed alongside WebView2. No clean-machine loader
+  or missing-DLL recovery claim is made.
 - Actual shipping Windows GUI: HTTPS pages/redirect, loading feedback, Light,
   Ctrl+L/T/W/Tab/D/H/J/Shift+O/Shift+P, drag reordering, bookmark/history/download
   panels and normal restart with URLs/active tab/pin/theme/bookmark preserved.

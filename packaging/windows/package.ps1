@@ -47,7 +47,7 @@ foreach($sourceFile in $sources){
     Copy-Item -LiteralPath $sourceFile -Destination $destination -ErrorAction Stop
     $files+= [ordered]@{name=$item.Name;bytes=$item.Length;sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
-$manifest=[ordered]@{schema=1;name='rust-browser';version=$Version;architecture='x64';source_commit=$SourceCommit.ToLowerInvariant();authenticode_status=$signature;runtime='Microsoft Evergreen WebView2 Runtime required; not bundled';files=@($files | Sort-Object name)}
+$manifest=[ordered]@{schema=1;name='rust-browser';version=$Version;architecture='x64';source_commit=$SourceCommit.ToLowerInvariant();authenticode_status=$signature;runtime='Microsoft Evergreen WebView2 Runtime and x64 Microsoft Visual C++ v14 Runtime required; neither bundled';files=@($files | Sort-Object name)}
 $encoding=[Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText((Join-Path $payload 'package.json'),(($manifest | ConvertTo-Json -Depth 6)+"`n"),$encoding)
 Add-Type -AssemblyName System.IO.Compression

@@ -1,7 +1,8 @@
 # Windows installation, upgrade and removal
 
 Rust Browser 0.11.0 is an unsigned x64 portable Windows application. It uses
-the installed Microsoft Evergreen WebView2 Runtime. It has no automatic
+the installed Microsoft Evergreen WebView2 Runtime and x64 Microsoft Visual C++
+v14 Runtime. It has no automatic
 updater, installer service, default-browser registration or administrator
 requirement. Do not run it as administrator. `asInvoker` retains the access
 of the account launching it; it is not an application sandbox.
@@ -15,6 +16,12 @@ of the account launching it; it is not an application sandbox.
 2. Install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
    from Microsoft if necessary. The browser does not silently install it.
    Microsoft Edge alone is not a substitute for the Runtime.
+   Also install the matching [latest supported x64 Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+   if absent. Its version must be at least as recent as the MSVC tools used to
+   build the package. Inspection of this release executable's PE imports found
+   `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll` plus Windows/UCRT libraries. Neither
+   Microsoft runtime is bundled or silently installed. Prerequisite installation
+   can require privileges independently of running Rust Browser.
 3. Compare `Get-FileHash .\rust-browser-v0.11.0-windows-x64.zip -Algorithm SHA256`
    with the approved `.sha256` file. A checksum detects changed bytes; it
    does not authenticate the publisher. The executable is not signed or
@@ -30,7 +37,9 @@ The application version is embedded in Windows Properties and shown in
 window titles. Release startup errors use a Windows message; debug builds
 use the console. Local diagnostics may contain a startup event when the
 profile was successfully opened. Missing Runtime/clean-machine startup
-still needs independent clean-machine testing.
+still needs independent clean-machine testing. Missing imported DLLs can fail in
+the Windows loader before Rust Browser's own error message or diagnostics runs;
+follow Microsoft's prerequisite instructions instead of downloading loose DLLs.
 
 ## Upgrade without moving browsing data
 

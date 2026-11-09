@@ -46,7 +46,9 @@ CI stores an x64 Windows executable as a build artifact and tests portable
 packaging. Approved version tags produce package/checksum Actions artifacts;
 publishing a GitHub Release requires an explicit manual workflow action.
 The executable is unsigned and has no installer. It still requires WebView2
-Runtime. Release startup failures use a Windows message; debug builds keep
+Runtime and the matching x64 Visual C++ v14 Runtime; neither is bundled. See
+[Microsoft's prerequisite downloads](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+Release startup failures use a Windows message when the loader can start the app; debug builds keep
 console feedback. See [installation, package contents and removal](INSTALL_WINDOWS.md).
 
 ## Controls
