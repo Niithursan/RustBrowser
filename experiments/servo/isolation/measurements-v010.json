@@ -1,0 +1,1103 @@
+{
+  "schema": 1,
+  "date": "2026-11-08",
+  "source_commit": "acbf21704b4a6295afd8db2fe29f6f402f32abcd",
+  "fixture_source_commit": "deb5eb1e7f4f298e0a2cbcb386966d052a3719a1",
+  "environment": {
+    "windows": "Windows 11 Pro 10.0.26200 x64",
+    "cpu": "AMD Ryzen 5 5600 6-Core Processor",
+    "ram_bytes": 34281668608,
+    "compiler": "MSVC 19.44, Windows SDK 10.0.22621, /W4 /WX /MT",
+    "rust": "1.99.1-x86_64-pc-windows-msvc",
+    "servo_revision": "65d058b9c6543840c1d986f7cae4520605bf5b5c",
+    "servo_features": "no-default-features; bundled; dev debug=0; incremental=0; jobs=4",
+    "webview2_runtime": "157.0.4341.42",
+    "conditions": "Sequential runs after compilation; fresh profiles; uncontrolled interactive desktop; no cold-cache guarantee"
+  },
+  "appcontainer": [
+    {
+      "startup_first_reply_ms": 27.9327,
+      "resume_to_exit_ms": 315.559,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.12109,
+      "ipc_median_ms": 15.618,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 0,
+          "value": 8,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        19.9804,
+        15.4222,
+        15.9641,
+        15.2298,
+        30.8993,
+        15.1349,
+        15.2968,
+        31.2099,
+        15.1404,
+        15.5868,
+        32.0406,
+        15.6491,
+        15.3385,
+        15.6541,
+        15.0989,
+        31.6557
+      ]
+    },
+    {
+      "startup_first_reply_ms": 27.265,
+      "resume_to_exit_ms": 410.642,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.11328,
+      "ipc_median_ms": 30.8153,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 0,
+          "value": 8,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        19.7538,
+        31.8921,
+        31.8727,
+        31.6349,
+        30.8714,
+        31.4197,
+        31.5704,
+        31.8107,
+        30.943,
+        14.8038,
+        30.7592,
+        15.6104,
+        15.5138,
+        14.8958,
+        15.7326,
+        15.7915
+      ]
+    },
+    {
+      "startup_first_reply_ms": 21.1218,
+      "resume_to_exit_ms": 323.685,
+      "cpu_ms": 15.625,
+      "peak_private_mib": 2.11719,
+      "ipc_median_ms": 15.7755,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 0,
+          "value": 8,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        12.2716,
+        30.513,
+        31.2536,
+        15.7445,
+        30.7472,
+        16.0694,
+        15.4043,
+        15.2033,
+        15.5538,
+        16.0598,
+        31.0395,
+        16.0216,
+        15.4056,
+        15.5281,
+        15.0743,
+        15.8065
+      ]
+    }
+  ],
+  "lpac": [
+    {
+      "startup_first_reply_ms": 25.4204,
+      "resume_to_exit_ms": 328.815,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.07422,
+      "ipc_median_ms": 15.6469,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 10107,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 50,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        17.8359,
+        15.1848,
+        30.8359,
+        15.161,
+        15.7328,
+        31.7469,
+        31.5636,
+        15.5546,
+        15.1454,
+        15.5138,
+        15.5609,
+        15.136,
+        16.027,
+        16.053,
+        30.919,
+        15.4949
+      ]
+    },
+    {
+      "startup_first_reply_ms": 15.8191,
+      "resume_to_exit_ms": 370.719,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.07031,
+      "ipc_median_ms": 23.806,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 10107,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 50,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        8.1129,
+        16.0922,
+        16.5658,
+        31.5901,
+        16.0034,
+        15.6435,
+        31.2394,
+        15.1588,
+        31.1665,
+        31.5389,
+        16.589,
+        31.0231,
+        31.629,
+        31.732,
+        15.1267,
+        31.2148
+      ]
+    },
+    {
+      "startup_first_reply_ms": 18.7152,
+      "resume_to_exit_ms": 383.719,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.06641,
+      "ipc_median_ms": 23.6968,
+      "operations": [
+        {
+          "operation": 1,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 2,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 3,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 4,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 5,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 6,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 7,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 8,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 9,
+          "status": 1114,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 10,
+          "status": 10107,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 11,
+          "status": 367,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 12,
+          "status": 1455,
+          "value": 0,
+          "extra": 1
+        },
+        {
+          "operation": 13,
+          "status": 50,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 14,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 15,
+          "status": 0,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 16,
+          "status": 0,
+          "value": 1,
+          "extra": 0
+        },
+        {
+          "operation": 17,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 18,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        },
+        {
+          "operation": 19,
+          "status": 5,
+          "value": 0,
+          "extra": 0
+        }
+      ],
+      "roundtrips_ms": [
+        6.2808,
+        16.1059,
+        31.6303,
+        31.6499,
+        31.4458,
+        31.6015,
+        31.8624,
+        15.5531,
+        15.0882,
+        15.3469,
+        15.5182,
+        31.6292,
+        31.2878,
+        32.0926,
+        15.2766,
+        15.592
+      ]
+    }
+  ],
+  "servo_frames": [
+    {
+      "scale": "1",
+      "viewport": "1200x820",
+      "ready_raf_ms": "83.82",
+      "pointer_raf_ms": "20.34",
+      "keyboard_raf_ms": "70.21",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.25",
+      "viewport": "960x656",
+      "ready_raf_ms": "19.19",
+      "pointer_raf_ms": "13.05",
+      "keyboard_raf_ms": "8.72",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.5",
+      "viewport": "800x546",
+      "ready_raf_ms": "22.12",
+      "pointer_raf_ms": "12.72",
+      "keyboard_raf_ms": "11.72",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "2",
+      "viewport": "600x410",
+      "ready_raf_ms": "62.08",
+      "pointer_raf_ms": "12.61",
+      "keyboard_raf_ms": "19.02",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1",
+      "viewport": "1200x820",
+      "ready_raf_ms": "26.75",
+      "pointer_raf_ms": "10.77",
+      "keyboard_raf_ms": "17.62",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.25",
+      "viewport": "960x656",
+      "ready_raf_ms": "20.45",
+      "pointer_raf_ms": "13.27",
+      "keyboard_raf_ms": "10.59",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.5",
+      "viewport": "800x546",
+      "ready_raf_ms": "20.49",
+      "pointer_raf_ms": "13.42",
+      "keyboard_raf_ms": "14.69",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "2",
+      "viewport": "600x410",
+      "ready_raf_ms": "22.24",
+      "pointer_raf_ms": "13.67",
+      "keyboard_raf_ms": "10.43",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1",
+      "viewport": "1200x820",
+      "ready_raf_ms": "64.89",
+      "pointer_raf_ms": "11.78",
+      "keyboard_raf_ms": "140.08",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.25",
+      "viewport": "960x656",
+      "ready_raf_ms": "23.9",
+      "pointer_raf_ms": "11.93",
+      "keyboard_raf_ms": "14.86",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "1.5",
+      "viewport": "800x546",
+      "ready_raf_ms": "19.11",
+      "pointer_raf_ms": "12.98",
+      "keyboard_raf_ms": "12.1",
+      "composition_raf_ms": "unavailable"
+    },
+    {
+      "scale": "2",
+      "viewport": "600x410",
+      "ready_raf_ms": "23.65",
+      "pointer_raf_ms": "11.85",
+      "keyboard_raf_ms": "22.44",
+      "composition_raf_ms": "unavailable"
+    }
+  ],
+  "webview2_frames": [
+    [
+      {
+        "scale": "1",
+        "viewport": "1200x820",
+        "ready_raf_ms": "148",
+        "pointer_raf_ms": "1.2",
+        "keyboard_raf_ms": "1.8",
+        "composition_raf_ms": "5.4"
+      },
+      {
+        "scale": "1.25",
+        "viewport": "960x656",
+        "ready_raf_ms": "60.7",
+        "pointer_raf_ms": "9.2",
+        "keyboard_raf_ms": "3.5",
+        "composition_raf_ms": "7.3"
+      },
+      {
+        "scale": "1.5",
+        "viewport": "800x547",
+        "ready_raf_ms": "18.6",
+        "pointer_raf_ms": "0.7",
+        "keyboard_raf_ms": "1",
+        "composition_raf_ms": "7.6"
+      },
+      {
+        "scale": "2",
+        "viewport": "600x410",
+        "ready_raf_ms": "19.4",
+        "pointer_raf_ms": "1.7",
+        "keyboard_raf_ms": "1.3",
+        "composition_raf_ms": "5.9"
+      }
+    ],
+    [
+      {
+        "scale": "1",
+        "viewport": "1200x820",
+        "ready_raf_ms": "150.8",
+        "pointer_raf_ms": "0.5",
+        "keyboard_raf_ms": "3",
+        "composition_raf_ms": "6.5"
+      },
+      {
+        "scale": "1.25",
+        "viewport": "960x656",
+        "ready_raf_ms": "74.7",
+        "pointer_raf_ms": "2.1",
+        "keyboard_raf_ms": "2.5",
+        "composition_raf_ms": "15.3"
+      },
+      {
+        "scale": "1.5",
+        "viewport": "800x547",
+        "ready_raf_ms": "18",
+        "pointer_raf_ms": "0.5",
+        "keyboard_raf_ms": "2.8",
+        "composition_raf_ms": "7.6"
+      },
+      {
+        "scale": "2",
+        "viewport": "600x410",
+        "ready_raf_ms": "19.1",
+        "pointer_raf_ms": "0.8",
+        "keyboard_raf_ms": "1.3",
+        "composition_raf_ms": "7.3"
+      }
+    ],
+    [
+      {
+        "scale": "1",
+        "viewport": "1200x820",
+        "ready_raf_ms": "135.4",
+        "pointer_raf_ms": "117.4",
+        "keyboard_raf_ms": "2.3",
+        "composition_raf_ms": "7.5"
+      },
+      {
+        "scale": "1.25",
+        "viewport": "960x656",
+        "ready_raf_ms": "17.7",
+        "pointer_raf_ms": "0.5",
+        "keyboard_raf_ms": "3.2",
+        "composition_raf_ms": "6.2"
+      },
+      {
+        "scale": "1.5",
+        "viewport": "800x547",
+        "ready_raf_ms": "17.1",
+        "pointer_raf_ms": "0.5",
+        "keyboard_raf_ms": "2.4",
+        "composition_raf_ms": "7.7"
+      },
+      {
+        "scale": "2",
+        "viewport": "600x410",
+        "ready_raf_ms": "17.1",
+        "pointer_raf_ms": "0.4",
+        "keyboard_raf_ms": "3",
+        "composition_raf_ms": "7.2"
+      }
+    ]
+  ],
+  "servo_smoke": [
+    {
+      "first_ready_present_ms": 778,
+      "exit_code": 0,
+      "retained_profile_files": 5
+    },
+    {
+      "first_ready_present_ms": 744,
+      "exit_code": 0,
+      "retained_profile_files": 5
+    },
+    {
+      "first_ready_present_ms": 796,
+      "exit_code": 0,
+      "retained_profile_files": 5
+    }
+  ],
+  "fault_shutdown_samples_ms": {
+    "appcontainer_malformed": 0.7059,
+    "appcontainer_hang": 0.8309,
+    "lpac_malformed": 0.8471,
+    "lpac_hang": 0.9965,
+    "note": "Single fault samples in the selected AppContainer/LPAC mode. The 200 ms hang-detection deadline is separate."
+  },
+  "unavailable": [
+    "real restricted Servo rendering",
+    "first visible pixel",
+    "native input-to-display latency",
+    "GPU resource metrics",
+    "long-duration controlled soak",
+    "general network containment",
+    "native IME candidates",
+    "physical mixed-DPI monitor transitions"
+  ]
+}

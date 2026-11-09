@@ -83,4 +83,23 @@ mod tests {
         ));
         assert_eq!((delta.x, delta.y), (3.0, 4.0));
     }
+
+    #[test]
+    fn empty_preedit_and_cancel_do_not_recommit_old_text() {
+        let events = ime_events(Ime::Preedit(String::new(), None), true);
+        assert!(matches!(events.as_slice(),
+            [InputEvent::Ime(ImeEvent::Composition(CompositionEvent {
+                state: CompositionState::Update, data
+            }))] if data.is_empty()));
+        assert!(matches!(
+            ime_events(Ime::Disabled, true).as_slice(),
+            [InputEvent::Ime(ImeEvent::Dismissed)]
+        ));
+        let committed = ime_events(Ime::Commit(String::new()), true);
+        assert!(
+            matches!(&committed[1], InputEvent::Ime(ImeEvent::Composition(CompositionEvent {
+            state: CompositionState::End, data
+        })) if data.is_empty())
+        );
+    }
 }

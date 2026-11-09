@@ -13,4 +13,36 @@
 <a href="https://example.invalid/">Try a blocked external page</a>
 <button onclick="window.open('about:blank'); document.getElementById('status').textContent = 'Popup requested'">Try a blocked popup</button>
 <p id="status" role="status"></p>
+<section aria-label="Native input observations">
+  <h2>Native input observations</h2>
+  <label for="native-entry">Synthetic text only</label>
+  <input id="native-entry" autocomplete="off" style="font:inherit; width:350px">
+  <button id="native-target">Pointer target</button>
+  <pre id="native-events" aria-live="polite" style="font-size:15px; white-space:pre-wrap"></pre>
+  <p>Scroll below this marker to exercise native wheel delivery.</p>
+  <div style="height:650px; border-left:3px solid #526b88"></div>
+  <p>Native scroll target reached</p>
+</section>
+<script>
+(() => {
+  const entry = document.getElementById('native-entry');
+  const output = document.getElementById('native-events');
+  const counts = {keydown:0, keyup:0, repeat:0, input:0, pointerdown:0, pointerup:0,
+    pointermove:0, wheel:0, focus:0, blur:0, compositionstart:0, compositionupdate:0,
+    compositionend:0, resize:0};
+  const show = () => output.textContent = JSON.stringify({
+    trusted:counts, viewport:[innerWidth,innerHeight], dpr:devicePixelRatio, text:entry.value
+  }, null, 2);
+  for (const type of Object.keys(counts).filter(type => !['repeat','resize'].includes(type))) {
+    document.addEventListener(type, event => {
+      if (!event.isTrusted) return;
+      counts[type]++;
+      if (type === 'keydown' && event.repeat) counts.repeat++;
+      show();
+    }, true);
+  }
+  window.addEventListener('resize', () => { counts.resize++; show(); });
+  show();
+})();
+</script>
 </html>

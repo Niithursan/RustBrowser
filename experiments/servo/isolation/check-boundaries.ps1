@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$OutputRoot,
     [ValidateSet('AppContainer','LPAC')][string]$Mode = 'AppContainer',
-    [ValidateRange(1,5)][int]$Repeats = 1
+    [ValidateRange(1,5)][int]$Repeats = 1,
+    [switch]$Diagnostics
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../tools.ps1')
@@ -31,6 +32,12 @@ $flags = @('/nologo','/std:c++17','/W4','/WX','/EHsc','/MT',
 if ($LASTEXITCODE -ne 0) { throw 'Boundary broker compilation failed.' }
 & cl.exe @flags (Join-Path $PSScriptRoot 'boundary_child.cpp') "/Fo$(Join-Path $build child.obj)" "/Fe$(Join-Path $build boundary-child.exe)" /link /SUBSYSTEM:WINDOWS
 if ($LASTEXITCODE -ne 0) { throw 'Boundary child compilation failed.' }
+if ($Diagnostics) {
+    & cl.exe @flags (Join-Path $PSScriptRoot 'wire_tests.cpp') "/Fo$(Join-Path $build wire.obj)" "/Fe$(Join-Path $build wire-tests.exe)"
+    if ($LASTEXITCODE -ne 0) { throw 'Protocol test compilation failed.' }
+    & (Join-Path $build 'wire-tests.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Protocol regression tests failed.' }
+}
 
 function New-OwnedProbeRun {
     $run = Join-Path $root ([guid]::NewGuid().ToString('N'))
@@ -62,16 +69,33 @@ function Invoke-OwnedProbe([string]$Run, [string]$ProbeMode) {
 }
 foreach ($attempt in 1..$Repeats) {
     $run = New-OwnedProbeRun
-    $result = Invoke-OwnedProbe $run $Mode.ToLowerInvariant()
+    $probeMode = $Mode.ToLowerInvariant()
+    if ($Diagnostics) { $probeMode = 'diagnostics-' + $probeMode }
+    $result = Invoke-OwnedProbe $run $probeMode
     $result.stdout
     $result.stderr
     if ($result.exit_code -ne 0) {
         throw "The $Mode probe failed with exit $($result.exit_code). Inspect $run."
     }
 }
+if ($Diagnostics) {
+    foreach ($fault in 'malformed','hang') {
+        $run = New-OwnedProbeRun
+        $faultMode = 'diagnostics-' + $fault
+        if ($Mode -eq 'LPAC') { $faultMode += '-lpac' }
+        $result = Invoke-OwnedProbe $run $faultMode
+        $result.stdout
+        $result.stderr
+        if ($result.exit_code -ne 0) { throw "The $fault IPC rejection test failed. Inspect $run." }
+    }
+}
 
 $run = New-OwnedProbeRun
-$crash = Invoke-OwnedProbe $run 'crash'
+$crashMode = 'crash'
+if ($Diagnostics) {
+    $crashMode = if ($Mode -eq 'LPAC') { 'diagnostics-crash-lpac' } else { 'diagnostics-crash' }
+}
+$crash = Invoke-OwnedProbe $run $crashMode
 if ($crash.exit_code -ne 74) { throw "Broker crash case failed. Inspect $run." }
 $identity = Get-Content -LiteralPath (Join-Path $run 'child-identity.txt') -Raw
 if ($identity -notmatch '^(\d+) (\d+)$') { throw 'Invalid owned child identity.' }

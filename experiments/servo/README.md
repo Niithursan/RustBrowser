@@ -1,5 +1,10 @@
 # Opt-in Servo spike
 
+The latest [v0.10 validation](VALIDATION_V010.md) records scoped synthetic
+IPC, LPAC diagnostics and native input observations. The
+[rendering assessment](SECURE_RENDERING_V010.md) stops at the retained
+WGL/Win32k boundary. It does not enable broader Servo navigation.
+
 The v0.9 investigation adds a
 [Windows boundary threat model and synthetic probe](isolation/README.md) and
 [shared event validation](VALIDATION_V09.md). Servo stays restricted to its

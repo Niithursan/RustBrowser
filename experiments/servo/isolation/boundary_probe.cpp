@@ -91,17 +91,44 @@ void verify_token(HANDLE process, PSID expected_sid) {
     PROCESS_MITIGATION_CHILD_PROCESS_POLICY children{};
     require(GetProcessMitigationPolicy(process, ProcessChildProcessPolicy, &children, sizeof(children)) &&
         children.NoChildProcessCreation, "Child creation restriction");
+    const auto elevation = token_value(token.value, TokenElevation);
+    require(!reinterpret_cast<const TOKEN_ELEVATION*>(elevation.data())->TokenIsElevated, "Worker is not elevated");
+    const auto ui_access = token_value(token.value, TokenUIAccess);
+    require(*reinterpret_cast<const DWORD*>(ui_access.data()) == 0, "Worker has no UIAccess");
+    BYTE administrators[SECURITY_MAX_SID_SIZE]{};
+    DWORD administrators_size = sizeof(administrators);
+    require(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, administrators, &administrators_size),
+        "Administrators identifier");
+    const auto groups = token_value(token.value, TokenGroups);
+    const auto* group_list = reinterpret_cast<const TOKEN_GROUPS*>(groups.data());
+    for (DWORD index = 0; index < group_list->GroupCount; ++index) {
+        const auto& group = group_list->Groups[index];
+        if (EqualSid(group.Sid, administrators)) {
+            require((group.Attributes & SE_GROUP_USE_FOR_DENY_ONLY) &&
+                !(group.Attributes & SE_GROUP_ENABLED), "Administrators SID is deny-only");
+        }
+    }
+    LUID traversal{};
+    require(LookupPrivilegeValueW(nullptr, SE_CHANGE_NOTIFY_NAME, &traversal), "Traversal privilege identifier");
+    const auto privileges = token_value(token.value, TokenPrivileges);
+    const auto* privilege_list = reinterpret_cast<const TOKEN_PRIVILEGES*>(privileges.data());
+    for (DWORD index = 0; index < privilege_list->PrivilegeCount; ++index) {
+        const auto& privilege = privilege_list->Privileges[index];
+        require(!(privilege.Attributes & SE_PRIVILEGE_ENABLED) ||
+            (privilege.Luid.LowPart == traversal.LowPart && privilege.Luid.HighPart == traversal.HighPart),
+            "Only change-notify privilege may be enabled");
+    }
 }
 
 struct Attributes {
     std::vector<uintptr_t> storage;
     LPPROC_THREAD_ATTRIBUTE_LIST list = nullptr;
-    Attributes() {
+    explicit Attributes(DWORD count = 5) {
         SIZE_T size = 0;
-        InitializeProcThreadAttributeList(nullptr, 5, 0, &size);
+        InitializeProcThreadAttributeList(nullptr, count, 0, &size);
         storage.resize((size + sizeof(uintptr_t) - 1) / sizeof(uintptr_t));
         list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
-        require(InitializeProcThreadAttributeList(list, 5, 0, &size) != FALSE, "Initialize attributes");
+        require(InitializeProcThreadAttributeList(list, count, 0, &size) != FALSE, "Initialize attributes");
     }
     void add(DWORD_PTR key, void* value, SIZE_T size) {
         require(UpdateProcThreadAttribute(list, 0, key, value, size, nullptr, nullptr) != FALSE,
@@ -131,18 +158,23 @@ struct Child {
 };
 
 PROCESS_INFORMATION launch(const fs::path& exe, const std::wstring& args, const fs::path& run,
-    PSID sid, HANDLE job, bool less_privileged) {
+    PSID sid, HANDLE job, bool less_privileged, const std::vector<HANDLE>& ipc_handles = {}) {
     SECURITY_CAPABILITIES capabilities{};
     capabilities.AppContainerSid = sid;
     DWORD lpac = less_privileged ? PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT : 0;
     DWORD child_policy = PROCESS_CREATION_CHILD_PROCESS_RESTRICTED;
     DWORD64 mitigations = PROCESS_CREATION_MITIGATION_POLICY_WIN32K_SYSTEM_CALL_DISABLE_ALWAYS_ON;
-    Attributes attrs;
+    require(ipc_handles.empty() || ipc_handles.size() == 2, "Exactly two IPC capabilities");
+    Attributes attrs(ipc_handles.empty() ? 5 : 6);
     attrs.add(PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities, sizeof(capabilities));
     attrs.add(PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &lpac, sizeof(lpac));
     attrs.add(PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, &child_policy, sizeof(child_policy));
     attrs.add(PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &mitigations, sizeof(mitigations));
     attrs.add(PROC_THREAD_ATTRIBUTE_JOB_LIST, &job, sizeof(job));
+    if (!ipc_handles.empty()) {
+        attrs.add(PROC_THREAD_ATTRIBUTE_HANDLE_LIST, const_cast<HANDLE*>(ipc_handles.data()),
+            ipc_handles.size() * sizeof(HANDLE));
+    }
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -159,20 +191,63 @@ PROCESS_INFORMATION launch(const fs::path& exe, const std::wstring& args, const 
     environment += L"SystemRoot=" + std::wstring(windows);
     environment.push_back(0);
     environment.push_back(0);
+    // An AppContainer created directly from an administrative broker can
+    // retain an elevated-token indication. Filter the caller's own primary
+    // token before creating the lowbox; never fall back to the original token.
+    Handle caller, filtered;
+    require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+        &caller.value), "Open caller primary token for restriction");
+    BYTE administrators[SECURITY_MAX_SID_SIZE]{};
+    DWORD administrators_size = sizeof(administrators);
+    require(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, administrators, &administrators_size),
+        "Administrators identifier for restriction");
+    SID_AND_ATTRIBUTES deny_admin{administrators, 0};
+    require(CreateRestrictedToken(caller.value, DISABLE_MAX_PRIVILEGE | LUA_TOKEN,
+        1, &deny_admin, 0, nullptr, 0, nullptr, &filtered.value), "Create restricted LUA primary token");
+    const auto filtered_elevation = token_value(filtered.value, TokenElevation);
+    require(!reinterpret_cast<const TOKEN_ELEVATION*>(filtered_elevation.data())->TokenIsElevated,
+        "Filtered primary token is not elevated");
     PROCESS_INFORMATION process{};
-    const BOOL created = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE,
+    const BOOL created = CreateProcessAsUserW(filtered.value, exe.c_str(), command.data(), nullptr, nullptr, !ipc_handles.empty(),
         EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
         environment.data(), run.c_str(), &startup.StartupInfo, &process);
     require(created != FALSE, "Create suspended LPAC child");
     return process;
 }
 
+void record_child_identity(DWORD identifier, HANDLE process, const fs::path& run) {
+    FILETIME created{}, exited{}, kernel{}, user_time{};
+    require(GetProcessTimes(process, &created, &exited, &kernel, &user_time), "Child creation time");
+    ULARGE_INTEGER stamp{};
+    stamp.LowPart = created.dwLowDateTime;
+    stamp.HighPart = created.dwHighDateTime;
+    const std::string identity = std::to_string(identifier) + " " + std::to_string(stamp.QuadPart);
+    Handle record(CreateFileW((run / L"child-identity.txt").c_str(), GENERIC_WRITE, 0,
+        nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    require(record.value != INVALID_HANDLE_VALUE, "Reserve child identity");
+    DWORD written = 0;
+    require(WriteFile(record.value, identity.data(), static_cast<DWORD>(identity.size()), &written, nullptr) &&
+        written == identity.size(), "Write child identity");
+}
+
+#include "diagnostics_broker.h"
+
 int wmain(int argc, wchar_t** argv) {
     try {
         require(argc == 2 && (std::wstring(argv[1]) == L"--appcontainer" ||
             std::wstring(argv[1]) == L"--lpac" || std::wstring(argv[1]) == L"--crash" ||
-            std::wstring(argv[1]) == L"--cleanup"), "Select a fixed probe mode");
-        const bool less_privileged = std::wstring(argv[1]) == L"--lpac";
+            std::wstring(argv[1]) == L"--cleanup" || std::wstring(argv[1]) == L"--diagnostics-appcontainer" ||
+            std::wstring(argv[1]) == L"--diagnostics-lpac" || std::wstring(argv[1]) == L"--diagnostics-malformed" ||
+            std::wstring(argv[1]) == L"--diagnostics-hang" || std::wstring(argv[1]) == L"--diagnostics-crash" ||
+            std::wstring(argv[1]) == L"--diagnostics-malformed-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-hang-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-crash-lpac"), "Select a fixed probe mode");
+        const bool diagnostic = std::wstring(argv[1]).find(L"--diagnostics-") == 0;
+        const bool less_privileged = std::wstring(argv[1]) == L"--lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-malformed-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-hang-lpac" ||
+            std::wstring(argv[1]) == L"--diagnostics-crash-lpac";
         const fs::path run = fs::current_path();
         require(fs::is_regular_file(run / L".rust-browser-isolation-probe"), "Fresh owned run marker");
         const fs::path exe = run / L"boundary-child.exe";
@@ -255,8 +330,20 @@ int wmain(int argc, wchar_t** argv) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
         limits.BasicLimitInformation.ActiveProcessLimit = 1;
+        if (diagnostic) {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            limits.ProcessMemoryLimit = 64ULL * 1024 * 1024;
+        }
         require(SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) != FALSE,
             "Set job limits");
+        if (diagnostic) {
+            std::wstring mode = std::wstring(argv[1]).substr(std::wstring(L"--diagnostics-").size());
+            if (mode == L"malformed-lpac") mode = L"malformed";
+            if (mode == L"hang-lpac") mode = L"hang";
+            run_diagnostics(exe, run, container.sid, job.value, event.value, less_privileged, mode);
+            require(container.remove(), "Delete owned diagnostic profile");
+            return 0;
+        }
         const std::wstring args = std::wstring(argv[1]) + L" \"" + sentinel.wstring() + L"\" " +
             std::to_wstring(GetCurrentProcessId()) + L" " +
             std::to_wstring(reinterpret_cast<uintptr_t>(event.value)) + L" " +
@@ -266,20 +353,7 @@ int wmain(int argc, wchar_t** argv) {
             Child child(info);
             verify_token(child.process.value, container.sid);
             require(ResumeThread(child.thread.value) != static_cast<DWORD>(-1), "Resume crash case");
-            FILETIME created{}, exited{}, kernel{}, user_time{};
-            require(GetProcessTimes(child.process.value, &created, &exited, &kernel, &user_time), "Child creation time");
-            ULARGE_INTEGER stamp{};
-            stamp.LowPart = created.dwLowDateTime;
-            stamp.HighPart = created.dwHighDateTime;
-            const std::string identity = std::to_string(info.dwProcessId) + " " + std::to_string(stamp.QuadPart);
-            Handle record(CreateFileW((run / L"child-identity.txt").c_str(), GENERIC_WRITE, 0,
-                nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
-            require(record.value != INVALID_HANDLE_VALUE, "Reserve child identity");
-            DWORD written = 0;
-            require(WriteFile(record.value, identity.data(), static_cast<DWORD>(identity.size()), &written, nullptr) &&
-                written == identity.size(), "Write child identity");
-            require(CloseHandle(record.value), "Close child identity");
-            record.value = nullptr;
+            record_child_identity(info.dwProcessId, child.process.value, run);
             TerminateProcess(GetCurrentProcess(), 74); // Deliberately bypass destructors to test recovery.
             return 99;
         }

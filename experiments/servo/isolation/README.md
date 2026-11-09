@@ -5,6 +5,12 @@ executables and synthetic objects. It accepts no renderer, URL, real file,
 credential, or browser profile argument. Servo remains outside this probe.
 Read the [threat model and isolation decision](THREAT_MODEL.md) before use.
 
+The v0.10 [diagnostic mode](DIAGNOSTICS_V010.md) adds fixed-target read-only
+queries, scoped pipes, resource controls, malformed/hung-worker tests and
+live-IPC broker recovery for both AppContainer and LPAC. It is a separate
+collector; the original full LPAC suite below remains a failing validation
+when Winsock cannot start. See [measurements and actual GUI scope](../VALIDATION_V010.md).
+
 ## Run
 
 Use Windows x64, Visual Studio C++ tools, and the Windows SDK. The script
@@ -37,8 +43,12 @@ as an explicit manual investigation.
 
 Before resume, the launcher checks AppContainer membership, the expected
 package SID, zero capabilities, low integrity, Win32k lockdown, and the
-child-process mitigation. Job assignment occurs at process creation.
-The worker has no inherited handles and explicit null standard handles.
+child-process mitigation. It first creates a restricted LUA primary token
+with maximum privileges disabled and Administrators deny-only, then uses
+CreateProcessAsUserW with the same lowbox attributes. Non-elevation is
+required in both the filtered token and resulting worker; failure has no
+unfiltered fallback. Job assignment occurs at process creation.
+The ordinary worker has no inherited handles and explicit null standard handles.
 Its environment contains only SystemRoot and LOCALAPPDATA, which Windows
 uses to locate the isolated profile.
 
@@ -79,6 +89,6 @@ name. API failure is reported, and scratch data is retained.
   handles. These observations are recorded to make failures reproducible.
 
 These tests cover owned sentinels and lifecycle under this configuration.
-They do not validate a Servo sandbox, a renderer broker, general IPC,
+They do not validate a Servo sandbox, a production renderer broker, general IPC,
 filesystem confinement, all network paths, or hostile-content resistance.
 Keep arbitrary content blocked until the threat model's acceptance gates pass.

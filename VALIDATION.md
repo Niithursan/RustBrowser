@@ -1,5 +1,27 @@
 # Validation
 
+## v0.10 investigation
+
+Based on verified PR #12 squash commit
+`bba82c9b6a34c990f1e04f70c32abeda898f5e23`; production remains 0.8.0.
+The [detailed record](experiments/servo/VALIDATION_V010.md) includes commands,
+counts, repeated numeric samples, GUI observations and failures.
+
+- Production fmt, strict Clippy, 47 regular tests, seven native WebView2
+  regressions, Windows debug/release builds and dependency audit passed.
+- Launcher safety, two Python tests, seven separate Servo example tests,
+  three smoke/reuse-refusal runs and three four-scale runs per engine passed.
+- Standard AppContainer boundaries and both diagnostic collectors passed
+  token/file/process/handle/resource/IPC assertions and live broker recovery.
+  Actual malformed and hung workers were rejected in both modes.
+- The original LPAC suite still fails WSAStartup 10107 with profile cleanup.
+  The upstream Servo lock audit and strict minimal-feature Clippy still fail;
+  their exact limitations remain visible and production gates are intact.
+- Native Windows fixture key/pointer/wheel/focus/Unicode entry/resize and
+  normal closure were observed. Native IME candidates, physical mixed-DPI
+  transitions, display latency, long soak and real renderer containment
+  remain unverified. No arbitrary content was enabled.
+
 ## v0.9 investigation
 
 The branch is based on verified PR #11 squash commit

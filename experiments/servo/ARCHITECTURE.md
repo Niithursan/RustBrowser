@@ -75,7 +75,30 @@ Extend the interface only when both engines demonstrate a need for the capabilit
 COM environments, WebView2 profile objects, TrySuspend, and native download operations
 remain adapter-specific.
 
-## Recommended next milestone
+## v0.10 broker and rendering assessment
+
+The [pinned rendering decision](SECURE_RENDERING_V010.md) reviews window,
+software and offscreen paths. The locked WGL backend still needs native
+window/graphics APIs. Both restricted synthetic workers return OpenGL
+initialization error 1114 under the retained Win32k policy. No real Servo
+renderer or frame transport is implemented inside that boundary.
+
+The synthetic broker first filters its own primary token using the LUA and
+maximum-privilege restrictions, makes Administrators deny-only and verifies
+non-elevation. CreateProcessAsUserW applies the existing lowbox attributes
+without an unfiltered fallback. It delegates two pipe endpoints through a creation-time
+handle list and verifies the suspended worker's token before resume. Fixed
+numeric frames have strict instance, sequence, fixture and operation checks;
+deadlines, a one-process job and a 64 MiB diagnostic cap bound failures.
+This channel carries diagnostics only and is separate from browser IPC.
+It supplies no website-origin authority, resource fetch or graphics command.
+
+Next establish a supported graphics prerequisite under the restrictions or
+an independently reviewed graphics-service design. Preserve fixture-only
+navigation while network policy, frame/handle rights and real containment
+remain unresolved. See [measured evidence](VALIDATION_V010.md).
+
+## Earlier v0.9 next steps
 
 1. Establish Windows process isolation and verify its filesystem and network
    boundaries with synthetic content before allowing wider browsing.

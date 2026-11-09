@@ -28,3 +28,11 @@ jobs:
           PROBE_MODE: ${{ inputs.mode || 'AppContainer' }}
         run: |
           .\experiments\servo\isolation\check-boundaries.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'servo-boundary-tests') -Mode $env:PROBE_MODE -Repeats 2
+      - name: AppContainer diagnostic IPC and resource controls
+        shell: powershell
+        run: |
+          .\experiments\servo\isolation\check-boundaries.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'servo-ac-diagnostics') -Diagnostics -Repeats 2
+      - name: LPAC diagnostic IPC and resource controls
+        shell: powershell
+        run: |
+          .\experiments\servo\isolation\check-boundaries.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'servo-lpac-diagnostics') -Diagnostics -Mode LPAC -Repeats 2
