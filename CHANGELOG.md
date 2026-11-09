@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fixed false "connection interrupted" errors when a new address replaced a page
+  whose navigation had not started yet: a superseded host load's late
+  `NavigationStarting` no longer becomes the current navigation. Adds unit tests
+  and a deterministic native same-turn regression.
+
 ## 0.11.0
 
 - Intentionally advances production 0.8.0 to 0.11.0 after the v0.9/v0.10 research

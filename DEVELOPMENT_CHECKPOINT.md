@@ -1,3 +1,18 @@
+# Development checkpoint
+
+## Post-merge fix (2026-11-09) — `fix/superseded-web-navigation-start`
+
+- PR #14 squash-merged at `fef457a` (0.11.0). Main CI 42710344722 then failed:
+  daily native phase 9, status 9 from a superseded host load whose
+  NavigationStarting arrived late and re-armed itself. Production race, distinct
+  from the v0.11 loopback fixture race. Security CI at `fef457a` passed.
+- Fix in `src/engine.rs` (`NavigationProgress::expect/start_document`), unit tests
+  plus native same-turn phase 19 in `src/daily_validation.rs`: 0/10 before, 10/10
+  after. Local: fmt, strict Clippy, 66 regular tests, 7 native suites, builds,
+  sampler and Python fixture tests passed.
+- v0.12 work (`feat/v0.12-ui-compatibility-ci`, created from `fef457a`) builds on
+  this fix. Baseline CI timings: `work/v12/baseline-runs.jsonl`.
+
 # v0.11 development checkpoint
 
 ## Claude Code continuation (2026-11-09) — supersedes all entries below
