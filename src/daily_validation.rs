@@ -21,6 +21,7 @@ struct Probe {
     first: TabId,
     other: TabId,
     core: usize,
+    navigation_failures: usize,
 }
 impl Probe {
     fn eval(&self, toolbar: bool, script: &str) -> Result<(), String> {
@@ -186,6 +187,21 @@ impl Probe {
                 {
                     return Err("Tab switch recreated a controller".into());
                 }
+                s.open_tab("about:blank".into())
+                    .map_err(|_| "Blank replacement setup failed")?;
+                s.command(Command::Navigate(format!("{}modern.html", self.urls[0])))
+                    .map_err(|_| "Blank replacement navigation failed")?;
+                self.step = Instant::now();
+                self.phase = 17;
+            }
+            17 if loaded && self.step.elapsed() > Duration::from_millis(250) => {
+                if self.navigation_failures != 0 {
+                    return Err("Superseded blank navigation reported a failure".into());
+                }
+                s.command(Command::CloseActive)
+                    .map_err(|_| "Cannot close replacement fixture")?;
+                s.command(Command::SelectTab(self.first))
+                    .map_err(|_| "Cannot return to first fixture")?;
                 s.command(Command::Navigate(format!("{}slow", self.urls[0])))
                     .map_err(|_| "Slow navigation failed")?;
                 self.phase = 8;
@@ -210,6 +226,9 @@ impl Probe {
                 self.phase = 11;
             }
             11 if self.step.elapsed() > Duration::from_secs(1) => {
+                if self.navigation_failures != 0 {
+                    return Err("Controlled navigation or cancellation reported a failure".into());
+                }
                 let page = &s.tabs.active().ok_or("No stopped page")?.content.state;
                 if page.failed || page.loading || page.message != "Stopped." {
                     return Err(format!(
@@ -312,6 +331,15 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(el, id, event)
     }
     fn user_event(&mut self, el: &ActiveEventLoop, event: Event) {
+        if matches!(
+            &event,
+            Event::Page(
+                _,
+                PageEvent::Completed { error: Some(_), .. } | PageEvent::Error(_)
+            )
+        ) {
+            self.navigation_failures += 1;
+        }
         self.app.user_event(el, event)
     }
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
@@ -367,6 +395,7 @@ fn native_daily_navigation_diagnostics_and_modern_sites() {
         first: 0,
         other: 0,
         core: 0,
+        navigation_failures: 0,
     };
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();

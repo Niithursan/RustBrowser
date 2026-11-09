@@ -27,6 +27,13 @@ must match the current native ID and occur only once before URL/title extraction
 or history recording. Redirects remain within the engine's navigation lifecycle.
 History API changes still use native history/source observation.
 
+A host load invalidates the old completion before calling the native Navigate
+API. An obsolete blank navigation may start only after its web replacement has
+already been requested; an awaiting-web flag excludes that blank start without
+discarding errors from the requested document. Rejected native commands restore
+the prior state when a newer navigation has not already started. No certificate
+or network status is globally converted to success.
+
 WebView2 can report explicit Stop as `CONNECTION_ABORTED` (9), as well as
 `OPERATION_CANCELED` (14). A status-9 result is cancellation only when this host
 recorded Stop for that same navigation. Otherwise it remains an error. Failed

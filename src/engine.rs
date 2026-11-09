@@ -34,8 +34,34 @@ struct NavigationProgress {
     current: std::cell::Cell<Option<u64>>,
     finished: std::cell::Cell<bool>,
     stopped: std::cell::Cell<Option<u64>>,
+    awaiting_web_start: std::cell::Cell<bool>,
 }
 impl NavigationProgress {
+    fn supersede(&self) -> (Option<u64>, bool, bool) {
+        // Navigate can synchronously abort the old document before the next
+        // NavigationStarting callback. Its completion is already obsolete.
+        (
+            self.current.get(),
+            self.finished.replace(true),
+            self.awaiting_web_start.replace(false),
+        )
+    }
+    fn restore_rejected(&self, previous: (Option<u64>, bool, bool)) {
+        if self.current.get() == previous.0 {
+            self.finished.set(previous.1);
+            self.awaiting_web_start.set(previous.2);
+        }
+    }
+    fn start_document(&self, id: u64, blank: bool) -> bool {
+        // Initial blank navigation can start asynchronously after a host web
+        // load has already replaced it. It is not that requested document.
+        if blank && self.awaiting_web_start.get() {
+            return false;
+        }
+        self.awaiting_web_start.set(false);
+        self.begin(id);
+        true
+    }
     fn begin(&self, id: u64) {
         // Redirects retain the same navigation ID.
         if self.current.get() != Some(id) {
@@ -153,8 +179,15 @@ impl Engine {
                         if !cancelled.as_bool() {
                             let mut navigation_id = 0;
                             args.NavigationId(&mut navigation_id)?;
-                            starting.begin(navigation_id);
-                            let _ = starting_proxy.send_event(Event::Page(id, PageEvent::Loading));
+                            let mut uri = windows::core::PWSTR::null();
+                            args.Uri(&mut uri)?;
+                            if starting.start_document(
+                                navigation_id,
+                                webview2_com::take_pwstr(uri) == "about:blank",
+                            ) {
+                                let _ =
+                                    starting_proxy.send_event(Event::Page(id, PageEvent::Loading));
+                            }
                         }
                     }
                     Ok(())
@@ -261,7 +294,14 @@ impl ContentEngine for Engine {
         }
     }
     fn load(&self, target: &LoadTarget) -> EngineResult<()> {
-        self.view.load_url(target.as_str())?;
+        let previous = self.progress.supersede();
+        self.progress
+            .awaiting_web_start
+            .set(target.as_str() != "about:blank");
+        if let Err(error) = self.view.load_url(target.as_str()) {
+            self.progress.restore_rejected(previous);
+            return Err(error.into());
+        }
         Ok(())
     }
     fn set_visible(&self, visible: bool) -> EngineResult<()> {
@@ -289,17 +329,25 @@ impl ContentEngine for Engine {
         // SAFETY: all calls happen on the event-loop/COM apartment thread.
         unsafe {
             let core = self.view.webview();
-            match command {
-                NavigationCommand::Back => core.GoBack()?,
-                NavigationCommand::Forward => core.GoForward()?,
-                NavigationCommand::Reload => core.Reload()?,
+            let previous = (command != NavigationCommand::Stop).then(|| self.progress.supersede());
+            let result = match command {
+                NavigationCommand::Back => core.GoBack(),
+                NavigationCommand::Forward => core.GoForward(),
+                NavigationCommand::Reload => core.Reload(),
                 NavigationCommand::Stop => {
                     let previous = self.progress.stopped.replace(self.progress.current.get());
-                    if let Err(error) = core.Stop() {
+                    let result = core.Stop();
+                    if result.is_err() {
                         self.progress.stopped.set(previous);
-                        return Err(error.into());
                     }
+                    result
                 }
+            };
+            if let Err(error) = result {
+                if let Some(previous) = previous {
+                    self.progress.restore_rejected(previous);
+                }
+                return Err(error.into());
             }
         }
         Ok(())
@@ -347,6 +395,34 @@ pub fn accelerators(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::co
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deferred_initial_blank_is_not_the_replacement_document() {
+        let progress = NavigationProgress::default();
+        let previous = progress.supersede();
+        progress.awaiting_web_start.set(true);
+        assert!(!progress.start_document(1, true));
+        assert!(!progress.finish(1));
+        assert!(progress.start_document(2, false));
+        progress.restore_rejected(previous);
+        assert!(progress.finish(2));
+        assert!(progress.start_document(3, true));
+        assert!(progress.finish(3));
+    }
+    #[test]
+    fn host_replacement_invalidates_old_completion_before_next_start_and_reject_can_restore() {
+        let progress = NavigationProgress::default();
+        progress.begin(1);
+        let previous = progress.supersede();
+        assert!(!progress.finish(1));
+        progress.restore_rejected(previous);
+        assert!(progress.finish(1));
+        progress.begin(2);
+        let previous = progress.supersede();
+        progress.begin(3);
+        progress.restore_rejected(previous);
+        assert!(!progress.finish(2));
+        assert!(progress.finish(3));
+    }
     #[test]
     fn overlapping_navigation_cannot_complete_or_cancel_the_newer_load() {
         let progress = NavigationProgress::default();
