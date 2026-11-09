@@ -39,8 +39,11 @@ production code was changed; evidence, documentation and one test-fixture fix.
 - Still unverified (unchanged): final manual GUI recheck of post-`58cdef9`
   production fixes, personal sign-in, physical IME/AltGr, mixed-DPI, DRM/devices,
   screen reader, system sleep/wake, clean-machine install, signing.
-- Next session: confirm final-head CI with `gh`; PR #14 stays draft until the user
-  decides. Do not merge, tag or publish.
+- Final-head CI at `88b60d2` passed: push CI 42706864157, PR CI 42706872792,
+  dependency security 42706872779. At the user's request PR #14 was marked
+  **ready for review** (no longer draft). Merge, tag and release await the user.
+- Next session: if new commits are pushed, re-verify final-head CI with `gh`.
+  Do not merge, tag or publish without explicit approval.
 
 ## Codex continuation — superseded by the section above
 
