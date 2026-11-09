@@ -69,6 +69,15 @@ impl Probe {
             .tabs
             .active()
             .is_some_and(|t| !t.content.state.loading && t.title == "Modern compatibility ready");
+        if matches!(self.phase, 2 | 6)
+            && let Some(tab) = s.tabs.active()
+            && tab.content.state.failed
+        {
+            return Err(format!(
+                "Controlled HTTP navigation failed at phase {}: {}",
+                self.phase, tab.content.state.message
+            ));
+        }
         match self.phase {
             2 if s
                 .tabs
