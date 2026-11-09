@@ -95,6 +95,19 @@ void verify_token(HANDLE process, PSID expected_sid) {
     require(!reinterpret_cast<const TOKEN_ELEVATION*>(elevation.data())->TokenIsElevated, "Worker is not elevated");
     const auto ui_access = token_value(token.value, TokenUIAccess);
     require(*reinterpret_cast<const DWORD*>(ui_access.data()) == 0, "Worker has no UIAccess");
+    BYTE administrators[SECURITY_MAX_SID_SIZE]{};
+    DWORD administrators_size = sizeof(administrators);
+    require(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, administrators, &administrators_size),
+        "Administrators identifier");
+    const auto groups = token_value(token.value, TokenGroups);
+    const auto* group_list = reinterpret_cast<const TOKEN_GROUPS*>(groups.data());
+    for (DWORD index = 0; index < group_list->GroupCount; ++index) {
+        const auto& group = group_list->Groups[index];
+        if (EqualSid(group.Sid, administrators)) {
+            require((group.Attributes & SE_GROUP_USE_FOR_DENY_ONLY) &&
+                !(group.Attributes & SE_GROUP_ENABLED), "Administrators SID is deny-only");
+        }
+    }
     LUID traversal{};
     require(LookupPrivilegeValueW(nullptr, SE_CHANGE_NOTIFY_NAME, &traversal), "Traversal privilege identifier");
     const auto privileges = token_value(token.value, TokenPrivileges);
@@ -178,8 +191,24 @@ PROCESS_INFORMATION launch(const fs::path& exe, const std::wstring& args, const 
     environment += L"SystemRoot=" + std::wstring(windows);
     environment.push_back(0);
     environment.push_back(0);
+    // An AppContainer created directly from an administrative broker can
+    // retain an elevated-token indication. Filter the caller's own primary
+    // token before creating the lowbox; never fall back to the original token.
+    Handle caller, filtered;
+    require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+        &caller.value), "Open caller primary token for restriction");
+    BYTE administrators[SECURITY_MAX_SID_SIZE]{};
+    DWORD administrators_size = sizeof(administrators);
+    require(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, administrators, &administrators_size),
+        "Administrators identifier for restriction");
+    SID_AND_ATTRIBUTES deny_admin{administrators, 0};
+    require(CreateRestrictedToken(caller.value, DISABLE_MAX_PRIVILEGE | LUA_TOKEN,
+        1, &deny_admin, 0, nullptr, 0, nullptr, &filtered.value), "Create restricted LUA primary token");
+    const auto filtered_elevation = token_value(filtered.value, TokenElevation);
+    require(!reinterpret_cast<const TOKEN_ELEVATION*>(filtered_elevation.data())->TokenIsElevated,
+        "Filtered primary token is not elevated");
     PROCESS_INFORMATION process{};
-    const BOOL created = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, !ipc_handles.empty(),
+    const BOOL created = CreateProcessAsUserW(filtered.value, exe.c_str(), command.data(), nullptr, nullptr, !ipc_handles.empty(),
         EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
         environment.data(), run.c_str(), &startup.StartupInfo, &process);
     require(created != FALSE, "Create suspended LPAC child");

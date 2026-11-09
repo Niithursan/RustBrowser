@@ -41,6 +41,16 @@ Follow-up changes verify non-elevation, UIAccess, enabled privileges, live-IPC
 broker termination, small-allocation controls and measured fault shutdown.
 The protocol remains synthetic and grants no privileged browser operation.
 
+The first remote boundary run on `fe092fb` rejected an elevated-token
+indication on the administrative Windows hosted runner before resuming
+the worker, and cleaned its profile. The launcher now derives a restricted
+LUA primary token, disables maximum privileges and the Administrators SID,
+then applies the same lowbox/Job/mitigation/handle attributes with
+CreateProcessAsUserW. Non-elevation and deny-only Administrators membership
+are verified; there is no original-token fallback. Local standard and LPAC
+boundary/IPC/lifecycle controls pass. Remote verification of this stronger
+launch and refreshed numeric samples are the next checks.
+
 ## Completed investigation and delivery stage
 
 The rendering decision is in `experiments/servo/SECURE_RENDERING_V010.md`.
