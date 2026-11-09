@@ -21,7 +21,7 @@ struct Probe {
     first: TabId,
     other: TabId,
     core: usize,
-    navigation_failures: usize,
+    navigation_failures: Vec<String>,
 }
 impl Probe {
     fn eval(&self, toolbar: bool, script: &str) -> Result<(), String> {
@@ -196,8 +196,11 @@ impl Probe {
                 self.phase = 17;
             }
             17 if loaded && self.step.elapsed() > Duration::from_millis(250) => {
-                if self.navigation_failures != 0 {
-                    return Err("Superseded blank navigation reported a failure".into());
+                if !self.navigation_failures.is_empty() {
+                    return Err(format!(
+                        "Superseded blank navigation reported a failure: {:?}",
+                        self.navigation_failures
+                    ));
                 }
                 s.command(Command::CloseActive)
                     .map_err(|_| "Cannot close replacement fixture")?;
@@ -227,8 +230,11 @@ impl Probe {
                 self.phase = 11;
             }
             11 if self.step.elapsed() > Duration::from_secs(1) => {
-                if self.navigation_failures != 0 {
-                    return Err("Controlled navigation or cancellation reported a failure".into());
+                if !self.navigation_failures.is_empty() {
+                    return Err(format!(
+                        "Controlled navigation or cancellation reported a failure: {:?}",
+                        self.navigation_failures
+                    ));
                 }
                 let page = &s.tabs.active().ok_or("No stopped page")?.content.state;
                 if page.failed || page.loading || page.message != "Stopped." {
@@ -332,14 +338,16 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(el, id, event)
     }
     fn user_event(&mut self, el: &ActiveEventLoop, event: Event) {
-        if matches!(
-            &event,
-            Event::Page(
-                _,
-                PageEvent::Completed { error: Some(_), .. } | PageEvent::Error(_)
-            )
-        ) {
-            self.navigation_failures += 1;
+        if let Event::Page(
+            _,
+            PageEvent::Completed {
+                error: Some(text), ..
+            }
+            | PageEvent::Error(text),
+        ) = &event
+            && self.navigation_failures.len() < 8
+        {
+            self.navigation_failures.push(text.clone());
         }
         self.app.user_event(el, event)
     }
@@ -396,7 +404,7 @@ fn native_daily_navigation_diagnostics_and_modern_sites() {
         first: 0,
         other: 0,
         core: 0,
-        navigation_failures: 0,
+        navigation_failures: Vec::new(),
     };
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();

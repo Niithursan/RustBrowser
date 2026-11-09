@@ -634,7 +634,18 @@ impl Session {
         if let Some(opener) = return_to {
             self.tabs.select(opener);
         }
-        self.activate()?;
+        let activated = self.activate();
+        #[cfg(test)]
+        if let Err(error) = &activated {
+            eprintln!(
+                "Controlled tab-close activation failed: {error}; active lifecycle/native suspension: {:?}",
+                self.tabs.active().map(|tab| (
+                    tab.content.lifecycle.phase,
+                    native_background::suspended(&tab.content.engine.view)
+                ))
+            );
+        }
+        activated?;
         Ok(())
     }
 
