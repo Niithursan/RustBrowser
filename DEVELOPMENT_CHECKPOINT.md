@@ -1,5 +1,29 @@
 # Development checkpoint
 
+## v0.13 — `feat/v0.13-windows-release-readiness`
+
+- Read the v0.13 attachment, AGENTS.md and this checkpoint. Preserve prior milestones.
+- Fetched and verified PR #16 squash merge at `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`.
+  Cargo version is 0.12.0. Main CI 42721919432 (quality, release, aggregate) and
+  dependency security 42721919854 passed before branch creation. Working tree was clean.
+- Branch created from that exact origin/main; local main and existing profiles unchanged.
+- Existing distribution: allowlisted deterministic portable ZIP, version/asInvoker
+  resources, approved-tag/manual publication gate. No installer or authenticated updater.
+  Profile remains `%LOCALAPPDATA%/RustBrowser/v0.1`, session format 1, SQLite schema 3.
+- Plan: per-user Inno Setup with no automatic runtime installation; test-only identity
+  and owned directories for fresh/upgrade/uninstall/reinstall, fail-closed version/path
+  checks, safe manual update integrity verification, production CI/artifacts and docs.
+  Preserve v0.12 parallel/cached/aggregate checks and all native coverage.
+- Official Inno 6.7.4 compiler downloaded into workspace scratch; verified SHA-256
+  `a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c`
+  and Valid Authenticode publisher Pyrsys B.V. Installed without elevation or shortcuts
+  in `work/v13/tools/inno`; not bundled with application or committed.
+- Signing identity and trusted update root are unavailable. Do not add automatic
+  download/execution, invent keys, change release permissions, merge, tag or publish.
+- Next: implement installer/build/verification scripts, branding and application-running
+  coordination; controlled preservation tests; full quality gates and PR-head CI.
+- No v0.13 installation, clean-machine, GUI, CI timing or upgrade result is claimed yet.
+
 ## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
 
 Completed (all local gates passed at 0.12.0; see VALIDATION.md):
