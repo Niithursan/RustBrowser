@@ -202,7 +202,7 @@ impl Session {
         )?;
         let window = event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rust Browser 0.8.0")
+                .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
         )?;
@@ -605,16 +605,17 @@ impl Session {
             }
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
-        let title = if self.private {
-            "Private — Rust Browser 0.8.0"
+        let prefix = if self.private {
+            "Private — "
         } else if active.content.state.loading {
-            "Loading… — Rust Browser 0.8.0"
+            "Loading… — "
         } else {
-            "Rust Browser 0.8.0"
+            ""
         };
+        let title = format!("{prefix}Rust Browser {}", env!("CARGO_PKG_VERSION"));
         if self.last_title.borrow().as_str() != title {
-            self.window.set_title(title);
-            *self.last_title.borrow_mut() = title.into();
+            self.window.set_title(&title);
+            *self.last_title.borrow_mut() = title;
         }
     }
 

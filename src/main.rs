@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(windows, not(debug_assertions), not(test)),
+    windows_subsystem = "windows"
+)]
+
 #[cfg(windows)]
 mod app;
 #[cfg(windows)]
@@ -21,11 +26,40 @@ mod servo_validation;
 #[cfg(windows)]
 mod ui;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    // Never print a panic payload: it can contain data supplied by a website.
+    std::panic::set_hook(Box::new(|_| {
+        eprintln!(
+            "Rust Browser encountered an internal error. Restart and inspect local application diagnostics. No report was uploaded."
+        );
+    }));
     #[cfg(windows)]
-    app::run()?;
+    {
+        if app::run().is_ok() {
+            return std::process::ExitCode::SUCCESS;
+        }
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "Browser startup failed. Check WebView2 Runtime, close any other normal window, and check profile access and disk space. Inspect local diagnostics when available."
+        );
+        #[cfg(not(debug_assertions))]
+        // SAFETY: main thread, static strings and no untrusted window handle.
+        unsafe {
+            use windows::{
+                Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW},
+                core::w,
+            };
+            let _ = MessageBoxW(
+                None,
+                w!(
+                    "Rust Browser could not start.\n\nCheck that Microsoft WebView2 Runtime is installed. Close any other normal window using this profile, then check profile access and free disk space.\n\nExisting browsing data is preserved. Local diagnostics may contain a startup event if the profile was opened."
+                ),
+                w!("Rust Browser startup"),
+                MB_ICONERROR | MB_OK,
+            );
+        }
+    }
     #[cfg(not(windows))]
-    return Err("Rust Browser 0.8 currently supports Windows only".into());
-    #[cfg(windows)]
-    Ok(())
+    eprintln!("Rust Browser currently supports Windows x64 only.");
+    std::process::ExitCode::FAILURE
 }

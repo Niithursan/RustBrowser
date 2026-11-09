@@ -65,6 +65,13 @@ There is no bounded local application diagnostic journal or installer.
   Python loopback TLS server outside Git. No certificate/trust settings were
   changed. The first Schannel fixture could not acquire its in-memory key;
   replacing the fixture preserved the certificate-rejection assertion.
+- UI/modern fixture checkpoint is pushed at
+  `1ddeb1fdf40028b60ff2aa6b6a502cc836af9eb3` (58 regular tests passed).
+- Verified user-facing changes justify the intentional package jump from
+  0.8.0 to 0.11.0. Added Windows SDK version/manifest resources without a
+  new Cargo dependency. Release build and strict Clippy passed; PE reports
+  version 0.11.0 and NotSigned. Release uses GUI startup failure feedback;
+  debug retains console feedback. Panic payloads are never printed.
 - Formatting, strict Clippy and the complete regular suite passed locally
   at this stage (54 regular tests; opt-in native helpers remain separate).
 - Native GUI/privacy checks for the new UI, modern compatibility fixtures,
