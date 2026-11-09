@@ -1,9 +1,16 @@
-# Rust Browser 0.11.0
+# Rust Browser 0.12.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.12 polishes the toolbar (clearer active tab, rounded address bar, quieter
+navigation icons, smoother loading bar, Windows high-contrast support), announces
+navigation errors to screen readers, names list actions by their item, extends the
+controlled compatibility suite to service workers and Cache Storage, fixes false
+errors after rapid successive navigations, and makes CI faster
+([CI.md](CI.md)). Accessibility evidence and gaps: [ACCESSIBILITY.md](validation/ACCESSIBILITY.md).
 
 v0.11 adds bounded local application diagnostics, improved navigation/Stop
 feedback, AltGr-safe shortcuts, a light theme and a controlled modern-site
@@ -458,9 +465,11 @@ cargo build --locked --release
 ```
 
 See [VALIDATION.md](VALIDATION.md) for checks actually performed and known gaps.
-GitHub Actions runs formatting, Clippy with warnings treated as errors, tests and
-an optimized Windows build. Dependency security runs `cargo audit --deny warnings`
-on main, pull requests and weekly. Dependabot proposes Cargo and Actions updates.
+GitHub Actions runs formatting, Clippy with warnings treated as errors, all regular
+and native WebView2 tests, and a parallel optimized Windows build on pull requests and
+`main` (open a draft pull request to get CI for a feature branch). Dependency security
+runs `cargo audit --deny warnings` on main, pull requests and weekly. Caching and
+measured timings: [CI.md](CI.md). Dependabot proposes Cargo and Actions updates.
 
 Development uses feature branches and pull requests into `main`, with Conventional
 Commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and release steps.

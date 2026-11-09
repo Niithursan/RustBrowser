@@ -1,5 +1,26 @@
 # Development checkpoint
 
+## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16, draft)
+
+Completed (all local gates passed at 0.12.0; see VALIDATION.md):
+1. CI: PR/main/dispatch triggers, SHA-pinned rust-cache, parallel release job,
+   `CI result` aggregate, pinned/cached cargo-audit 0.22.2. Cold/warm measured
+   (CI.md); raw data in `work/v12/{baseline-runs.jsonl,after-runs.json}`,
+   scripts `work/v12/{measure.sh,analyze.py}`.
+2. UI polish layer in `src/ui/toolbar.html`; screenshots via `work/v12/shot.ps1`
+   (uses PrintWindow; screen copy captured the wrong window when not foreground).
+3. Accessibility: alert region, contextual action names, panel heading focus,
+   forced-colors CSS, WCAG contrast test (`ui::tests`). validation/ACCESSIBILITY.md.
+4. Compatibility: service worker / Cache Storage / modern APIs in modern.html.
+5. Version 0.12.0, README/CHANGELOG/VALIDATION/CONTRIBUTING/COMPATIBILITY updated.
+
+Depends on PR #15 (navigation race fix); merge #15 first.
+Open findings: `.invalid` host shows status-9 "connection interrupted" advice
+(pre-existing on main). Manual a11y/DPI/screen-reader checks not done.
+Continuation: verify final-head CI on PR #16 with `gh`; do not merge/tag/publish.
+A temporary worktree of `fef457a` lives at `work/v12/main-wt` (remove with
+`git worktree remove`).
+
 ## Post-merge fix (2026-11-09) — `fix/superseded-web-navigation-start`
 
 - PR #14 squash-merged at `fef457a` (0.11.0). Main CI 42710344722 then failed:

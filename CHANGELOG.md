@@ -1,7 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (unreleased; awaiting review)
 
+- CI: pull requests, `main` and manual runs only (no duplicate feature-branch push
+  runs); SHA-pinned dependency caching; parallel release build and packaging job;
+  aggregate `CI result` check; pinned and cached cargo-audit 0.22.2 with a fresh
+  advisory database. Measured warm CI wall time 144–202 s (previous median 458 s),
+  dependency security under 30 s (previously 342 s). Cold runs cost more runner
+  time. See CI.md.
+- UI: active tab marked by card background, accent bar and bold label; hover
+  states; borderless navigation icons; rounded address bar and compact security
+  chip; sliding loading bar (static with reduced motion); readable library rows;
+  narrow-window tweaks; Windows high-contrast (forced-colors) styling.
+- Accessibility: assertive announcement of navigation failures; item-specific
+  names for library/download/favorite/permission actions; focus moves to the
+  heading of an opened panel; WCAG contrast test for all four themes. See
+  validation/ACCESSIBILITY.md for the verified scope and manual gaps.
+- Compatibility: controlled fixture now covers service workers, Cache Storage,
+  structuredClone, AbortController and BroadcastChannel.
 - Fixed false "connection interrupted" errors when a new address replaced a page
   whose navigation had not started yet: a superseded host load's late
   `NavigationStarting` no longer becomes the current navigation. Adds unit tests
