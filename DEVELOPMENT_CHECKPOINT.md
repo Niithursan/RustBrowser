@@ -1,4 +1,51 @@
-# v0.10 development checkpoint
+# v0.11 development checkpoint
+
+## Current baseline and scope
+
+- Read the supplied v0.11 request and AGENTS.md.
+- Verified PR #13 squash-merged at `729198d023384103da0464f1148031aa6e681566`.
+- Merged [Windows CI](https://github.com/Niithursan/RustBrowser/actions/runs/42561572861)
+  and [dependency audit](https://github.com/Niithursan/RustBrowser/actions/runs/42561572932)
+  passed before branch creation.
+- Created `feat/v0.11-daily-driver` from verified origin/main. Production
+  starts at 0.8.0. Preserve existing profiles, storage formats and WebView2.
+- Servo integration is outside this milestone; retain its fixture limits.
+
+## Current assessment and plan
+
+The event-loop application owns stable tabs/native views, a separately
+trusted toolbar, background session/SQLite workers and native security,
+download, popup and sleeping-tab services. Existing regressions cover
+privacy, clearing, linked popups, uploads/media and renderer recovery.
+There is no bounded local application diagnostic journal or installer.
+
+1. Capture an unchanged baseline with the existing process-tree probe.
+2. Add typed, bounded local diagnostics and inspect/clear controls. Never
+   log URLs, titles, forms, arbitrary errors or private-window activity.
+3. Reproduce/fix modifier/repeated-key handling, navigation cancellation,
+   stale completion state and actionable navigation errors.
+4. Improve light-theme, focus and loading feedback in the existing toolbar.
+5. Extend controlled compatibility/native coverage and manual acceptance.
+6. Evaluate packaging; improve verified portable metadata/distribution and
+   document installer/signing/clean-machine limitations.
+7. Run production/native checks, matched benchmarks and an extended
+   synthetic workload using disposable profiles. Record actual GUI scope.
+8. Commit and push checkpoints, open one PR into main and verify its final
+   head. Do not merge, tag, publish, deploy or enable automatic updates.
+
+Assessment is complete; implementation and new local measurements are
+pending. Baseline remote checks above passed. Historical results below
+must not be presented as new v0.11 validation.
+
+## Current continuation
+
+Read this section, AGENTS.md and git status first. Preserve user changes.
+Use fresh marked scratch profiles outside Git. Resume completed stages
+from later checkpoint entries and commits; do not restart them.
+
+---
+
+# Historical v0.10 checkpoint (completed; do not resume its delivery)
 
 ## Completed
 
