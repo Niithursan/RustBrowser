@@ -9,7 +9,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: security-${{ github.event.pull_request.number || github.ref }}
+  # Per-commit for non-PR runs so a scheduled audit never displaces a pending push.
+  group: security-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   # Pinned so the cached binary can never silently go stale; bump deliberately.

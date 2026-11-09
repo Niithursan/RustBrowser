@@ -10,7 +10,9 @@
 
 Feature-branch pushes no longer start a second full CI run next to the pull-request
 run. Open a draft pull request to get CI for a branch. Superseded pull-request runs
-are cancelled; every `main` commit is validated to completion. No branch protection
+are cancelled. Runs for `main` pushes, manual dispatches and the scheduled audit use
+per-commit concurrency groups, because GitHub drops an already pending run when a
+newer run queues in the same group. Each `main` commit therefore gets its own run. No branch protection
 or required-check configuration exists (the private repository plan does not offer
 it), so no required check names changed. `CI result` provides one stable name if
 protection is enabled later.
@@ -37,7 +39,8 @@ protection is enabled later.
 Wall time is attempt start to last job completion, including queueing. Runner time
 is the sum of job durations (before per-job minute rounding). Baseline: the 8 most
 recent successful runs of each old workflow (mixed push and pull-request events).
-New: pull request #16. Cold is the first run with no cache. Warm is the next run plus
+New: pull request #16, measured on commit `95ea8d6` (CI changes only, before the
+v0.12 UI, accessibility and compatibility phases were added). Cold is the first run with no cache. Warm is the next run plus
 two reruns of the same commit. Hosted-runner variance is large (the old release build
 alone ranged 99–205 s), so treat these as small samples, not precise speedups.
 

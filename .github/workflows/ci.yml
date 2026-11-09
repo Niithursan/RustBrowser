@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Superseded PR pushes are cancelled; every main commit is fully validated.
+  # PR runs share a group so superseded pushes are cancelled. Every other run
+  # (main pushes, manual dispatch) gets its own per-commit group: a shared group
+  # would let GitHub drop a pending main run when a newer one queues.
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_TERM_COLOR: never
