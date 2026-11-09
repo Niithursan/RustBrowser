@@ -98,9 +98,20 @@ against WebView2's request bytes, the first read returned `WouldBlock`, the fixt
 dropped the connection without a response, and WebView2 reported status 0 with no
 HTTP code (push CI run 42679469407, phase 2). A standalone check and a new
 deterministic regression test reproduced the empty response; restoring blocking mode
-on accepted streams fixes it. All navigation assertions are unchanged. Hosted passes
-after the fix are supporting evidence; the earlier phase-6/phase-9 hosted failures
-match the same symptom but were not individually re-traced.
+on accepted streams fixes it. All navigation assertions are unchanged.
+
+**Correction — a second, production cause.** Main CI at `fef457a` (run
+42710344722) failed after the fixture fix with WebView2 status 9 in the overlapping
+navigation phase. Two host loads close together let the first load's
+`NavigationStarting` arrive after it was superseded; the adapter only rejected late
+`about:blank` starts, so the stale web start became current again and its abort
+was shown as a connection error. A new native phase issuing two loads in one
+event-loop turn failed 10/10 before the fix and passed 10/10 after it. The adapter
+now rejects a late start only when its normalized URI matches a remembered
+superseded host target (bounded), and any unmatched start is accepted as before.
+Earlier phase-6/phase-9 hosted failures were not individually re-traced and may
+belong to either cause. Not covered: loading the same URI twice in quick
+succession, and Back/Forward/Reload issued over a pending host load.
 
 ## Remaining daily-driver blockers
 

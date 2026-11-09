@@ -220,6 +220,29 @@ impl Probe {
                 if s.tabs.active().is_some_and(|t| t.content.state.failed) {
                     return Err("Old completion overwrote the current navigation".into());
                 }
+                // Two host loads in one event-loop turn: the first load's
+                // NavigationStarting can only be delivered after it was
+                // superseded, so its abort must not surface as a failure.
+                s.command(Command::Navigate(format!("{}slow?same-turn", self.urls[0])))
+                    .map_err(|_| "Same-turn first navigation failed")?;
+                s.command(Command::Navigate(format!(
+                    "{}modern.html?same-turn",
+                    self.urls[0]
+                )))
+                .map_err(|_| "Same-turn replacement navigation failed")?;
+                self.step = Instant::now();
+                self.phase = 19;
+            }
+            19 if loaded && self.step.elapsed() > Duration::from_secs(1) => {
+                if !self.navigation_failures.is_empty() {
+                    return Err(format!(
+                        "Same-turn superseded navigation reported a failure: {:?}",
+                        self.navigation_failures
+                    ));
+                }
+                if s.tabs.active().is_some_and(|t| t.content.state.failed) {
+                    return Err("Same-turn superseded completion overwrote the page".into());
+                }
                 s.command(Command::Navigate(format!("{}slow", self.urls[0])))
                     .map_err(|_| "Stop setup failed")?;
                 self.phase = 10;

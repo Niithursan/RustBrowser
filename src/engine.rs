@@ -29,36 +29,103 @@ pub struct Options {
     pub environment: Option<ICoreWebView2Environment>,
 }
 
+/// Small bound for remembered superseded loads/rejected starts; only rapid
+/// successive host loads within one native start latency populate them.
+const STALE_LIMIT: usize = 4;
+
 #[derive(Default)]
 struct NavigationProgress {
     current: std::cell::Cell<Option<u64>>,
     finished: std::cell::Cell<bool>,
     stopped: std::cell::Cell<Option<u64>>,
     awaiting_web_start: std::cell::Cell<bool>,
+    /// Normalized target of the host web load whose start is awaited.
+    expected: std::cell::RefCell<Option<String>>,
+    /// Host web loads replaced before their NavigationStarting arrived.
+    superseded: std::cell::RefCell<Vec<String>>,
+    /// Navigation IDs whose late start was rejected (covers their redirects).
+    rejected: std::cell::RefCell<Vec<u64>>,
 }
+
+/// State captured before a host navigation so a rejected request can restore it.
+struct Superseded {
+    current: Option<u64>,
+    finished: bool,
+    awaiting: bool,
+    expected: Option<String>,
+    superseded: Vec<String>,
+}
+
+fn normalized(uri: &str) -> String {
+    url::Url::parse(uri).map_or_else(|_| uri.to_owned(), String::from)
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T) {
+    if items.len() == STALE_LIMIT {
+        items.remove(0);
+    }
+    items.push(item);
+}
+
 impl NavigationProgress {
-    fn supersede(&self) -> (Option<u64>, bool, bool) {
+    fn supersede(&self) -> Superseded {
         // Navigate can synchronously abort the old document before the next
         // NavigationStarting callback. Its completion is already obsolete.
-        (
-            self.current.get(),
-            self.finished.replace(true),
-            self.awaiting_web_start.replace(false),
-        )
-    }
-    fn restore_rejected(&self, previous: (Option<u64>, bool, bool)) {
-        if self.current.get() == previous.0 {
-            self.finished.set(previous.1);
-            self.awaiting_web_start.set(previous.2);
+        Superseded {
+            current: self.current.get(),
+            finished: self.finished.replace(true),
+            awaiting: self.awaiting_web_start.replace(false),
+            expected: self.expected.borrow().clone(),
+            superseded: self.superseded.borrow().clone(),
         }
     }
-    fn start_document(&self, id: u64, blank: bool) -> bool {
-        // Initial blank navigation can start asynchronously after a host web
-        // load has already replaced it. It is not that requested document.
-        if blank && self.awaiting_web_start.get() {
+    /// Record a host load of `target` after `supersede`. If the previous host
+    /// web load had not started yet, its late start must not become current.
+    fn expect(&self, previous: &Superseded, target: &str) {
+        let mut superseded = self.superseded.borrow_mut();
+        match (previous.awaiting, self.expected.take()) {
+            (true, Some(old)) => push_bounded(&mut superseded, old),
+            (false, _) => superseded.clear(),
+            (true, None) => {}
+        }
+        let web = target != "about:blank";
+        self.awaiting_web_start.set(web);
+        *self.expected.borrow_mut() = web.then(|| normalized(target));
+    }
+    fn restore_rejected(&self, previous: Superseded) {
+        if self.current.get() == previous.current {
+            self.finished.set(previous.finished);
+            self.awaiting_web_start.set(previous.awaiting);
+        }
+        *self.expected.borrow_mut() = previous.expected;
+        *self.superseded.borrow_mut() = previous.superseded;
+    }
+    fn start_document(&self, id: u64, uri: &str) -> bool {
+        if self.rejected.borrow().contains(&id) {
             return false;
         }
+        if self.awaiting_web_start.get() {
+            // Initial blank navigation can start asynchronously after a host web
+            // load has already replaced it. It is not that requested document.
+            if uri == "about:blank" {
+                return false;
+            }
+            // A superseded host load's start can arrive after its replacement
+            // was requested. Reject only an exact remembered target; anything
+            // else is accepted as before so a mismatch can never stall a tab.
+            let uri = normalized(uri);
+            let mut superseded = self.superseded.borrow_mut();
+            if self.expected.borrow().as_deref() != Some(uri.as_str())
+                && let Some(index) = superseded.iter().position(|old| *old == uri)
+            {
+                superseded.remove(index);
+                push_bounded(&mut self.rejected.borrow_mut(), id);
+                return false;
+            }
+        }
         self.awaiting_web_start.set(false);
+        self.expected.borrow_mut().take();
+        self.superseded.borrow_mut().clear();
         self.begin(id);
         true
     }
@@ -181,15 +248,12 @@ impl Engine {
                             args.NavigationId(&mut navigation_id)?;
                             let mut uri = windows::core::PWSTR::null();
                             args.Uri(&mut uri)?;
-                            let blank = webview2_com::take_pwstr(uri) == "about:blank";
+                            let uri = webview2_com::take_pwstr(uri);
                             #[cfg(test)]
                             if std::env::var_os("RUST_BROWSER_TLS_FIXTURE").is_some() {
-                                eprintln!("Controlled start tab={id} navigation={navigation_id} blank={blank} current={:?} finished={} awaiting={}",starting.current.get(),starting.finished.get(),starting.awaiting_web_start.get());
+                                eprintln!("Controlled start tab={id} navigation={navigation_id} blank={} current={:?} finished={} awaiting={}",uri == "about:blank",starting.current.get(),starting.finished.get(),starting.awaiting_web_start.get());
                             }
-                            if starting.start_document(
-                                navigation_id,
-                                blank,
-                            ) {
+                            if starting.start_document(navigation_id, &uri) {
                                 let _ =
                                     starting_proxy.send_event(Event::Page(id, PageEvent::Loading));
                             }
@@ -310,9 +374,7 @@ impl ContentEngine for Engine {
     }
     fn load(&self, target: &LoadTarget) -> EngineResult<()> {
         let previous = self.progress.supersede();
-        self.progress
-            .awaiting_web_start
-            .set(target.as_str() != "about:blank");
+        self.progress.expect(&previous, target.as_str());
         if let Err(error) = self.view.load_url(target.as_str()) {
             self.progress.restore_rejected(previous);
             return Err(error.into());
@@ -415,13 +477,87 @@ mod tests {
         let progress = NavigationProgress::default();
         let previous = progress.supersede();
         progress.awaiting_web_start.set(true);
-        assert!(!progress.start_document(1, true));
+        assert!(!progress.start_document(1, "about:blank"));
         assert!(!progress.finish(1));
-        assert!(progress.start_document(2, false));
+        assert!(progress.start_document(2, "https://example.test/"));
         progress.restore_rejected(previous);
         assert!(progress.finish(2));
-        assert!(progress.start_document(3, true));
+        assert!(progress.start_document(3, "about:blank"));
         assert!(progress.finish(3));
+    }
+    #[test]
+    fn late_start_of_superseded_host_load_cannot_become_current() {
+        // Regression: load A, then load B before A's NavigationStarting arrives.
+        let progress = NavigationProgress::default();
+        progress.begin(1);
+        assert!(progress.finish(1));
+        let first = progress.supersede();
+        progress.expect(&first, "http://127.0.0.1:9/slow");
+        let second = progress.supersede();
+        progress.expect(&second, "http://127.0.0.1:9/modern.html");
+        assert!(!progress.start_document(11, "http://127.0.0.1:9/slow"));
+        assert!(!progress.finish(11), "stale abort must not be reported");
+        // A redirect of the rejected navigation keeps its ID but changes URI.
+        assert!(!progress.start_document(11, "http://127.0.0.1:9/elsewhere"));
+        assert!(progress.start_document(12, "http://127.0.0.1:9/modern.html"));
+        assert!(progress.finish(12));
+    }
+    #[test]
+    fn unmatched_start_while_awaiting_is_accepted_and_never_stalls() {
+        let progress = NavigationProgress::default();
+        let first = progress.supersede();
+        progress.expect(&first, "https://a.test/");
+        let second = progress.supersede();
+        progress.expect(&second, "https://b.test/");
+        // Unknown URI (for example a different normalization): accept as before.
+        assert!(progress.start_document(5, "https://other.test/"));
+        assert!(progress.finish(5));
+        // Once a start is accepted the remembered targets no longer apply.
+        assert!(progress.start_document(6, "https://a.test/"));
+        assert!(progress.finish(6));
+    }
+    #[test]
+    fn started_previous_load_is_not_remembered_and_equal_targets_are_accepted() {
+        let progress = NavigationProgress::default();
+        let first = progress.supersede();
+        progress.expect(&first, "https://a.test/");
+        assert!(progress.start_document(1, "https://a.test/"));
+        let second = progress.supersede();
+        progress.expect(&second, "https://b.test/");
+        // A already started, so a later A start is a new navigation (e.g. page script).
+        assert!(progress.start_document(2, "https://a.test/"));
+        // Same target twice cannot be distinguished; the start is accepted.
+        let third = progress.supersede();
+        progress.expect(&third, "https://c.test/");
+        let fourth = progress.supersede();
+        progress.expect(&fourth, "https://c.test/");
+        assert!(progress.start_document(3, "https://c.test/"));
+        assert!(progress.finish(3));
+    }
+    #[test]
+    fn rejected_host_load_restores_expected_and_superseded_targets() {
+        let progress = NavigationProgress::default();
+        let first = progress.supersede();
+        progress.expect(&first, "https://a.test/");
+        let second = progress.supersede();
+        progress.expect(&second, "https://b.test/");
+        progress.restore_rejected(second);
+        // B was never issued: A is the awaited load again and is accepted.
+        assert!(progress.start_document(7, "https://a.test/"));
+        assert!(progress.finish(7));
+    }
+    #[test]
+    fn remembered_stale_state_is_bounded() {
+        let progress = NavigationProgress::default();
+        for n in 0..10 {
+            let previous = progress.supersede();
+            progress.expect(&previous, &format!("https://site.test/{n}"));
+        }
+        assert_eq!(progress.superseded.borrow().len(), STALE_LIMIT);
+        for id in 0..10 {
+            push_bounded(&mut progress.rejected.borrow_mut(), id);
+        }
+        assert_eq!(*progress.rejected.borrow(), vec![6, 7, 8, 9]);
     }
     #[test]
     fn host_replacement_invalidates_old_completion_before_next_start_and_reject_can_restore() {
