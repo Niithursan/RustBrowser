@@ -1,13 +1,20 @@
 param([Parameter(Mandatory=$true)][string]$OutputRoot,[string]$Cargo = 'cargo',[string]$OpenSsl = '')
 $ErrorActionPreference = 'Stop'
 $base = [IO.Path]::GetFullPath($OutputRoot)
+foreach($marker in @('session.json','session.lock','library.sqlite')){if(Test-Path -LiteralPath (Join-Path $base $marker)){throw 'Recognized browser profiles are not fixture output directories.'}}
 $repo = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)).TrimEnd('\')
 if ($base -eq $repo -or $base.StartsWith($repo+'\',[StringComparison]::OrdinalIgnoreCase)) {throw 'Keep fixture keys outside the repository.'}
-foreach ($profile in @($env:RUST_BROWSER_PROFILE, (Join-Path $env:LOCALAPPDATA 'RustBrowser'))) {
-    if ($profile) { $path=[IO.Path]::GetFullPath($profile).TrimEnd('\'); if($base -eq $path -or $base.StartsWith($path+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Do not use a browser profile for fixtures.'} }
+foreach ($protectedProfile in @($env:RUST_BROWSER_PROFILE, (Join-Path $env:LOCALAPPDATA 'RustBrowser'))) {
+    if ($protectedProfile) { $path=[IO.Path]::GetFullPath($protectedProfile).TrimEnd('\'); if($base -eq $path -or $base.StartsWith($path+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Do not use a browser profile for fixtures.'} }
 }
 $ancestor=$base
-while($ancestor){if(Test-Path -LiteralPath $ancestor){if((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Fixture output may not traverse reparse points.'}};$parent=Split-Path $ancestor -Parent;if($parent -eq $ancestor){break};$ancestor=$parent}
+while($ancestor){
+    if(Test-Path -LiteralPath $ancestor){
+        if((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Fixture output may not traverse reparse points.'}
+        foreach($marker in @('session.json','session.lock','library.sqlite')){if(Test-Path -LiteralPath (Join-Path $ancestor $marker)){throw 'Recognized browser profiles are not fixture output directories.'}}
+    }
+    $parent=Split-Path $ancestor -Parent;if($parent -eq $ancestor){break};$ancestor=$parent
+}
 New-Item -ItemType Directory -Path $base -Force | Out-Null
 $run = Join-Path $base ('daily-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $run -ErrorAction Stop | Out-Null

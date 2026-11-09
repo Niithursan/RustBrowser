@@ -49,6 +49,11 @@ jobs:
         run: .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-daily-validation')
       - run: cargo build --locked
       - run: cargo build --locked --release
+      - name: Portable package metadata, integrity and output safety
+        shell: powershell
+        run: |
+          $commit = git rev-parse HEAD
+          .\tests\windows_package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-packaging-tests') -SourceCommit $commit
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rust-browser-windows-x64

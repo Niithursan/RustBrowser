@@ -2,6 +2,16 @@ name: Windows release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing approved stable version tag (vX.Y.Z); must belong to main'
+        required: true
+        type: string
+      publish:
+        description: 'Explicitly publish the validated package as a GitHub Release'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -11,52 +21,85 @@ jobs:
   package:
     runs-on: windows-latest
     timeout-minutes: 40
-    permissions:
-      contents: write
+    outputs:
+      release_tag: ${{ steps.validate.outputs.release_tag }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
       - run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Validate release tag and ancestry
+        id: validate
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v\d+\.\d+\.\d+$') { throw 'Use an approved stable version tag' }
           $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot read Cargo metadata' }
           $version = ($metadata.packages | Where-Object name -eq 'rust-browser').version
           if ($env:RELEASE_TAG -cne "v$version") { throw 'Tag must match the Cargo version' }
+          $tagCommit = git rev-parse "refs/tags/$env:RELEASE_TAG^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -cne (git rev-parse HEAD)) { throw 'Checkout must match the existing tag commit' }
           git merge-base --is-ancestor HEAD origin/main
           if ($LASTEXITCODE -ne 0) { throw 'Release must belong to main history' }
+          "release_tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
+      - name: Native production regressions
+        shell: powershell
+        run: |
+          foreach ($test in @('native_private_storage_and_confirmed_engine_deletion','native_application_clear','native_tab_sleep_resume_and_local_page_security','native_private_newtab_settings_are_ephemeral','native_popup_opener_upload_audio_fullscreen_and_redirects','native_renderer_crash_is_reported_and_reload_recovers','native_servo_comparison_fixture')) {
+            cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
+            if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
+          }
+          .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-daily-validation')
       - run: cargo install cargo-audit --locked
       - run: cargo audit --deny warnings
       - run: cargo build --locked --release
       - name: Package portable Windows build
+        id: portable
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.validate.outputs.release_tag }}
         run: |
-          New-Item -ItemType Directory -Path dist/package -Force | Out-Null
-          Copy-Item target/release/rust-browser.exe,README.md,LICENSE,CHANGELOG.md,SECURITY.md,VALIDATION.md -Destination dist/package
-          $archive = "rust-browser-$env:RELEASE_TAG-windows-x64.zip"
-          Compress-Archive -Path dist/package/* -DestinationPath "dist/$archive"
-          $hash = (Get-FileHash "dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $archive" | Set-Content "dist/$archive.sha256" -Encoding ascii
+          $commit = git rev-parse HEAD
+          $package = .\packaging\windows\package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-portable') -Version ($env:RELEASE_TAG.Substring(1)) -SourceCommit $commit
+          "archive=$($package.archive)" >> $env:GITHUB_OUTPUT
+          "checksum=$($package.checksum)" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-release-package
           path: |
-            dist/*.zip
-            dist/*.sha256
+            ${{ steps.portable.outputs.archive }}
+            ${{ steps.portable.outputs.checksum }}
           if-no-files-found: error
-      - name: Create GitHub release
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Publish explicitly approved GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$env:RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.release_tag }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          gh run download "$env:RUN_ID" --name windows-release-package --dir package
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the validated package' }
+          $archives = @(Get-ChildItem package -Filter '*.zip')
+          $checksums = @(Get-ChildItem package -Filter '*.sha256')
+          if ($archives.Count -ne 1 -or $checksums.Count -ne 1) { throw 'Unexpected release artifact set' }
+          $hash = (Get-FileHash $archives[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-Content $checksums[0].FullName -Raw).Trim() -cne "$hash  $($archives[0].Name)") { throw 'Release artifact checksum mismatch' }
+          gh release create "$env:RELEASE_TAG" package/*.zip package/*.sha256 --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
