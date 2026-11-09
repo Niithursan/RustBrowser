@@ -49,6 +49,16 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
+      - name: Script and fixture regressions
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\process_tree.ps1
+          .\tests\servo_tools.ps1 -TestRoot (Join-Path $env:RUNNER_TEMP 'release-servo-tools')
+          python -m unittest discover -s experiments/servo -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Experimental fixture tests failed' }
+          python -m unittest discover -s validation -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Production fixture tests failed' }
       - name: Native production regressions
         shell: powershell
         run: |
@@ -56,26 +66,54 @@ jobs:
             cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
             if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
           }
-          .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-daily-validation')
-      - run: cargo install cargo-audit --locked
+          foreach ($attempt in 1..3) {
+            .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP "release-daily-validation-$attempt")
+          }
+      # Keep release application builds clean/uncached. Only the pinned audit
+      # tool is cached, with its version verified and advisories fetched fresh.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: audit-tool
+        with:
+          path: ~/.cargo/bin/cargo-audit.exe
+          key: release-cargo-audit-0.22.2-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
+      - if: steps.audit-tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - name: Verify audit tool version
+        shell: pwsh
+        run: |
+          $actual = cargo audit --version
+          if ($LASTEXITCODE -ne 0 -or ($actual -split ' ')[-1] -cne '0.22.2') { throw 'Unexpected cargo-audit version' }
       - run: cargo audit --deny warnings
       - run: cargo build --locked --release
-      - name: Package portable Windows build
-        id: portable
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ steps.validate.outputs.release_tag }}
+      - name: Validate installer and portable packages
+        id: packages
+        shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           $commit = git rev-parse HEAD
-          $package = .\packaging\windows\package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-portable') -Version ($env:RELEASE_TAG.Substring(1)) -SourceCommit $commit
+          .\tests\windows_package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-portable-tests') -SourceCommit $commit
+          $compiler = .\packaging\windows\install-inno.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'release-inno')
+          $baseline = .\tests\build_install_baseline.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-install-baseline')
+          "Baseline build seconds: $($baseline.build_seconds)"
+          $output = .\tests\windows_installer.ps1 -Executable target/release/rust-browser.exe -BaselineExecutable $baseline.executable -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-installer-tests') -Compiler $compiler -SourceCommit $commit
+          $package = $output | Where-Object { $_ -isnot [string] -and $_.metadata } | Select-Object -Last 1
+          $output | Where-Object { $_ -is [string] }
+          if (-not $package) { throw 'No validated release package' }
+          .\tests\release_metadata.ps1 -MetadataPath $package.metadata -OutputRoot (Join-Path $env:RUNNER_TEMP 'release-metadata-tests')
+          "installer=$($package.installer)" >> $env:GITHUB_OUTPUT
+          "installer_checksum=$($package.installer_checksum)" >> $env:GITHUB_OUTPUT
           "archive=$($package.archive)" >> $env:GITHUB_OUTPUT
           "checksum=$($package.checksum)" >> $env:GITHUB_OUTPUT
+          "metadata=$($package.metadata)" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-release-package
           path: |
-            ${{ steps.portable.outputs.archive }}
-            ${{ steps.portable.outputs.checksum }}
+            ${{ steps.packages.outputs.archive }}
+            ${{ steps.packages.outputs.checksum }}
+            ${{ steps.packages.outputs.installer }}
+            ${{ steps.packages.outputs.installer_checksum }}
+            ${{ steps.packages.outputs.metadata }}
           if-no-files-found: error
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
@@ -86,6 +124,10 @@ jobs:
       contents: write
       actions: read
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.package.outputs.release_tag }}
+          persist-credentials: false
       - name: Publish explicitly approved GitHub release
         shell: pwsh
         env:
@@ -96,10 +138,18 @@ jobs:
         run: |
           gh run download "$env:RUN_ID" --name windows-release-package --dir package
           if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the validated package' }
-          $archives = @(Get-ChildItem package -Filter '*.zip')
-          $checksums = @(Get-ChildItem package -Filter '*.sha256')
-          if ($archives.Count -ne 1 -or $checksums.Count -ne 1) { throw 'Unexpected release artifact set' }
-          $hash = (Get-FileHash $archives[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ((Get-Content $checksums[0].FullName -Raw).Trim() -cne "$hash  $($archives[0].Name)") { throw 'Release artifact checksum mismatch' }
-          gh release create "$env:RELEASE_TAG" ($archives[0].FullName) ($checksums[0].FullName) --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
+          $prefix = "rust-browser-$env:RELEASE_TAG-windows-x64"
+          $names = @("$prefix.zip", "$prefix.zip.sha256", "$prefix-setup.exe", "$prefix-setup.exe.sha256", "$prefix-release.json")
+          $actualNames = ((Get-ChildItem package -File).Name | Sort-Object) -join '|'
+          if ($actualNames -cne (($names | Sort-Object) -join '|')) { throw 'Unexpected release artifact set' }
+          $metadata = Join-Path package "$prefix-release.json"
+          .\packaging\windows\verify-release.ps1 -MetadataPath $metadata -ArtifactDirectory package -CurrentVersion '0.0.0'
+          $record = Get-Content -LiteralPath $metadata -Raw | ConvertFrom-Json
+          if ($record.source_commit -cne (git rev-parse HEAD)) { throw 'Package source commit mismatch' }
+          foreach ($name in @("$prefix.zip", "$prefix-setup.exe")) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path package $name)).Hash.ToLowerInvariant()
+            if ((Get-Content -LiteralPath (Join-Path package "$name.sha256") -Raw).Trim() -cne "$hash  $name") { throw 'Release artifact checksum mismatch' }
+          }
+          $assets = @($names | ForEach-Object { Join-Path package $_ })
+          gh release create "$env:RELEASE_TAG" @assets --verify-tag --generate-notes --title "Rust Browser $env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
