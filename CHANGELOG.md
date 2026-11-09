@@ -16,6 +16,9 @@
   event; focused unit/native/churn regressions preserve real connection failures.
 - Fixed minimized-window tab activation reporting `E_INVALIDARG`: defer only focus
   until restoration, retaining visibility, resize and engine error handling.
+- Fixed the intermittent hosted-CI loopback navigation failure in the test fixture
+  server: Windows accepted sockets inherit non-blocking mode, so early reads failed
+  with `WouldBlock` and dropped the request. Test-only; adds a regression test.
 - Corrected benchmark process identity after reproducing PID reuse contamination;
   sampling/cleanup now validate creation times and export numeric fields only.
   The initial comparisons are withdrawn and replaced by an alternating-order

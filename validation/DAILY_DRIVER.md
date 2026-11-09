@@ -89,8 +89,18 @@ timed out at phase 2, and a later run reached phase 6 with native failure state.
 The fixture now reports per-API stage failures and native navigation status
 immediately. No navigation/storage assertions were removed, timeout increased,
 or success-after-retry rule added. Production CI requires three independent
-fresh-profile daily runs and fails on any one failure. The cause is still under
-investigation; isolated subsequent passes alone are not proof of a fix.
+fresh-profile daily runs and fails on any one failure.
+
+Identified cause (test infrastructure, not production): the in-process loopback
+fixture server accepted connections from a non-blocking listener, and on Windows an
+accepted socket inherits non-blocking mode. When the accept loop won the race
+against WebView2's request bytes, the first read returned `WouldBlock`, the fixture
+dropped the connection without a response, and WebView2 reported status 0 with no
+HTTP code (push CI run 42679469407, phase 2). A standalone check and a new
+deterministic regression test reproduced the empty response; restoring blocking mode
+on accepted streams fixes it. All navigation assertions are unchanged. Hosted passes
+after the fix are supporting evidence; the earlier phase-6/phase-9 hosted failures
+match the same symptom but were not individually re-traced.
 
 ## Remaining daily-driver blockers
 

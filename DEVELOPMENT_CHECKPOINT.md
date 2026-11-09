@@ -2,13 +2,19 @@
 
 ## Claude Code continuation (2026-11-09) — supersedes all entries below
 
-Took over from Codex at pushed `d77d9c9` (clean tree, branch = origin). No code
-was changed; this session produced evidence and documentation only.
+Took over from Codex at pushed `d77d9c9` (clean tree, branch = origin). No
+production code was changed; evidence, documentation and one test-fixture fix.
 
-- **Not independently verified:** remote CI. `gh` is not installed and the repo
-  is private; reading the Git Credential Manager token was (correctly) refused.
-  The user reported Windows CI 42679482842 and security 42679483172 green at
-  `d77d9c9`. Verify the final pushed head with `gh` before marking PR #14 ready.
+- `gh` is now installed (`C:\Program Files\GitHub CLI\gh.exe`) and authenticated.
+  At `d77d9c9`, PR CI 42679482842 and security 42679483172 passed, but **push CI
+  42679469407 failed** in the daily native test (phase 2, WebView2 status 0, http 0).
+  `2c93079` (docs) passed PR, push and security CI.
+- **Hosted daily failure root cause found (test-only):** `compat_validation::Server`
+  accepted from a non-blocking listener; Windows accepted sockets inherit
+  non-blocking mode, so a read before request bytes arrived returned `WouldBlock`
+  and the fixture dropped the connection. Verified with a standalone check and a
+  new regression test (`loopback_server_serves_requests_sent_after_accept`) that
+  failed before and passes after `set_nonblocking(false)` on accepted streams.
 - Local toolchain: Rust 1.99.1 lives in `~/.rustup/toolchains/1.99.1-x86_64-pc-windows-msvc/bin`
   and is not on PATH by default; prepend it.
 - **Warm tab-close failure:** not reproduced. 5-tab fresh+warm ×6 on the current
@@ -24,17 +30,17 @@ was changed; this session produced evidence and documentation only.
 - **30-minute soak PASSED** (`work/v11/final-soak`): 1798.9 s, 178 cycles, zero
   navigation errors, normal exit, journal only start/started/clean_shutdown.
   Sanitized: `benchmarks/v011-soak.json` (summarizer `work/v11/summarize-soak-final.py`).
-- Local gates at `d77d9c9` source (docs-only changes since): fmt, strict Clippy,
-  60 regular tests, all 7 separate native tests, 3/3 independent daily native
-  runs, debug and release builds passed. `cargo audit --deny warnings`
+- Local gates after the fixture fix: fmt, strict Clippy, 61 regular tests, all 7
+  separate native tests, 3/3 independent daily native runs, debug and release
+  builds passed (also passed earlier at `d77d9c9`, with 60 regular tests). `cargo audit --deny warnings`
   (cargo-audit 0.22.2, 1430 advisories, 369 crates) passed.
   Note: running `windows-daily.ps1` with `*>&1` redirection in PowerShell 5.1
   makes cargo's stderr a terminating error; invoke it plainly, as CI does.
 - Still unverified (unchanged): final manual GUI recheck of post-`58cdef9`
   production fixes, personal sign-in, physical IME/AltGr, mixed-DPI, DRM/devices,
   screen reader, system sleep/wake, clean-machine install, signing.
-- Next session: confirm final-head CI with `gh`, update PR #14 body, and only then
-  decide on marking it ready. Do not merge, tag or publish.
+- Next session: confirm final-head CI with `gh`; PR #14 stays draft until the user
+  decides. Do not merge, tag or publish.
 
 ## Codex continuation — superseded by the section above
 
