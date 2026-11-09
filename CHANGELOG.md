@@ -8,6 +8,9 @@
 - Added explicitly scoped pipe handles, fixed numeric frames, protocol
   mutation tests, malformed/hung-worker rejection, live-IPC broker-crash
   recovery and measured resource limits in the experimental Windows job.
+- Filtered administrative primary tokens before AppContainer creation;
+  retained non-elevation assertions and verified the stronger launch on the
+  hosted Windows runner after its initial fail-closed rejection.
 - Documented the pinned WGL/offscreen rendering blocker. No real Servo
   renderer is contained; LPAC Winsock and general network policy remain open.
 - Expanded key down/up/repeat and composition/cancellation fixtures, added

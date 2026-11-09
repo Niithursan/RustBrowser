@@ -43,7 +43,11 @@ as an explicit manual investigation.
 
 Before resume, the launcher checks AppContainer membership, the expected
 package SID, zero capabilities, low integrity, Win32k lockdown, and the
-child-process mitigation. Job assignment occurs at process creation.
+child-process mitigation. It first creates a restricted LUA primary token
+with maximum privileges disabled and Administrators deny-only, then uses
+CreateProcessAsUserW with the same lowbox attributes. Non-elevation is
+required in both the filtered token and resulting worker; failure has no
+unfiltered fallback. Job assignment occurs at process creation.
 The ordinary worker has no inherited handles and explicit null standard handles.
 Its environment contains only SystemRoot and LOCALAPPDATA, which Windows
 uses to locate the isolated profile.

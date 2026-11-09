@@ -1,7 +1,8 @@
 {
   "schema": 1,
   "date": "2026-11-08",
-  "source_commit": "deb5eb1e7f4f298e0a2cbcb386966d052a3719a1",
+  "source_commit": "acbf21704b4a6295afd8db2fe29f6f402f32abcd",
+  "fixture_source_commit": "deb5eb1e7f4f298e0a2cbcb386966d052a3719a1",
   "environment": {
     "windows": "Windows 11 Pro 10.0.26200 x64",
     "cpu": "AMD Ryzen 5 5600 6-Core Processor",
@@ -15,11 +16,11 @@
   },
   "appcontainer": [
     {
-      "startup_first_reply_ms": 15.9957,
-      "resume_to_exit_ms": 305.515,
-      "cpu_ms": 15.625,
+      "startup_first_reply_ms": 27.9327,
+      "resume_to_exit_ms": 315.559,
+      "cpu_ms": 0.0,
       "peak_private_mib": 2.12109,
-      "ipc_median_ms": 15.582,
+      "ipc_median_ms": 15.618,
       "operations": [
         {
           "operation": 1,
@@ -137,30 +138,30 @@
         }
       ],
       "roundtrips_ms": [
-        7.3112,
-        15.7301,
-        15.1761,
-        15.6021,
-        15.5294,
-        15.0259,
-        15.4551,
-        15.1916,
-        31.6174,
-        15.6859,
-        15.3698,
-        31.7399,
-        32.1402,
-        15.5619,
-        15.6519,
-        16.5513
+        19.9804,
+        15.4222,
+        15.9641,
+        15.2298,
+        30.8993,
+        15.1349,
+        15.2968,
+        31.2099,
+        15.1404,
+        15.5868,
+        32.0406,
+        15.6491,
+        15.3385,
+        15.6541,
+        15.0989,
+        31.6557
       ]
     },
     {
-      "startup_first_reply_ms": 22.1543,
-      "resume_to_exit_ms": 327.624,
-      "cpu_ms": 31.25,
-      "peak_private_mib": 2.12109,
-      "ipc_median_ms": 15.8083,
+      "startup_first_reply_ms": 27.265,
+      "resume_to_exit_ms": 410.642,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.11328,
+      "ipc_median_ms": 30.8153,
       "operations": [
         {
           "operation": 1,
@@ -278,30 +279,30 @@
         }
       ],
       "roundtrips_ms": [
-        14.355,
-        16.0022,
-        15.2839,
-        31.2681,
-        15.9328,
-        15.4818,
-        15.6837,
-        15.6202,
-        15.5578,
-        31.2257,
-        15.6027,
-        30.9667,
-        32.5839,
-        14.521,
-        16.3303,
-        30.9055
+        19.7538,
+        31.8921,
+        31.8727,
+        31.6349,
+        30.8714,
+        31.4197,
+        31.5704,
+        31.8107,
+        30.943,
+        14.8038,
+        30.7592,
+        15.6104,
+        15.5138,
+        14.8958,
+        15.7326,
+        15.7915
       ]
     },
     {
-      "startup_first_reply_ms": 21.8527,
-      "resume_to_exit_ms": 309.499,
+      "startup_first_reply_ms": 21.1218,
+      "resume_to_exit_ms": 323.685,
       "cpu_ms": 15.625,
-      "peak_private_mib": 2.125,
-      "ipc_median_ms": 15.5476,
+      "peak_private_mib": 2.11719,
+      "ipc_median_ms": 15.7755,
       "operations": [
         {
           "operation": 1,
@@ -419,32 +420,32 @@
         }
       ],
       "roundtrips_ms": [
-        12.991,
-        16.1304,
-        15.2382,
-        15.3282,
-        15.5738,
-        15.5214,
-        31.9968,
-        30.4336,
-        31.1393,
-        16.1169,
-        14.7283,
-        15.1973,
-        15.2886,
-        16.1088,
-        16.8907,
-        15.2316
+        12.2716,
+        30.513,
+        31.2536,
+        15.7445,
+        30.7472,
+        16.0694,
+        15.4043,
+        15.2033,
+        15.5538,
+        16.0598,
+        31.0395,
+        16.0216,
+        15.4056,
+        15.5281,
+        15.0743,
+        15.8065
       ]
     }
   ],
   "lpac": [
     {
-      "startup_first_reply_ms": 25.8198,
-      "resume_to_exit_ms": 362.362,
+      "startup_first_reply_ms": 25.4204,
+      "resume_to_exit_ms": 328.815,
       "cpu_ms": 0.0,
       "peak_private_mib": 2.07422,
-      "ipc_median_ms": 15.999,
+      "ipc_median_ms": 15.6469,
       "operations": [
         {
           "operation": 1,
@@ -562,30 +563,30 @@
         }
       ],
       "roundtrips_ms": [
-        18.1343,
-        30.7013,
-        15.5076,
-        31.6757,
-        15.1492,
-        32.0978,
-        15.5151,
-        16.072,
-        15.926,
-        15.8631,
-        15.3281,
-        32.618,
-        15.1739,
-        31.139,
-        30.1325,
-        15.7914
+        17.8359,
+        15.1848,
+        30.8359,
+        15.161,
+        15.7328,
+        31.7469,
+        31.5636,
+        15.5546,
+        15.1454,
+        15.5138,
+        15.5609,
+        15.136,
+        16.027,
+        16.053,
+        30.919,
+        15.4949
       ]
     },
     {
-      "startup_first_reply_ms": 24.0654,
-      "resume_to_exit_ms": 373.296,
+      "startup_first_reply_ms": 15.8191,
+      "resume_to_exit_ms": 370.719,
       "cpu_ms": 0.0,
-      "peak_private_mib": 2.07812,
-      "ipc_median_ms": 15.7573,
+      "peak_private_mib": 2.07031,
+      "ipc_median_ms": 23.806,
       "operations": [
         {
           "operation": 1,
@@ -703,30 +704,30 @@
         }
       ],
       "roundtrips_ms": [
-        15.6364,
-        30.4621,
-        15.8531,
-        30.6191,
-        32.3706,
-        15.3595,
-        30.5771,
-        31.1405,
-        15.6616,
-        15.5106,
-        15.5205,
-        31.7065,
-        30.5246,
-        15.1926,
-        15.1119,
-        15.2204
+        8.1129,
+        16.0922,
+        16.5658,
+        31.5901,
+        16.0034,
+        15.6435,
+        31.2394,
+        15.1588,
+        31.1665,
+        31.5389,
+        16.589,
+        31.0231,
+        31.629,
+        31.732,
+        15.1267,
+        31.2148
       ]
     },
     {
-      "startup_first_reply_ms": 15.6572,
-      "resume_to_exit_ms": 353.486,
-      "cpu_ms": 15.625,
-      "peak_private_mib": 2.08203,
-      "ipc_median_ms": 16.0778,
+      "startup_first_reply_ms": 18.7152,
+      "resume_to_exit_ms": 383.719,
+      "cpu_ms": 0.0,
+      "peak_private_mib": 2.06641,
+      "ipc_median_ms": 23.6968,
       "operations": [
         {
           "operation": 1,
@@ -844,22 +845,22 @@
         }
       ],
       "roundtrips_ms": [
-        7.0388,
-        31.4137,
-        30.7245,
-        15.7077,
-        16.1172,
-        16.0384,
-        15.5902,
-        31.4204,
-        15.5356,
-        15.2308,
-        31.2111,
-        15.6493,
-        15.9732,
-        31.5771,
-        32.696,
-        31.1602
+        6.2808,
+        16.1059,
+        31.6303,
+        31.6499,
+        31.4458,
+        31.6015,
+        31.8624,
+        15.5531,
+        15.0882,
+        15.3469,
+        15.5182,
+        31.6292,
+        31.2878,
+        32.0926,
+        15.2766,
+        15.592
       ]
     }
   ],
@@ -1083,11 +1084,11 @@
     }
   ],
   "fault_shutdown_samples_ms": {
-    "appcontainer_malformed": 0.8919,
-    "appcontainer_hang": 1.3407,
-    "lpac_malformed_followup": 1.052,
-    "lpac_hang_followup": 0.8105,
-    "note": "Single fault samples. LPAC follow-up uses explicit LPAC fault selectors added after the measured collector commit. Hang detection deadline is separate (200 ms)."
+    "appcontainer_malformed": 0.7059,
+    "appcontainer_hang": 0.8309,
+    "lpac_malformed": 0.8471,
+    "lpac_hang": 0.9965,
+    "note": "Single fault samples in the selected AppContainer/LPAC mode. The 200 ms hang-detection deadline is separate."
   },
   "unavailable": [
     "real restricted Servo rendering",

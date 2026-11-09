@@ -3,7 +3,11 @@
 The v0.10 [rendering decision](experiments/servo/SECURE_RENDERING_V010.md)
 keeps the Servo host fixture-only. The synthetic diagnostic workers retain
 Win32k and child-process restrictions, zero capabilities and verified token
-limits. They receive exactly two anonymous pipe endpoints through an
+limits. Launch first derives a restricted LUA primary token with maximum
+privileges disabled and Administrators deny-only, then applies the lowbox
+attributes using CreateProcessAsUserW. Both filtered and worker tokens must
+be non-elevated. Failure stops launch without an original-token fallback.
+They receive exactly two anonymous pipe endpoints through an
 explicit handle list. The protocol accepts fixed numeric reports only and
 grants no filesystem, network or browser operation. A run identifier and
 fixture-origin number are not website authentication. Worker-reported

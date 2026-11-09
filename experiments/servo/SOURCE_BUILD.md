@@ -195,6 +195,9 @@ separate lock audit reports rsa advisory RUSTSEC-2023-0071 and unmaintained
 dependencies. Preserve those failures; do not add production exceptions.
 The [synthetic diagnostic procedure](isolation/DIAGNOSTICS_V010.md) compiles
 small SDK executables independently and must not be used to launch Servo.
+Its broker derives a restricted LUA primary token before lowbox creation;
+if token filtering or CreateProcessAsUserW fails, retain the reported error.
+Do not run an unfiltered fallback or change system privileges to bypass it.
 The [rendering decision](SECURE_RENDERING_V010.md) explains why the working
 WGL fixture host is not moved into the restricted worker.
 

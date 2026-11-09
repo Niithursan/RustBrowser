@@ -40,6 +40,15 @@ worked; it does not turn Winsock failure into success. The original explicit
 LPAC full-suite command remains available and failing on this machine.
 Final remote CI must be checked on the PR's exact head.
 
+The first remote boundary run on `fe092fb` failed the non-elevation assertion
+on the administrative hosted runner, before worker resume; profile cleanup
+was reported. The fix derives a restricted LUA primary token, disables
+maximum privileges and makes Administrators deny-only before lowbox
+creation. The assertion remains mandatory. The updated original and
+diagnostic suites passed on
+[hosted Windows Server 2025](https://github.com/Niithursan/RustBrowser/actions/runs/42559913981)
+at `acbf21704b4a6295afd8db2fe29f6f402f32abcd`, and locally on Windows 11.
+
 The upstream lockfile is unchanged (SHA-256
 `eb0cc53c1a4044738088cd90825409034014ee65d6f51d6e00448617996e9031`).
 The existing selected-graph investigation in [v0.8 results](EMBEDDER_RESULTS.md)
@@ -89,13 +98,13 @@ configuration are recorded in that file and [SOURCE_BUILD.md](SOURCE_BUILD.md).
 
 | Synthetic worker metric | AppContainer median (range), n=3 | LPAC median (range), n=3 |
 | --- | ---: | ---: |
-| Creation to first validated IPC reply, ms | 21.853 (15.996-22.154) | 24.065 (15.657-25.820) |
-| Resume to observed process exit, ms | 309.499 (305.515-327.624) | 362.362 (353.486-373.296) |
-| Process CPU time, ms | 15.625 (15.625-31.250) | 0 (0-15.625) |
-| Peak private committed memory, MiB | 2.121 (2.121-2.125) | 2.078 (2.074-2.082) |
-| Median of each run's 16 IPC echoes, ms | 15.582 (15.548-15.808) | 15.999 (15.757-16.078) |
+| Creation to first validated IPC reply, ms | 27.265 (21.122-27.933) | 18.715 (15.819-25.420) |
+| Resume to observed process exit, ms | 323.685 (315.559-410.642) | 370.719 (328.815-383.719) |
+| Process CPU time, ms | 0 (0-15.625) | 0 (0-0) |
+| Peak private committed memory, MiB | 2.117 (2.113-2.121) | 2.070 (2.066-2.074) |
+| Median of each run's 16 IPC echoes, ms | 15.776 (15.618-30.815) | 23.697 (15.647-23.806) |
 
-Creation-to-reply includes process creation, token checks, endpoint cleanup,
+Creation-to-reply includes primary-token filtering, process creation, token checks, endpoint cleanup,
 resume and polling. Resume-to-exit includes all echoes and diagnostics; it
 is not termination latency. CPU accounting is coarse (15.625 ms steps);
 zero does not establish zero CPU use. Memory is Job peak private commit,
@@ -104,9 +113,9 @@ creation was denied, so there is no omitted permitted worker process tree.
 IPC uses `Sleep(1)` polling; the observed 15-32 ms scheduling dominates many
 samples. This protocol is a boundary test, not a low-latency transport.
 
-Single fault samples measured Job termination to observed exit at 0.892 ms
-(malformed) and 1.341 ms (hang) for AppContainer. A subsequent LPAC-specific
-fault run measured 1.052 ms and 0.811 ms respectively. The hang's 200 ms
+Single fault samples measured Job termination to observed exit at 0.706 ms
+(malformed) and 0.831 ms (hang) for AppContainer. LPAC-specific
+fault cases measured 0.847 ms and 0.997 ms respectively. The hang's 200 ms
 detection deadline precedes this shutdown interval. The supervisor waits
 two seconds after intentional broker termination before checking child
 identity; that recovery check does not measure precise exit latency.

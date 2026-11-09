@@ -20,6 +20,18 @@ AppContainer or LPAC controls. Every diagnostic API target is compiled in.
 No registry values, provider names, user files, credentials, or website
 contents are included in reports.
 
+The first hosted Windows Server 2025 run rejected an elevated-token
+indication before worker resume and cleaned the generated profile. The
+launcher now uses CreateRestrictedToken with DISABLE_MAX_PRIVILEGE and
+LUA_TOKEN, explicitly makes Administrators deny-only, verifies non-elevation,
+and calls CreateProcessAsUserW with the existing lowbox attributes. No
+fallback or security-setting change was added. The corrected
+[hosted boundary job](https://github.com/Niithursan/RustBrowser/actions/runs/42559913981)
+passed on commit `acbf217`. That Server 2025 collector also reported LPAC
+catalog denial, WSAStartup 10107 and OpenGL initialization 1114. The
+updated local samples use the filtered launch; hosted timings are not
+mixed into the local benchmark dataset.
+
 ## Initial evidence on Windows 11 10.0.26200
 
 | Operation | AppContainer | LPAC |
@@ -108,3 +120,5 @@ Servo worker was not launched under these restrictions.
 - [Explicit creation-time handle lists and mitigations](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 - [WSAStartup returns its own error code](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsastartup)
 - [Winsock error meanings](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
+- [Restricted primary tokens and privilege removal](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken)
+- [CreateProcessAsUser with the caller's restricted token](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)

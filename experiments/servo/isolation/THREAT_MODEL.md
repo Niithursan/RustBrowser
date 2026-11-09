@@ -30,7 +30,10 @@ permissions would need additional designs and tests.
 1. A trusted launcher creates a unique AppContainer identity and a small
    immutable worker deployment. It grants execute/read access only to that
    package and leaves normal profiles outside the grants.
-2. The worker starts suspended with a minimal environment, no inherited
+2. The launcher derives a restricted LUA primary token from its own token,
+   disables maximum privileges and the Administrators SID, and verifies
+   non-elevation before CreateProcessAsUserW. It never falls back to the
+   original token. The worker starts suspended with a minimal environment, no inherited
    handles except explicitly reviewed IPC endpoints, null standard handles, a creation-time Job Object,
    child-process restrictions, and compatible mitigations. The launcher
    validates the resulting token before resuming it.

@@ -48,8 +48,11 @@ LUA primary token, disables maximum privileges and the Administrators SID,
 then applies the same lowbox/Job/mitigation/handle attributes with
 CreateProcessAsUserW. Non-elevation and deny-only Administrators membership
 are verified; there is no original-token fallback. Local standard and LPAC
-boundary/IPC/lifecycle controls pass. Remote verification of this stronger
-launch and refreshed numeric samples are the next checks.
+boundary/IPC/lifecycle controls pass. This fix is committed at
+`acbf21704b4a6295afd8db2fe29f6f402f32abcd`; the
+[hosted boundary workflow](https://github.com/Niithursan/RustBrowser/actions/runs/42559913981)
+passed on that commit. Local three-run samples in both modes were refreshed
+after filtering; the original LPAC full suite still fails 10107 with cleanup.
 
 ## Completed investigation and delivery stage
 
