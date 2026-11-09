@@ -76,5 +76,10 @@ Observations:
   about 220–300 s.
 - Windows runner minutes are billed at a higher multiplier than Linux on private
   repositories. Check the account's Actions billing before adding jobs.
+- The final v0.12 head (`02e4221`, with the new native phases and the 0.12.0
+  version bump) restored both dependency caches with a full key match. `rust-cache`
+  excludes the workspace's own package version from its lockfile hash, so version
+  bumps do not invalidate it. That run took 197 s wall time and 280 s runner time;
+  dependency security took 24 s.
 - The weekly scheduled audit may find its cache evicted (seven days without use)
   and rebuild cargo-audit. That is slower but still correct.

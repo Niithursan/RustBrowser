@@ -17,9 +17,10 @@ Completed (all local gates passed at 0.12.0; see VALIDATION.md):
 Depends on PR #15 (navigation race fix); merge #15 first.
 Open findings: `.invalid` host shows status-9 "connection interrupted" advice
 (pre-existing on main). Manual a11y/DPI/screen-reader checks not done.
-Continuation: verify final-head CI on PR #16 with `gh`; do not merge/tag/publish.
-A temporary worktree of `fef457a` lives at `work/v12/main-wt` (remove with
-`git worktree remove`).
+Final-head CI at `02e4221` passed (CI 42717009388, security 42717009508; warm,
+197 s / 24 s). After #15 is squash-merged: `git merge origin/main` into this branch
+(expect conflicts in CHANGELOG.md, DEVELOPMENT_CHECKPOINT.md and
+validation/DAILY_DRIVER.md), re-run gates and CI. Do not merge, tag or publish.
 
 ## Post-merge fix (2026-11-09) — `fix/superseded-web-navigation-start`
 
