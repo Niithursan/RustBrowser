@@ -33,9 +33,27 @@ There is no bounded local application diagnostic journal or installer.
 8. Commit and push checkpoints, open one PR into main and verify its final
    head. Do not merge, tag, publish, deploy or enable automatic updates.
 
-Assessment is complete; implementation and new local measurements are
-pending. Baseline remote checks above passed. Historical results below
-must not be presented as new v0.11 validation.
+## v0.11 verified progress
+
+- Baseline checkpoint `1e06d9f5bb29d3add3b47e7168ee429fcd22256d` is pushed.
+- Captured the unchanged optimized probe (SHA-256
+  `e7a54c2b4920f1df31424c7325ab08c8ae6b0c6b5dd42f0c94e38c672ef873f0`).
+  All 16 baseline cases passed: 1/5/10/20 tabs, two repeats, fresh/warm
+  profiles, 15 s settle, 5 s sample and 5 s close-to-one recovery. Raw
+  scratch output is outside Git under work/v11/baseline-results.
+- Added the typed bounded local diagnostic worker, marker/unclean-exit
+  detection, settings inspection/confirmed clearing and private exclusion.
+  Five new integration tests passed, including owned-process termination,
+  invalid/oversized data preservation, concurrency, I/O failure and bounds.
+- Reproduced AltGr interception with a failing regression, then fixed
+  Ctrl+Alt routing and native repeated tab actions. Both input tests pass.
+- Formatting, strict Clippy and the complete regular suite passed locally
+  at this stage (54 regular tests; opt-in native helpers remain separate).
+- Native GUI/privacy checks for the new UI, navigation reliability work,
+  light theme, packaging, matched current benchmarks, extended soak and
+  final CI/PR delivery are still pending. Version remains 0.8.0 for now.
+
+Historical results below must not be presented as new v0.11 validation.
 
 ## Current continuation
 

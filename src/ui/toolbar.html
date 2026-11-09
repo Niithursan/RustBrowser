@@ -35,6 +35,7 @@ body{background:var(--surface);color:var(--text)}body[data-theme=slate]{--surfac
 <h2>Clear browsing data</h2><p class="muted">Clearing closes every tab in this window and leaves a blank page. Finish or cancel downloads first. Cookies and site storage are shared by this window's tabs; clearing can sign you out. Bookmarks and downloaded files remain. Library recovery backups are retained to protect recovered bookmarks and may contain old history or permissions. This is not secure disk erasure. New browsing can create new data.</p>
 <label class="settings-label"><input type="checkbox" id="clear-app-history">Browsing history (application and engine)</label><label class="settings-label"><input type="checkbox" id="clear-cookies">Cookies and site storage</label><label class="settings-label"><input type="checkbox" id="clear-cache">Cached web content</label><label class="settings-label"><input type="checkbox" id="clear-session">Saved session URLs and session recovery files (disables restoration)</label><label class="settings-label"><input type="checkbox" id="clear-permissions">Saved site permissions and WebView2 permission settings</label><button type="button" id="clear-data">Clear selected data…</button><p id="settings-message" role="status"></p>
 <h2>Remembered website permissions</h2><p class="muted">Rules apply to one exact origin and capability. Unsupported permissions and background/cross-origin-frame requests are denied. Revocation closes tabs to end active captures; reopen a page to request again.</p><div id="permission-rules"></div>
+<h2>Local application diagnostics</h2><p class="muted">Only fixed application event categories, times and counts are kept locally. No browsing addresses, page titles, cookies, passwords or form contents are recorded. Nothing is uploaded. Private windows do not open this store. Clearing browsing history does not clear these records.</p><p id="diagnostic-status" role="status"></p><button type="button" id="refresh-diagnostics">Refresh diagnostics</button> <button type="button" id="clear-diagnostics">Clear local diagnostics…</button><pre id="diagnostic-events" tabindex="0" aria-label="Local diagnostic events" style="max-height:240px;overflow:auto;white-space:pre-wrap"></pre>
 </section><div id="library-results" aria-live="polite"></div><div id="download-results" aria-live="polite"></div>
 </section>
 <script>
@@ -44,6 +45,8 @@ let currentPanel=null,librarySignature='',downloadSignature='',libraryData={fold
 for(const panel of ['bookmarks','history','downloads','settings'])byId('show-'+panel).onclick=()=>send('show_panel',panel);
 byId('new-private').onclick=()=>send('new_private_window');
 byId('security').onclick=()=>send('show_panel','settings');
+byId('refresh-diagnostics').onclick=()=>send('refresh_diagnostics');
+byId('clear-diagnostics').onclick=()=>{if(window.confirm('Clear existing local application diagnostics? Bookmarks, history, cookies and downloads stay unchanged. New application events may be recorded afterwards.'))send('clear_diagnostics',{confirmed:true})};
 byId('settings-history').onchange=e=>send('set_history_enabled',e.target.checked);
 byId('restore-session').onchange=e=>{if(e.target.checked||window.confirm('Stop retaining session URLs and remove saved session/recovery URLs? Active tabs stay open.'))send('set_restore_session',e.target.checked);else e.target.checked=true};
 let permissionPrompt=null, permissionSignature='';
@@ -162,6 +165,8 @@ window.render=s=>{
     byId('restore-session').checked=!s.private&&s.restore_session;byId('restore-session').disabled=s.private;
     byId('history-enabled').disabled=s.private;byId('clear-session').disabled=s.private;if(s.private)byId('clear-session').checked=false;
     byId('settings-message').textContent=s.notice;
+    byId('refresh-diagnostics').disabled=s.private;byId('clear-diagnostics').disabled=s.private;
+    if(s.diagnostics){const d=s.diagnostics;byId('diagnostic-status').textContent=s.private?'This private window stores no diagnostics.':!d.enabled?'Local diagnostics could not start. Browsing remains available.':d.storage_ok?'Local records are bounded to 128 entries. Dropped events this run: '+d.dropped_events:'Local diagnostic storage is unavailable or unreadable. Existing data is preserved; inspect profile access, or clear these diagnostic records to reset them.';byId('diagnostic-events').textContent=d.entries.map(e=>new Date(e.last*1000).toLocaleString()+' · '+e.code.replaceAll('_',' ')+' · '+e.count).join('\n');}
     const promptChanged=permissionPrompt?.id!==s.permission_prompt?.id;permissionPrompt=s.permission_prompt;
     byId('permission-prompt').hidden=!permissionPrompt;
     if(permissionPrompt){byId('permission-origin').textContent=permissionPrompt.origin;byId('permission-kind').textContent='Requests access to: '+permissionPrompt.capability;if(promptChanged)byId('remember-permission').checked=false;}

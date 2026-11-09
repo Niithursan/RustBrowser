@@ -215,7 +215,11 @@ pub fn accelerators(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::co
                     if let Some(command) = command {
                         // Escape must also reach HTML fullscreen, selects and dialogs.
                         args.SetHandled(key != 0x1b)?;
-                        let _ = proxy.send_event(Event::Command(command));
+                        let mut physical = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                        args.PhysicalKeyStatus(&mut physical)?;
+                        if !physical.WasKeyDown.as_bool() || crate::ui::repeatable(&command) {
+                            let _ = proxy.send_event(Event::Command(command));
+                        }
                     }
                 }
                 Ok(())

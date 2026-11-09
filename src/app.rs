@@ -7,6 +7,7 @@ use crate::{
 use base64::Engine as _;
 use rust_browser::{
     background::{Lifecycle, Phase, Protection},
+    diagnostics::{self, Code as DiagnosticCode},
     engine_api::{ContentEngine, LoadTarget, NavigationCommand},
     library::{Action, Data, Filter},
     navigation,
@@ -54,6 +55,8 @@ pub enum Event {
     PageClose(TabId),
     Fullscreen(TabId, bool),
     StorageError,
+    DiagnosticsUpdated(diagnostics::Report),
+    RendererFailed,
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
     DownloadStopped(u64, i32),
@@ -107,6 +110,8 @@ struct Session {
     run_id: String,
     downloads: native_downloads::Shared,
     library: Worker,
+    diagnostics: diagnostics::Recorder,
+    diagnostic_warning_shown: bool,
     store: Option<Store>,
     permissions: native_security::Shared,
     popups: native_popup::Shared,
@@ -181,6 +186,12 @@ impl Session {
             })?;
             (Some(store), snapshot, recovered)
         };
+        let diagnostic_proxy = proxy.clone();
+        let diagnostics =
+            diagnostics::Recorder::start((!private).then_some(profile.as_path()), move |report| {
+                let _ = diagnostic_proxy.send_event(Event::DiagnosticsUpdated(report));
+            })
+            .unwrap_or_else(|_| diagnostics::Recorder::disabled());
         let library = Worker::start(
             if private {
                 PathBuf::from(":memory:")
@@ -248,6 +259,8 @@ impl Session {
                 .to_string(),
             downloads: Rc::new(RefCell::new(native_downloads::Manager::default())),
             library,
+            diagnostics,
+            diagnostic_warning_shown: false,
             store,
             profile,
             private,
@@ -560,6 +573,7 @@ impl Session {
             library: &self.library_data,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
+            diagnostics: (self.panel == Some(Panel::Settings)).then(|| self.diagnostics.snapshot()),
             tabs: self
                 .tabs
                 .items
@@ -584,12 +598,12 @@ impl Session {
                         .evaluate_script(&format!("window.render && window.render({json})"))
                         .is_err()
                 {
-                    eprintln!("Could not update browser toolbar.");
+                    self.diagnostics.record(DiagnosticCode::ToolbarFailed);
                 } else {
                     *self.last_render.borrow_mut() = json;
                 }
             }
-            Err(_) => eprintln!("Could not encode browser toolbar state."),
+            Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
         let title = if self.private {
             "Private — Rust Browser 0.8.0"
@@ -631,6 +645,8 @@ impl Session {
             return Err("Security initialization is not complete.".into());
         }
         match command {
+            Command::RefreshDiagnostics => self.diagnostics.refresh()?,
+            Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
                 if !height.is_finite() || !(80.0..=320.0).contains(&height) {
                     return Err("Invalid toolbar size.".into());
@@ -1014,6 +1030,9 @@ impl Session {
                 url,
                 title,
             } => {
+                if error.is_some() {
+                    self.diagnostics.record(DiagnosticCode::NavigationFailed);
+                }
                 if error.is_none()
                     && self.settings.history_enabled
                     && !self.private
@@ -1041,6 +1060,7 @@ impl Session {
                     });
             }
             PageEvent::Error(error) => {
+                self.diagnostics.record(DiagnosticCode::NavigationFailed);
                 tab.content.state.loading = false;
                 tab.content.state.failed = true;
                 tab.content.state.message = format!("Error: {error}");
@@ -1468,6 +1488,13 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            Event::DiagnosticsUpdated(report) => {
+                if report.previous_exit_unclean && !session.diagnostic_warning_shown {
+                    session.diagnostic_warning_shown = true;
+                    session.notice = "The previous normal window did not finish cleanly. Only committed session data can be restored; unsaved page work may be lost.".into();
+                }
+            }
+            Event::RendererFailed => session.diagnostics.record(DiagnosticCode::RendererFailed),
             Event::PopupRequested(ticket) => {
                 if let Err(error) = session.open_popup(ticket) {
                     session.notice = format!("Error: {error}");
@@ -1503,8 +1530,8 @@ impl ApplicationHandler<Event> for App {
             Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
                 if startup {
-                    if success {session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){session.notice="A restored tab could not load.".into();}}}
-                    else {session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
+                    if success {session.diagnostics.record(DiagnosticCode::Started);session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){session.notice="A restored tab could not load.".into();}}}
+                    else {session.diagnostics.record(DiagnosticCode::EngineClearFailed);session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
                 } else if let Some(clear)=&mut session.clearing && clear.ticket==ticket {
                     clear.engine_done=true;clear.failed |= !success;
                     if clear.request.history || clear.request.cookies || clear.request.cache || clear.request.permissions {
@@ -1519,6 +1546,7 @@ impl ApplicationHandler<Event> for App {
                     clear.results.push(if reply.message.is_none(){"Selected application history/permission records cleared."}else{"Application database clearing failed; records may remain."}.into());
                 }
                 if let Some(message) = reply.message {
+                    session.diagnostics.record(DiagnosticCode::LibraryFailed);
                     session.notice = message;
                 }
                 if reply.revision == session.revision
@@ -1528,6 +1556,7 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::DownloadStopped(id, reason) => {
+                session.diagnostics.record(DiagnosticCode::DownloadStopped);
                 session.downloads.borrow_mut().stopped(id, reason)
             }
             Event::DownloadTick => {
@@ -1573,16 +1602,19 @@ impl ApplicationHandler<Event> for App {
             }
             Event::DownloadRejected=>session.notice="A download from this address is already active, or the download limit was reached.".into(),
             Event::DownloadFinished(id, result) => {
+                if result.is_err() { session.diagnostics.record(DiagnosticCode::DownloadFailed); }
                 session.downloads.borrow_mut().finished(id, result)
             }
             Event::DownloadRecovery(notice)=>session.notice=notice,
             Event::Command(command) => {
                 if let Err(error) = session.command(command) {
+                    session.diagnostics.record(DiagnosticCode::CommandFailed);
                     session.notice = format!("Error: {error}");
                 }
             }
             Event::Page(id, event) => session.page_event(id, event),
             Event::StorageError => {
+                session.diagnostics.record(DiagnosticCode::SessionSaveFailed);
                 *session.last_snapshot.borrow_mut()=None;
                 session.notice =
                     "Error: Session could not be saved. Check profile access and disk space.".into()
