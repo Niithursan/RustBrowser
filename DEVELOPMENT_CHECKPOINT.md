@@ -1,6 +1,6 @@
 # Development checkpoint
 
-## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16, draft)
+## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
 
 Completed (all local gates passed at 0.12.0; see VALIDATION.md):
 1. CI: PR/main/dispatch triggers, SHA-pinned rust-cache, parallel release job,
@@ -14,13 +14,14 @@ Completed (all local gates passed at 0.12.0; see VALIDATION.md):
 4. Compatibility: service worker / Cache Storage / modern APIs in modern.html.
 5. Version 0.12.0, README/CHANGELOG/VALIDATION/CONTRIBUTING/COMPATIBILITY updated.
 
-Depends on PR #15 (navigation race fix); merge #15 first.
+PR #15 (navigation race fix) was squash-merged at `f440d54`, and `origin/main` was
+merged into this branch with a merge commit (no rebase or force-push). The conflicts
+were confined to CHANGELOG.md and this file; the fix is present once.
 Open findings: `.invalid` host shows status-9 "connection interrupted" advice
 (pre-existing on main). Manual a11y/DPI/screen-reader checks not done.
 Final-head CI at `02e4221` passed (CI 42717009388, security 42717009508; warm,
-197 s / 24 s). After #15 is squash-merged: `git merge origin/main` into this branch
-(expect conflicts in CHANGELOG.md, DEVELOPMENT_CHECKPOINT.md and
-validation/DAILY_DRIVER.md), re-run gates and CI. Do not merge, tag or publish.
+197 s / 24 s). After the main merge, re-verify gates and CI on the new head.
+Do not merge, tag or publish.
 
 ## Post-merge fix (2026-11-09) — `fix/superseded-web-navigation-start`
 
