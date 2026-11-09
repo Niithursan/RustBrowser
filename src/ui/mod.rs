@@ -19,6 +19,7 @@ pub const HTML: &str = include_str!("toolbar.html");
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
     RefreshDiagnostics,
+    DismissNotice,
     ClearDiagnostics {
         confirmed: bool,
     },

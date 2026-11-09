@@ -44,6 +44,9 @@ jobs:
         run: cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
+      - name: Native daily-driver compatibility, diagnostics and untrusted TLS
+        shell: powershell
+        run: .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-daily-validation')
       - run: cargo build --locked
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

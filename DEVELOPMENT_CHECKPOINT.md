@@ -53,6 +53,18 @@ There is no bounded local application diagnostic journal or installer.
   distinguishes cancellation from failure and provides status-specific
   advice. Strict Clippy, 56 regular tests and the four affected native
   sleep/private-newtab/popup-media/renderer-recovery checks passed.
+- Navigation checkpoint `4323fc36f2acbcf1226577b2e369caf27cf32182` is pushed.
+- Added a controlled native daily-driver fixture covering modules, fetch,
+  workers, WebCrypto, IndexedDB, cookies/local storage, SPA Back, two-origin
+  redirect/storage isolation, stable controllers, overlapping navigation,
+  Stop, diagnostic confirmation, light theme, address drafts and compact UI.
+  The native fixture passed. It reproduced WebView2 Stop returning status 9;
+  only a recorded host-issued Stop now reclassifies that aborted result.
+  Genuine network aborts and certificate errors remain failures.
+- Actual untrusted TLS rejection passed using a fresh OpenSSL test key and
+  Python loopback TLS server outside Git. No certificate/trust settings were
+  changed. The first Schannel fixture could not acquire its in-memory key;
+  replacing the fixture preserved the certificate-rejection assertion.
 - Formatting, strict Clippy and the complete regular suite passed locally
   at this stage (54 regular tests; opt-in native helpers remain separate).
 - Native GUI/privacy checks for the new UI, modern compatibility fixtures,

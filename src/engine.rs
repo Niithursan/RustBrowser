@@ -22,6 +22,7 @@ use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebView
 pub struct Engine {
     pub view: WebView,
     pub activity: std::rc::Rc<crate::native_activity::Activity>,
+    progress: std::rc::Rc<NavigationProgress>,
 }
 pub struct Options {
     pub private: bool,
@@ -32,6 +33,7 @@ pub struct Options {
 struct NavigationProgress {
     current: std::cell::Cell<Option<u64>>,
     finished: std::cell::Cell<bool>,
+    stopped: std::cell::Cell<Option<u64>>,
 }
 impl NavigationProgress {
     fn begin(&self, id: u64) {
@@ -39,10 +41,16 @@ impl NavigationProgress {
         if self.current.get() != Some(id) {
             self.current.set(Some(id));
             self.finished.set(false);
+            self.stopped.set(None);
         }
     }
     fn finish(&self, id: u64) -> bool {
         self.current.get() == Some(id) && !self.finished.replace(true)
+    }
+    fn cancelled(&self, id: u64, status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
+        status == COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
+            || (status == COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                && self.stopped.get() == Some(id))
     }
 }
 
@@ -128,12 +136,12 @@ impl Engine {
         }
         crate::native_security::install(&view, permissions, proxy.clone(), id)?;
         crate::native_downloads::install(&view, downloads, proxy.clone(), id)?;
+        let progress = std::rc::Rc::new(NavigationProgress::default());
         // SAFETY: handlers are registered against live WebView2 objects on the UI/COM
         // apartment thread. They enqueue owned events; no COM object crosses threads.
         unsafe {
             let core = view.webview();
             let mut token = 0;
-            let progress = std::rc::Rc::new(NavigationProgress::default());
             let starting = progress.clone();
             let starting_proxy = proxy.clone();
             core.add_NavigationStarting(
@@ -180,12 +188,13 @@ impl Engine {
                 &mut token,
             )?;
             let completed_proxy = proxy.clone();
+            let completion = progress.clone();
             core.add_NavigationCompleted(
                 &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                     if let Some(args) = args {
                         let mut navigation_id = 0;
                         args.NavigationId(&mut navigation_id)?;
-                        if !progress.finish(navigation_id) {
+                        if !completion.finish(navigation_id) {
                             return Ok(());
                         }
                         let mut success = BOOL::default();
@@ -195,7 +204,7 @@ impl Engine {
                         } else {
                             let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
                             args.WebErrorStatus(&mut status)?;
-                            if status == COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED {
+                            if completion.cancelled(navigation_id, status) {
                                 let _ = completed_proxy
                                     .send_event(Event::Page(id, PageEvent::Cancelled));
                                 return Ok(());
@@ -236,7 +245,11 @@ impl Engine {
         if !related {
             crate::native_activity::watch_resources(&view, activity.clone())?;
         }
-        Ok(Self { view, activity })
+        Ok(Self {
+            view,
+            activity,
+            progress,
+        })
     }
 }
 
@@ -280,7 +293,13 @@ impl ContentEngine for Engine {
                 NavigationCommand::Back => core.GoBack()?,
                 NavigationCommand::Forward => core.GoForward()?,
                 NavigationCommand::Reload => core.Reload()?,
-                NavigationCommand::Stop => core.Stop()?,
+                NavigationCommand::Stop => {
+                    let previous = self.progress.stopped.replace(self.progress.current.get());
+                    if let Err(error) = core.Stop() {
+                        self.progress.stopped.set(previous);
+                        return Err(error.into());
+                    }
+                }
             }
         }
         Ok(())
@@ -351,5 +370,16 @@ mod tests {
             navigation_error(COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED).contains("name")
         );
         assert!(navigation_error(COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT).contains("too long"));
+    }
+    #[test]
+    fn only_an_explicit_stop_reclassifies_connection_aborted() {
+        let progress = NavigationProgress::default();
+        progress.begin(1);
+        assert!(!progress.cancelled(1, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED));
+        progress.stopped.set(Some(1));
+        assert!(progress.cancelled(1, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED));
+        assert!(!progress.cancelled(1, COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID));
+        progress.begin(2);
+        assert!(!progress.cancelled(2, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED));
     }
 }

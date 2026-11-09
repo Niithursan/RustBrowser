@@ -646,6 +646,7 @@ impl Session {
         }
         match command {
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
+            Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
                 if !height.is_finite() || !(80.0..=320.0).contains(&height) {
@@ -1397,6 +1398,10 @@ mod ux_validation;
 #[cfg(test)]
 #[path = "compat_validation.rs"]
 mod compat_validation;
+
+#[cfg(test)]
+#[path = "daily_validation.rs"]
+mod daily_validation;
 
 struct App {
     session: Option<Session>,

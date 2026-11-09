@@ -457,6 +457,7 @@ fn run(private: bool) {
     assert!(failure.is_none(), "{failure:?}");
     if private {
         assert_eq!(before, std::fs::read(root.join("session.json")).unwrap());
+        assert!(!root.join("local-diagnostics").exists());
     } else {
         let restored = storage::load(&root.join("session.json")).unwrap();
         assert_eq!(restored.tabs[0], navigation::HOME);

@@ -13,13 +13,13 @@ use windows::core::HSTRING;
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use wry::WebViewExtWindows;
 
-struct Server {
-    url: String,
+pub(super) struct Server {
+    pub(super) url: String,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Server {
-    fn start() -> Self {
+    pub(super) fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -86,6 +86,11 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
     let mut kind = "text/html";
     let mut status = "200 OK";
     let body=match path.split('?').next().unwrap_or("/") {
+        "/modern.html"=>include_bytes!("../validation/modern.html").to_vec(),
+        "/data.json"=>{kind="application/json";b"{\"value\":42}".to_vec()},
+        "/worker.js"=>{kind="application/javascript";b"onmessage=e=>postMessage(e.data*2)".to_vec()},
+        "/slow"=>{std::thread::sleep(Duration::from_millis(800));b"<!doctype html><title>Slow old navigation</title>old".to_vec()},
+        "/redirect-modern"=>{status="302 Found";extra="Location: /modern.html\r\n";Vec::new()},
         "/auth.html"=>b"<!doctype html><title>Fixture authentication</title><button id='finish' onclick=\"document.cookie='fixture_session=joined; SameSite=Lax; path=/';window.opener.postMessage('fixture-auth-complete',location.origin);window.close()\">Complete synthetic authentication</button>".to_vec(),
         "/upload"=>b"synthetic upload accepted".to_vec(),
         "/download"=>{kind="application/octet-stream";extra="Content-Disposition: attachment; filename=fixture.txt\r\n";vec![b'x';1024*1024]},

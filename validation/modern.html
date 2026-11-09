@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Modern compatibility loading</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'">
+<style>body{font:18px system-ui;margin:32px;background:#f4f7fc;color:#173049}input,button{font:inherit;padding:10px}pre{white-space:pre-wrap}</style>
+<h1>Controlled modern website</h1><p>Local fixture only. No accounts or real files.</p>
+<input id="entry" aria-label="Synthetic page text"><button id="route">Change SPA route</button><pre id="status" role="status">Starting</pre>
+<script type="module">
+try {
+  const data = await fetch('/data.json').then(r => r.json());
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('fixture'));
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('controlled-fixture', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('values');
+    request.onsuccess = () => resolve(request.result); request.onerror = reject;
+  });
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('values', 'readwrite');
+    transaction.objectStore('values').put('synthetic', 'key');
+    transaction.oncomplete = resolve; transaction.onerror = reject;
+  });
+  db.close();
+  const worker = new Worker('/worker.js');
+  const answer = await new Promise(resolve => {worker.onmessage=e=>resolve(e.data);worker.postMessage(21)});
+  worker.terminate();
+  document.cookie = 'controlled_session=ready; SameSite=Lax; path=/';
+  localStorage.setItem('controlled', 'ready');
+  document.getElementById('route').onclick=()=>{history.pushState({fixture:true},'', '/modern.html?route=2');document.getElementById('status').textContent='SPA route 2'};
+  window.controlled = {data:data.value, digest:bytes.byteLength, worker:answer,
+    ipc:typeof window.ipc, cookie:document.cookie.includes('controlled_session=ready'), storage:localStorage.getItem('controlled')};
+  document.getElementById('status').textContent=JSON.stringify(window.controlled,null,2);
+  document.title='Modern compatibility ready';
+} catch { document.title='Modern compatibility failed'; }
+</script></html>
