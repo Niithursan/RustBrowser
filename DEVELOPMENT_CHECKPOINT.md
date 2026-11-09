@@ -103,9 +103,13 @@ There is no bounded local application diagnostic journal or installer.
   an existing-but-empty buffered port file is a concrete race consistent with
   that error. Verify this fix after the soak; do not dismiss intermittent failure
   because the subsequent 58cdef9 CI happened to pass.
+- Documentation/screening checkpoint `3c0c975e8debd04971f45473c22aaf35522cdef1`
+  is pushed. [PR #14](https://github.com/Niithursan/RustBrowser/pull/14) is open
+  **as a draft**, targeting unchanged main. Do not mark ready before final checks.
 - Remaining: finish/inspect soak, record numeric findings/final acceptance,
-  review diff/links/workflow syntax, commit/push, open main PR and verify exact
-  final head Windows PR/push, dependency security and secret checks. Do not merge.
+  verify handshake/package edge assertions, review diff/links/workflow syntax,
+  commit/push, and verify exact final head Windows PR/push, dependency security
+  and secret checks. Then mark the PR ready for review. Do not merge.
 
 Historical results below must not be presented as new v0.11 validation.
 

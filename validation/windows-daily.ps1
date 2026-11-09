@@ -37,11 +37,13 @@ $null = $server.Handle
 $previous = $env:RUST_BROWSER_TLS_FIXTURE
 try {
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    while (-not (Test-Path -LiteralPath $portFile)) {
+    $port = ''
+    while (-not $port) {
         if ($server.HasExited -or $clock.Elapsed.TotalSeconds -gt 15) { throw "TLS fixture could not start. Inspect $run." }
+        if(Test-Path -LiteralPath $portFile){$port=([string](Get-Content -LiteralPath $portFile -Raw)).Trim()}
+        if($port){break}
         Start-Sleep -Milliseconds 50
     }
-    $port = (Get-Content -LiteralPath $portFile -Raw).Trim()
     if ($port -notmatch '^\d+$' -or [int]$port -lt 1 -or [int]$port -gt 65535) {throw 'Invalid owned fixture port.'}
     $env:RUST_BROWSER_TLS_FIXTURE = "https://127.0.0.1:$port/"
     & $Cargo test --locked --bin rust-browser native_daily_navigation_diagnostics_and_modern_sites -- --ignored --test-threads=1 --nocapture

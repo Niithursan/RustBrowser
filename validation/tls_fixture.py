@@ -4,6 +4,18 @@ import http.server
 import pathlib
 import ssl
 
+def publish_port(root, value):
+    """Expose only a complete closed file to the polling Windows parent."""
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise ValueError('Invalid loopback port')
+    target = root / 'tls-port.txt'
+    if target.exists():
+        raise FileExistsError('Port handshake already exists')
+    pending = root / 'tls-port.tmp'
+    with pending.open('x', encoding='ascii') as port:
+        port.write(str(value))
+    pending.rename(target)
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -25,8 +37,7 @@ def main():
     context.load_cert_chain(root / 'tls-cert.pem', root / 'tls-key.pem')
     with http.server.HTTPServer(('127.0.0.1', 0), Handler) as server:
         server.socket = context.wrap_socket(server.socket, server_side=True)
-        with (root / 'tls-port.txt').open('x', encoding='ascii') as port:
-            port.write(str(server.server_port))
+        publish_port(root, server.server_port)
         server.serve_forever()
 
 if __name__ == '__main__':

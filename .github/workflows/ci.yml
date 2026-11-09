@@ -29,6 +29,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           .\tests\servo_tools.ps1 -TestRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-servo-tests')
           python -m unittest discover -s experiments/servo -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Experimental fixture tests failed' }
+          python -m unittest discover -s validation -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Production fixture handshake tests failed' }
       # Separate processes: winit permits one event loop per process.
       - name: Native WebView2 isolation and permissions
         run: cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
