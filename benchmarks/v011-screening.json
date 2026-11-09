@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "validity": "withdrawn: sampler did not validate PID generations; repeat with the corrected sampler",
   "definitions": {"memory": "Run means of labelled idle samples; final three after_close samples for recovery. MiB.", "cpu": "Sum of CPU deltas after the first sample within the labelled interval, divided by sample span, times 100. One core=100%; machine percent=one core/12.", "switch": "Selected-document JavaScript callback proxy, not input-to-display latency.", "startup": "Instrumented first usable proxy, excluding process/test-runner setup; fresh profile is not OS cold.", "privacy": "Only allowlisted numeric results and fixed benchmark labels. Raw IDs/profiles/paths/logs excluded."},
   "sources": {
     "baseline": {

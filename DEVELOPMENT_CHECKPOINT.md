@@ -100,6 +100,26 @@ There is no bounded local application diagnostic journal or installer.
 - A fresh 1800-second retry is active in work/v11/soak-retry-results using the
   same fixed candidate (exec session 53583, started 2026-11-09 12:45 Toronto).
   Do not run competing local builds/native tests/GUI.
+- UPDATE: that retry completed 1859 s / 178 cycles and normal child exit, but
+  its diagnostic journal contains 178 NavigationFailed events. It is NOT an
+  error-free browsing pass. A short controlled probe reproduced status 9 on
+  replacing a freshly opened about:blank. Investigating proactive supersession
+  before the next NavigationStarting callback; preserve genuine network errors.
+- The short probe also exposed sampler PID reuse: stale ParentProcessId links
+  attributed unrelated old processes (80 alive/170 unavailable) and delayed its
+  child-exit wait despite the owned browser having exited. Its owned exec session
+  7356 was cancelled. Fix creation-time identity checks and bounded real-time
+  child waits; invalidate/repeat affected performance numbers rather than use
+  contaminated counts. Test-only error capture is uncommitted in benchmark_probe.
+- UPDATE: implemented birth-time validated process trees, PID-generation-safe
+  cleanup, numeric export allowlist and sampler regressions. Short native churn
+  now measures 15 processes for two tabs / 14 after close, exits normally, and
+  has no navigation errors. The first proactive invalidation alone was insufficient:
+  initial blank NavigationStarting arrives after host replacement. Awaiting-web
+  state now rejects that obsolete blank start. Genuine status-9 failures remain
+  errors; Stop remains independently guarded. 60 regular tests, strict Clippy,
+  sampler tests and the stronger native daily case pass. Current changes not
+  committed yet. Withdrawn old comparisons must be replaced using fixed sampling.
 - Documentation and sanitized matched screening are prepared for checkpoint.
   Atomic TLS publication/empty-read polling checkpoint `dd00883` is pushed;
   three new Python tests pass locally. The modern native fixture and updated

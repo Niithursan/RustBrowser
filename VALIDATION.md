@@ -47,6 +47,12 @@ claim follows from the native fixtures or public-site smoke checks.
 
 The pushed code checkpoint's [Windows CI passed](https://github.com/Niithursan/RustBrowser/actions/runs/42566063522).
 Final PR/head CI and final soak results will be recorded before review delivery.
+**Correction:** that initial screening is withdrawn after a reproduced PID-reuse
+bug in the sampler. A completed 30-minute workload also revealed 178 false
+navigation failures on replacing new blank pages. Strict checks and 60 regular
+tests now pass with proactive supersession/deferred-blank handling; the stronger
+native regression and short workload pass with no errors and identity-correct
+child accounting. Corrected matched measurements and a clean soak are pending.
 Release packaging control flow is reviewed and locally tested at the producer
 level; no tag, workflow publication, installer or GitHub release was executed.
 

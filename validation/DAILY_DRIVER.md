@@ -3,7 +3,8 @@
 This is a verified development subset, **not production-readiness certification**.
 Baseline: PR #13, squash `729198d023384103da0464f1148031aa6e681566`, production
 0.8.0. Candidate production code: `58cdef9e9017e76a03c01baebbf9b44ad17dffcd`,
-version 0.11.0. Later delivery commits change packaging/procedures/documentation.
+version 0.11.0. Later delivery commits change packaging, procedures, documentation
+and test-only fixtures.
 See [architecture](../ARCHITECTURE.md), [performance](../benchmarks/V011_RESULTS.md)
 and [Windows installation](../INSTALL_WINDOWS.md).
 

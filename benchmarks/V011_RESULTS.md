@@ -1,5 +1,20 @@
 # v0.11 Windows performance findings
 
+> **Withdrawn screening below.** A later short probe reproduced process-ID reuse:
+> old ParentProcessId references attributed unrelated processes to a new browser
+> PID. The sampler now validates process creation times, strips internal IDs by
+> an explicit export allowlist and verifies child exit by identity. The initial
+> numbers are retained for audit only and must not support comparisons. Corrected
+> matched runs and a fresh error-free soak are pending.
+>
+> The first soak was interrupted at 1176.707 s / 113 cycles. A second completed
+> 178 cycles / 1859 s but recorded 178 navigation errors. A short reproduction
+> identified status 9 from superseded initial about:blank navigation. The adapter
+> now invalidates superseded work before the next native start, and rejects a
+> deferred blank start while awaiting the requested web document. The focused
+> native and short error-checking workload pass. A completed process alone is
+> not counted as a clean browsing pass.
+
 This is a small matched synthetic screening comparison, not a speedup claim.
 Production baseline is PR #13 `729198d023384103da0464f1148031aa6e681566`
 (0.8.0); candidate production code is
@@ -96,6 +111,9 @@ footprint. Neither a leak nor leak freedom follows from this short screening.
 CPU cells are median [min–max] of one-core percent. Callback cells are medians
 of each run's per-tab callback median, milliseconds; full per-run maxima/ranges
 are in the JSON. Overall callback maxima were 35.7 ms baseline, 34.0 ms candidate.
+The labelled idle phase still runs the deliberate timer/busy-work fixture. This
+is steady-state scripted-workload CPU, not a fully quiescent empty browser or
+whole-machine idle measurement; that separate endpoint was not measured.
 
 | Tabs | Profile | Baseline idle CPU | Candidate idle CPU | Baseline callback | Candidate callback |
 | ---: | --- | ---: | ---: | ---: | ---: |
