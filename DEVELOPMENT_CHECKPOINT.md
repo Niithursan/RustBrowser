@@ -1,6 +1,42 @@
 # v0.11 development checkpoint
 
-## Latest continuation — supersedes older active/passing claims below
+## Claude Code continuation (2026-11-09) — supersedes all entries below
+
+Took over from Codex at pushed `d77d9c9` (clean tree, branch = origin). No code
+was changed; this session produced evidence and documentation only.
+
+- **Not independently verified:** remote CI. `gh` is not installed and the repo
+  is private; reading the Git Credential Manager token was (correctly) refused.
+  The user reported Windows CI 42679482842 and security 42679483172 green at
+  `d77d9c9`. Verify the final pushed head with `gh` before marking PR #14 ready.
+- Local toolchain: Rust 1.99.1 lives in `~/.rustup/toolchains/1.99.1-x86_64-pc-windows-msvc/bin`
+  and is not on PATH by default; prepend it.
+- **Warm tab-close failure:** not reproduced. 5-tab fresh+warm ×6 on the current
+  candidate (12/12 pass, no close diagnostic emitted) and ×6 on the old
+  `28b292a` candidate without the focus fix (12/12 pass), plus 4/4 in the final
+  campaign. Original failure coincided with a locked desktop and logged no native
+  error. Characterized as unconfirmed root cause; test builds now log it.
+- **Final campaign** (`work/v11/run-final.ps1`, hashes in `work/v11/final-binaries.json`):
+  frozen baseline `7f54d2bb…` vs candidate `576c6702…` (built at `d77d9c9`),
+  16 cases alternating order, all 32 runs done with zero navigation errors.
+  Mixed results; no performance claim. Sanitized: `benchmarks/v011-corrected.json`
+  (summarizer `work/v11/summarize-final.py`).
+- **30-minute soak PASSED** (`work/v11/final-soak`): 1798.9 s, 178 cycles, zero
+  navigation errors, normal exit, journal only start/started/clean_shutdown.
+  Sanitized: `benchmarks/v011-soak.json` (summarizer `work/v11/summarize-soak-final.py`).
+- Local gates at `d77d9c9` source (docs-only changes since): fmt, strict Clippy,
+  60 regular tests, all 7 separate native tests, 3/3 independent daily native
+  runs, debug and release builds passed. `cargo audit --deny warnings`
+  (cargo-audit 0.22.2, 1430 advisories, 369 crates) passed.
+  Note: running `windows-daily.ps1` with `*>&1` redirection in PowerShell 5.1
+  makes cargo's stderr a terminating error; invoke it plainly, as CI does.
+- Still unverified (unchanged): final manual GUI recheck of post-`58cdef9`
+  production fixes, personal sign-in, physical IME/AltGr, mixed-DPI, DRM/devices,
+  screen reader, system sleep/wake, clean-machine install, signing.
+- Next session: confirm final-head CI with `gh`, update PR #14 body, and only then
+  decide on marking it ready. Do not merge, tag or publish.
+
+## Codex continuation — superseded by the section above
 
 - PR #14 remains draft. Main, tags and releases are unchanged.
 - Corrected campaign session 96778 exited with failure after 13 successful cases:

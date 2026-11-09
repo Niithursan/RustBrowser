@@ -18,7 +18,9 @@
   until restoration, retaining visibility, resize and engine error handling.
 - Corrected benchmark process identity after reproducing PID reuse contamination;
   sampling/cleanup now validate creation times and export numeric fields only.
-  The initial comparisons are withdrawn; corrected measurements remain incomplete.
+  The initial comparisons are withdrawn and replaced by an alternating-order
+  corrected comparison (mixed results, no improvement claimed) and a clean
+  30-minute synthetic churn soak.
 - Added status-specific navigation recovery advice, Light chrome, stronger keyboard
   focus outlines, reduced-motion-aware loading progress and dismissible notices.
 - Added controlled modern JavaScript/storage/SPA/cross-origin/TLS/native regression

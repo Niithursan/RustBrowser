@@ -37,10 +37,11 @@ Local Windows 11 x64 / Rust 1.99.1 / WebView2 157.0.4341.42 checks passed on
   panels and normal restart with URLs/active tab/pin/theme/bookmark preserved.
   See [the acceptance matrix](validation/DAILY_DRIVER.md) for precise limits.
 
-[Matched numeric screening](benchmarks/V011_RESULTS.md) records two fresh/warm
-repeats at 1/5/10/20 tabs against unchanged baseline, with Runtime/hardware/method
-and variability. A separate 30-minute synthetic soak is in progress; it is not
-yet a passing result. True OS-cold startup, pixel presentation latency, real
+[Corrected matched measurements](benchmarks/V011_RESULTS.md) record two fresh/warm
+repeats at 1/5/10/20 tabs, alternating order, against unchanged baseline using the
+identity-validated sampler. Results are mixed; no performance improvement is
+claimed. A fresh 30-minute 20-tab synthetic churn soak at `d77d9c9` passed with
+178 cycles and zero navigation errors. True OS-cold startup, pixel presentation latency, real
 accounts/devices/DRM, physical sleep/wake, mixed-DPI/screen-reader acceptance and
 clean-machine installation remain unverified. No broad performance or readiness
 claim follows from the native fixtures or public-site smoke checks.
@@ -52,7 +53,10 @@ bug in the sampler. A completed 30-minute workload also revealed 178 false
 navigation failures on replacing new blank pages. Strict checks and 60 regular
 tests now pass with proactive supersession/deferred-blank handling; the stronger
 native regression and short workload pass with no errors and identity-correct
-child accounting. Corrected matched measurements and a clean soak are pending.
+child accounting. Corrected matched measurements and the clean soak were completed
+afterwards (see above). The single warm-profile `Tab closing failed` from the
+stopped corrected campaign did not reproduce in 28 later runs; its root cause is
+unconfirmed.
 Release packaging control flow is reviewed and locally tested at the producer
 level; no tag, workflow publication, installer or GitHub release was executed.
 

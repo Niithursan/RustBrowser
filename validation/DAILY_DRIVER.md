@@ -2,9 +2,10 @@
 
 This is a verified development subset, **not production-readiness certification**.
 Baseline: PR #13, squash `729198d023384103da0464f1148031aa6e681566`, production
-0.8.0. Candidate production code: `58cdef9e9017e76a03c01baebbf9b44ad17dffcd`,
-version 0.11.0. Later delivery commits change packaging, procedures, documentation
-and test-only fixtures.
+0.8.0. Manual GUI rows used production code `58cdef9e9017e76a03c01baebbf9b44ad17dffcd`,
+version 0.11.0; later production fixes (`c3ed142` navigation supersession, `99b7f2e`
+minimized focus) are covered by native/automated rows, not a repeated manual GUI pass.
+Measurement and soak rows use `d77d9c9277f968e58d9b01f1db7680e0eb8aeec7`.
 See [architecture](../ARCHITECTURE.md), [performance](../benchmarks/V011_RESULTS.md)
 and [Windows installation](../INSTALL_WINDOWS.md).
 
@@ -51,7 +52,8 @@ v0.11 manual results. No failing assertion was removed to obtain a pass.
 | Corruption, future schemas and I/O failure | Pass | Regular session/library/diagnostic tests preserve originals and report controlled failures. Real full disk/hardware failure not induced. |
 | Profile locking/concurrent diagnostics | Pass | Existing profile lock plus new journal lock tests prevent a second writer/clear. No manual bypass/removal of live locks. |
 | Sleeping-tab lifecycle and protected activity | Pass | Existing native state/controller/resume tests plus guard/race unit tests. Arbitrary activity cannot always be detected; Keep awake remains necessary. |
-| Extended stability/resource sampling | Pending | Separate 30-minute 20-tab synthetic run is in progress; final result will replace this row. Not a 30-minute interactive real-site session. |
+| Extended stability/resource sampling | Pass | Candidate `d77d9c9`, fresh disposable profile, 20 tabs, 1799 s synthetic churn soak: 178 cycles, zero navigation errors, normal shutdown, journal only start/clean-shutdown, all final switches responsive. See [results](../benchmarks/V011_RESULTS.md). Not an interactive real-site, media or download session; no leak-freedom claim. |
+| Warm-profile tab close (corrected campaign failure) | Not reproduced | One `Tab closing failed` at `28b292a` during a locked-desktop period; 28 later runs (12 on the pre-fix binary) passed. Minimized-window focus rejection is fixed and regression-tested; the original root cause is unconfirmed. |
 | High DPI/mixed monitors/IME/screen-reader/system sleep | Not tested | Native fixture synthetic scale/composition checks preserved. Physical configurations and Windows sleep/wake remain separate work. |
 | Portable integrity/metadata/profile-output refusal | Pass | Two equal-input ZIP hashes, exact file allowlist, all manifest hashes and unsafe path/profile/reparse refusals passed. Unsigned x64/asInvoker resources and VC Runtime DLL imports inspected. |
 | Clean-machine install/uninstall/rollback/signing | Not tested | MSI/MSIX evaluated; portable manual procedure selected. No installer/registry/auto-update change or signed artifact. |

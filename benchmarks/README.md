@@ -1,7 +1,7 @@
 # Windows performance procedure
 
 Current [v0.11 matched results](V011_RESULTS.md) and
-[sanitized per-run numbers](v011-screening.json) compare unchanged production
+[sanitized per-run numbers](v011-corrected.json) compare unchanged production
 0.8.0 with 0.11.0 under the same probe. [RESULTS.md](RESULTS.md) retains historical
 v0.4/v0.5 findings. Fresh-profile startup is not an OS-cold measurement.
 
