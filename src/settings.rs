@@ -56,6 +56,7 @@ impl Default for Settings {
 pub enum Theme {
     #[default]
     Dark,
+    Light,
     Slate,
     Plum,
 }

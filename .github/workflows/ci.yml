@@ -27,8 +27,12 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          .\tests\process_tree.ps1
           .\tests\servo_tools.ps1 -TestRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-servo-tests')
           python -m unittest discover -s experiments/servo -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Experimental fixture tests failed' }
+          python -m unittest discover -s validation -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Production fixture handshake tests failed' }
       # Separate processes: winit permits one event loop per process.
       - name: Native WebView2 isolation and permissions
         run: cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
@@ -44,8 +48,21 @@ jobs:
         run: cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
+      - name: Native daily-driver compatibility, diagnostics and untrusted TLS
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Independent fresh profiles; every run must pass. These are not retries.
+          foreach ($attempt in 1..3) {
+            .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP "rust-browser-daily-validation-$attempt")
+          }
       - run: cargo build --locked
       - run: cargo build --locked --release
+      - name: Portable package metadata, integrity and output safety
+        shell: powershell
+        run: |
+          $commit = git rev-parse HEAD
+          .\tests\windows_package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-packaging-tests') -SourceCommit $commit
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rust-browser-windows-x64

@@ -1,5 +1,53 @@
 # Security
 
+## v0.11 production hardening
+
+WebView2 remains the sole production engine. No Servo sandbox integration, browsing
+allowlist expansion or profile sharing is introduced. Existing default-deny website
+permissions, linked-popup boundaries, native external-protocol blocking, certificate
+validation and separate trusted UI context remain in place. The new controlled TLS
+test observes rejection of an untrusted self-signed certificate; it installs no root,
+changes no certificate policy and adds no production certificate handler.
+
+Only the exact generated toolbar document receives Rust Browser's command bridge.
+Remote pages, workers, redirects and popup content receive no application IPC. The
+modern native suite rechecks this boundary alongside cross-origin local storage.
+Explicit Stop is distinguished from genuine connection/certificate failure; a status
+9 abort is cancellation only for the same native navigation ID the host stopped.
+HTTPS is connection encryption, never a claim of site trustworthiness.
+
+Local diagnostic records accept only a fixed enum, timestamps and counts. No API
+accepts URL/title/path/error strings, tokens, cookies, credentials, page/form contents
+or request bodies. Private windows create no diagnostic files/worker. The normal
+profile journal is bounded (128 entries/32 KiB, plus a same-sized temp), asynchronously
+coalesced and never uploaded. Times/counts still reveal app usage; it is plaintext
+under the Windows account's profile protections, not encrypted or anonymized data.
+Inspect/confirmed clear is separate from browsing-history deletion and does not remove
+bookmarks/cookies/sessions/downloads. New events may follow clearing. Corrupt/unknown
+files are preserved until explicitly reset. Local reparse/ordinary-file checks do
+not defend against malware running as the same account replacing files mid-operation.
+
+Unclean-exit detection is best effort. Journal writes/marker cleanup are not a single
+transaction with all engine/session/SQLite shutdown work, and missing markers do not
+prove every flush succeeded. Early startup failures may have no profile/journal.
+Release startup and panic feedback is static; no payload/path/backtrace or automatic
+crash report is uploaded. It does not replace Runtime/OS crash reporting or restore
+unsaved forms. See [architecture](ARCHITECTURE.md) and [acceptance limits](validation/DAILY_DRIVER.md).
+
+The unsigned executable embeds version metadata and `asInvoker`, with `uiAccess=false`.
+It requests no administrator access but inherits its launcher's rights; this is not
+a sandbox and users should not launch elevated. Portable packages use a fixed file
+allowlist and SHA-256 integrity manifest. Hashes do not authenticate the publisher.
+No installer/service/updater is added; signing, authenticated updates and clean-machine
+upgrade/rollback verification remain unresolved. GitHub Release publication now needs
+an explicitly approved manual workflow action; this task creates no tag or release.
+
+The development tests' fresh TLS keys, profiles, raw logs and downloaded fixture data
+remain outside Git. Do not include them in issues or package artifacts. New production
+features justify the version jump; the default data folder and database formats are
+preserved. Older binaries may reject Light settings; use closed-profile backups for
+rollback rather than editing a live SQLite database or deleting locks.
+
 The v0.10 [rendering decision](experiments/servo/SECURE_RENDERING_V010.md)
 keeps the Servo host fixture-only. The synthetic diagnostic workers retain
 Win32k and child-process restrictions, zero capabilities and verified token

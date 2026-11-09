@@ -18,6 +18,11 @@ pub const HTML: &str = include_str!("toolbar.html");
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
+    RefreshDiagnostics,
+    DismissNotice,
+    ClearDiagnostics {
+        confirmed: bool,
+    },
     MoveTab {
         id: TabId,
         to: usize,
@@ -102,6 +107,7 @@ pub struct TabState<'a> {
 
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
+    pub diagnostics: Option<rust_browser::diagnostics::Report>,
     pub settings: &'a rust_browser::settings::Settings,
     pub private: bool,
     pub restore_session: bool,
@@ -122,6 +128,10 @@ pub struct ToolbarState<'a> {
 
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.
 pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
+    // Windows reports AltGr text entry as Ctrl+Alt. Leave those keys to the page.
+    if ctrl && alt {
+        return None;
+    }
     match (key, ctrl, alt) {
         (0x21, true, _) if shift => Some(Command::MoveActive(true)),
         (0x22, true, _) if shift => Some(Command::MoveActive(false)),
@@ -141,5 +151,51 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
         (0x09, true, _) => Some(Command::CycleTab(shift)),
         (0x76, _, _) => Some(Command::FocusPage),
         _ => None,
+    }
+}
+
+pub fn repeatable(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::CycleTab(_) | Command::FocusAddress | Command::FocusPage | Command::FocusTabs
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn altgr_combinations_do_not_run_browser_commands() {
+        for key in [0x44, 0x4c, 0x52, 0x54, 0x57, 0x48, 0x4a] {
+            assert!(
+                shortcut(key, true, true, false).is_none(),
+                "AltGr was intercepted"
+            );
+        }
+    }
+    #[test]
+    fn repeats_do_not_multiply_tab_actions_and_standard_shortcuts_survive() {
+        assert!(!repeatable(&Command::NewTab));
+        assert!(!repeatable(&Command::CloseActive));
+        assert!(!repeatable(&Command::NewPrivateWindow));
+        assert!(!repeatable(&Command::PinActive));
+        assert!(repeatable(&Command::CycleTab(false)));
+        assert!(matches!(
+            shortcut(0x54, true, false, false),
+            Some(Command::NewTab)
+        ));
+        assert!(matches!(
+            shortcut(0x4c, true, false, false),
+            Some(Command::FocusAddress)
+        ));
+        assert!(matches!(
+            shortcut(0x44, false, true, false),
+            Some(Command::FocusAddress)
+        ));
+        assert!(matches!(
+            shortcut(0x09, true, false, true),
+            Some(Command::CycleTab(true))
+        ));
+        assert!(shortcut(0x46, true, false, false).is_none());
     }
 }

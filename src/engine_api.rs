@@ -88,6 +88,7 @@ impl LoadTarget {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PageEvent {
     Loading,
+    Cancelled,
     Changed,
     Completed {
         error: Option<String>,

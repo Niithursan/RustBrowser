@@ -20,6 +20,7 @@ struct Metrics {
     scale_factor: f64,
     tabs: usize,
     churn_cycles: u64,
+    navigation_errors: Vec<String>,
 }
 struct Probe {
     app: App,
@@ -74,6 +75,9 @@ impl Probe {
             .unwrap_or_default()
     }
     fn poll(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+        if let Some(error) = self.metrics.navigation_errors.first() {
+            return Err(format!("Controlled benchmark navigation failed: {error}"));
+        }
         if self.phase == 7 {
             return Ok(());
         }
@@ -249,6 +253,17 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(event_loop, id, event);
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        if let Event::Page(
+            _,
+            PageEvent::Completed {
+                error: Some(error), ..
+            }
+            | PageEvent::Error(error),
+        ) = &event
+            && self.metrics.navigation_errors.len() < 8
+        {
+            self.metrics.navigation_errors.push(error.clone());
+        }
         if matches!(&event, Event::Command(Command::Ready)) {
             self.toolbar_ready = true;
         }

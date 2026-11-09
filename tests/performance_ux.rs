@@ -270,6 +270,19 @@ fn new_tab_settings_reject_remote_active_content_and_invalid_values() {
 }
 
 #[test]
+fn light_theme_is_additive_and_does_not_change_old_session_defaults() {
+    let old: Settings = serde_json::from_str("{}").unwrap();
+    assert_eq!(old.theme, Theme::Dark);
+    let light: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
+    light.validate().unwrap();
+    assert_eq!(light.theme, Theme::Light);
+    assert_eq!(
+        serde_json::from_str::<Settings>(&serde_json::to_string(&light).unwrap()).unwrap(),
+        light
+    );
+}
+
+#[test]
 fn private_and_retention_disabled_sessions_discard_new_metadata() {
     let state = Snapshot {
         tabs: vec!["https://example.com/private".into()],

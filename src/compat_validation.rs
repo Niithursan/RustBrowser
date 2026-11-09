@@ -13,13 +13,13 @@ use windows::core::HSTRING;
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use wry::WebViewExtWindows;
 
-struct Server {
-    url: String,
+pub(super) struct Server {
+    pub(super) url: String,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Server {
-    fn start() -> Self {
+    pub(super) fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -28,6 +28,12 @@ impl Server {
         let thread = std::thread::spawn(move || {
             while !flag.load(Ordering::Relaxed) {
                 if let Ok((stream, _)) = listener.accept() {
+                    // Windows accepted sockets inherit the listener's
+                    // non-blocking mode; restore blocking reads so the read
+                    // timeout applies instead of an immediate WouldBlock.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
                     std::thread::spawn(move || {
                         let _ = serve(stream);
                     });
@@ -86,6 +92,11 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
     let mut kind = "text/html";
     let mut status = "200 OK";
     let body=match path.split('?').next().unwrap_or("/") {
+        "/modern.html"=>include_bytes!("../validation/modern.html").to_vec(),
+        "/data.json"=>{kind="application/json";b"{\"value\":42}".to_vec()},
+        "/worker.js"=>{kind="application/javascript";b"onmessage=e=>postMessage(e.data*2)".to_vec()},
+        "/slow"=>{std::thread::sleep(Duration::from_millis(800));b"<!doctype html><title>Slow old navigation</title>old".to_vec()},
+        "/redirect-modern"=>{status="302 Found";extra="Location: /modern.html\r\n";Vec::new()},
         "/auth.html"=>b"<!doctype html><title>Fixture authentication</title><button id='finish' onclick=\"document.cookie='fixture_session=joined; SameSite=Lax; path=/';window.opener.postMessage('fixture-auth-complete',location.origin);window.close()\">Complete synthetic authentication</button>".to_vec(),
         "/upload"=>b"synthetic upload accepted".to_vec(),
         "/download"=>{kind="application/octet-stream";extra="Content-Disposition: attachment; filename=fixture.txt\r\n";vec![b'x';1024*1024]},
@@ -564,4 +575,32 @@ fn run(crash: bool) {
     assert!(result.is_ok());
     assert!(failure.is_none(), "{failure:?}");
     assert_eq!(phase, 100);
+}
+
+/// Regression: on Windows an accepted socket inherits the listener's
+/// non-blocking mode, so a request that arrives after `accept` used to fail
+/// the first read with `WouldBlock` and drop the connection without a
+/// response (WebView2 then reported navigation status 0 with no HTTP code).
+#[test]
+fn loopback_server_serves_requests_sent_after_accept() {
+    let server = Server::start();
+    let address = server
+        .url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
+    let mut client = TcpStream::connect(&address).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    // Give the accept loop (5 ms poll) time to accept before any bytes arrive.
+    std::thread::sleep(Duration::from_millis(150));
+    client
+        .write_all(b"GET /data.json HTTP/1.1\r\nHost: fixture\r\n\r\n")
+        .unwrap();
+    let mut response = Vec::new();
+    let _ = client.read_to_end(&mut response);
+    let text = String::from_utf8_lossy(&response);
+    assert!(text.starts_with("HTTP/1.1 200 OK"), "{text:?}");
+    assert!(text.ends_with("{\"value\":42}"), "{text:?}");
 }

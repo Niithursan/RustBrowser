@@ -34,7 +34,7 @@ pub fn install(
             &mut token,
         )?;
         let p = proxy.clone();
-        core.add_ProcessFailed(&ProcessFailedEventHandler::create(Box::new(move|_,_|{let _=p.send_event(Event::Page(id,crate::app::PageEvent::Error("A WebView2 process failed. Keep this tab and try Reload; if that fails, restart the browser. Unsaved page changes may be lost.".into())));Ok(())})),&mut token)?;
+        core.add_ProcessFailed(&ProcessFailedEventHandler::create(Box::new(move|_,_|{let _=p.send_event(Event::RendererFailed);let _=p.send_event(Event::Page(id,crate::app::PageEvent::Error("A WebView2 process failed. Keep this tab and try Reload; if that fails, restart the browser. Unsaved page changes may be lost.".into())));Ok(())})),&mut token)?;
         let a = activity.clone();
         let p = proxy.clone();
         core.add_ContainsFullScreenElementChanged(

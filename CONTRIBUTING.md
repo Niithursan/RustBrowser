@@ -16,4 +16,17 @@ Recommended repository rules: require pull requests and the `Windows quality and
 
 ## Releases
 
-After merging a version bump and changelog entry, tag the tested main commit with the matching Cargo version (for example `v0.1.0`) and push that tag. The release workflow verifies the tag, repeats Windows checks and security audit, builds a portable ZIP with SHA-256 checksum, and creates a GitHub release. It does not deploy a website, publish to crates.io, or sign the executable. Do not tag an unverified build.
+Obtain explicit approval before creating or pushing a release tag. After the
+version bump and changelog are merged and main is verified, an approved matching
+tag (for example `v0.11.0`) can trigger package validation. The workflow checks
+the exact tag commit and main ancestry, repeats production/native checks and
+dependency audit, then creates portable ZIP/checksum Actions artifacts.
+
+Tag push alone does **not** publish a GitHub Release. Publication requires an
+explicitly approved manual Windows release workflow invocation with the existing
+stable `release_tag` and `publish` enabled. It rebuilds/validates that tag, verifies
+the downloaded artifact checksum and refuses a missing tag. Review the package
+and CI before requesting publication. This milestone does not invoke either
+release action. See [Windows installation](INSTALL_WINDOWS.md) for packaging,
+unsigned-executable, upgrade and removal limits. There is no deployment,
+crates.io publication, signing or automatic updater.

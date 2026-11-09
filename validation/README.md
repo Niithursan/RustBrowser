@@ -1,4 +1,21 @@
-# v0.6 compatibility and reliability validation
+# Compatibility and reliability validation
+
+The current [v0.11 acceptance record](DAILY_DRIVER.md) separates unit/native/GUI
+results and remaining daily-driver gaps. CI runs eight native WebView2 cases,
+including the controlled scale/composition comparison fixture and the modern
+daily suite below. Older manual procedures/results retain their original scope.
+
+For modern modules/fetch/crypto/IndexedDB/worker/SPA/cross-origin navigation,
+diagnostics/Stop/address/theme checks and actual untrusted-certificate rejection:
+
+```powershell
+.\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:TEMP ('rust-browser-daily-'+[guid]::NewGuid().ToString('N')))
+```
+
+Python 3 and OpenSSL (PATH, Git for Windows, or `-OpenSsl`) are fixture-only
+prerequisites. They are not production dependencies. Generated test keys and
+profiles stay outside Git; no trust-store modification is made. Run each native
+test in a separate process and keep production audit/Clippy gates intact.
 
 Use isolated disposable profiles and synthetic data. No account credentials, device
 permissions, external authentication provider or real file upload is required.
@@ -8,7 +25,8 @@ outside Git. [COMPATIBILITY.md](COMPATIBILITY.md) records the tested subset and 
 
 ## Native regressions
 
-Run each separately: winit permits one event loop per process. CI runs all six.
+Run each separately: winit permits one event loop per process. These six historical
+cases remain required; CI also runs the comparison fixture and daily suite.
 
 ```powershell
 cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1

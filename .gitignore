@@ -20,6 +20,7 @@
 /library.sqlite*
 /library.corrupt-*
 private-contexts/
+local-diagnostics/
 .rust-browser-download-*/
 /bin/
 Thumbs.db

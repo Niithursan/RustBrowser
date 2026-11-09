@@ -1,5 +1,10 @@
 # v0.5 Windows performance findings
 
+Historical record. Current production-hardening measurements are in
+[V011_RESULTS.md](V011_RESULTS.md), with matched repeated baseline/current
+conditions and explicit unavailable endpoints. Do not treat the v0.5 numbers
+below as newly measured v0.11 results.
+
 Measured on 2026-11-07: AMD Ryzen 5 5600 (6 cores / 12 logical processors), 31.93 GiB
 RAM, Windows 11 Pro 10.0.26200 x64, WebView2 **157.0.4341.42**, Rust 1.99.1/MSVC,
 scale factor 1.0. Power plan was not changed or independently recorded. No other

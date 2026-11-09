@@ -43,15 +43,18 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
         $process=Start-Process -FilePath $executable -ArgumentList @('windows_performance_probe','--ignored','--test-threads=1') -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $case "$mode.stdout.txt") -RedirectStandardError (Join-Path $case "$mode.stderr.txt")
         # Retain the native handle so Windows PowerShell can retrieve ExitCode after exit.
         $null=$process.Handle
-        $clock=[Diagnostics.Stopwatch]::StartNew();$samples=[Collections.Generic.List[object]]::new();$cpuState=@{};$lastMetrics=$null;$treeIds=@()
+        $created=$process.StartTime.ToUniversalTime()
+        $clock=[Diagnostics.Stopwatch]::StartNew();$samples=[Collections.Generic.List[object]]::new();$cpuState=@{};$lastMetrics=$null;$observed=@{}
         while(-not $process.HasExited) {
             if($clock.Elapsed.TotalSeconds -gt (360+$SoakSeconds)){throw 'Benchmark exceeded its timeout; inspect the test process and logs.'}
             if(Test-Path -LiteralPath $metricsPath){try{$lastMetrics=Read-SharedText $metricsPath | ConvertFrom-Json}catch{}}
             $stage=if($lastMetrics){$lastMetrics.stage}else{'startup'}
-            $sample=Sample-Tree $process.Id $cpuState $clock.Elapsed.TotalSeconds $stage;$treeIds=$sample.ids
-            $samples.Add(($sample | Select-Object -ExcludeProperty ids))
+            $sample=Sample-Tree $process.Id $cpuState $clock.Elapsed.TotalSeconds $stage $created
+            foreach($identity in $sample.identities){$observed["$($identity.id)/$($identity.created.Ticks)"]=$identity}
+            $public=Public-ResourceSample $sample
+            $samples.Add($public)
             # Preserve numeric evidence even if the probe later fails or is interrupted.
-            $sample | Select-Object -ExcludeProperty ids | Export-Csv -LiteralPath (Join-Path $case "$mode.samples.csv") -Append -NoTypeInformation -Encoding utf8
+            $public | Export-Csv -LiteralPath (Join-Path $case "$mode.samples.csv") -Append -NoTypeInformation -Encoding utf8
             Start-Sleep -Milliseconds 750
             $process.Refresh()
         }
@@ -60,10 +63,11 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
         $metrics=Read-SharedText $metricsPath | ConvertFrom-Json
         if($metrics.stage -ne 'done'){throw 'Benchmark did not complete all phases.'}
         # Avoid attributing a previous run's lingering engine processes to the next run.
-        for($attempt=0;$attempt -lt 240;$attempt++) {
-            $remaining=@($treeIds | Where-Object {$_ -ne $process.Id} | ForEach-Object {Get-Process -Id $_ -ErrorAction SilentlyContinue})
+        $exitWait=[Diagnostics.Stopwatch]::StartNew()
+        do {
+            $remaining=@(Live-ObservedChildren @($observed.Values) $process.Id)
             if($remaining.Count -eq 0){break};Start-Sleep -Milliseconds 250
-        }
+        } while($exitWait.Elapsed.TotalSeconds -lt 60)
         if($remaining.Count -gt 0){throw 'Previous WebView2 children remained alive; measurements would be incomplete.'}
         $results.Add([ordered]@{label=$Label;tabs=$count;mode=$mode;repeat=$repeat;metrics=$metrics;samples=@($samples.ToArray())})
         [ordered]@{hardware=$hardware;parameters=@{settle=$SettleSeconds;sample=$SampleSeconds;soak=$SoakSeconds;recovery=$RecoverySeconds;churn=$Churn.IsPresent};runs=@($results.ToArray())} | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $output 'results.json') -Encoding utf8

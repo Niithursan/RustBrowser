@@ -344,6 +344,20 @@ impl Probe {
                     .set_visible(true)
                     .map_err(|_| "Engine boundary show failed")?;
                 engine.focus().map_err(|_| "Engine boundary focus failed")?;
+                s.window.set_minimized(true);
+                self.phase = 13;
+            }
+            13 if s.window.is_minimized() == Some(true) => {
+                let closing = self.ids[1];
+                s.close_tab(closing)
+                    .map_err(|error| format!("Minimized tab close failed: {error}"))?;
+                if !s.focus_pending {
+                    return Err("Minimized activation did not defer focus".into());
+                }
+                s.window.set_minimized(false);
+                self.phase = 14;
+            }
+            14 if s.window.is_minimized() == Some(false) && !s.focus_pending => {
                 s.command(Command::Home)
                     .map_err(|_| "Could not return to local page")?;
                 s.persist();
@@ -457,6 +471,7 @@ fn run(private: bool) {
     assert!(failure.is_none(), "{failure:?}");
     if private {
         assert_eq!(before, std::fs::read(root.join("session.json")).unwrap());
+        assert!(!root.join("local-diagnostics").exists());
     } else {
         let restored = storage::load(&root.join("session.json")).unwrap();
         assert_eq!(restored.tabs[0], navigation::HOME);
