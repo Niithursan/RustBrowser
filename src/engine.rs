@@ -181,9 +181,14 @@ impl Engine {
                             args.NavigationId(&mut navigation_id)?;
                             let mut uri = windows::core::PWSTR::null();
                             args.Uri(&mut uri)?;
+                            let blank = webview2_com::take_pwstr(uri) == "about:blank";
+                            #[cfg(test)]
+                            if std::env::var_os("RUST_BROWSER_TLS_FIXTURE").is_some() {
+                                eprintln!("Controlled start tab={id} navigation={navigation_id} blank={blank} current={:?} finished={} awaiting={}",starting.current.get(),starting.finished.get(),starting.awaiting_web_start.get());
+                            }
                             if starting.start_document(
                                 navigation_id,
-                                webview2_com::take_pwstr(uri) == "about:blank",
+                                blank,
                             ) {
                                 let _ =
                                     starting_proxy.send_event(Event::Page(id, PageEvent::Loading));
@@ -227,6 +232,16 @@ impl Engine {
                     if let Some(args) = args {
                         let mut navigation_id = 0;
                         args.NavigationId(&mut navigation_id)?;
+                        #[cfg(test)]
+                        if std::env::var_os("RUST_BROWSER_TLS_FIXTURE").is_some() {
+                            let mut success = BOOL::default();
+                            let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+                            let mut http = 0;
+                            args.IsSuccess(&mut success)?;
+                            args.WebErrorStatus(&mut status)?;
+                            args.cast::<ICoreWebView2NavigationCompletedEventArgs2>()?.HttpStatusCode(&mut http)?;
+                            eprintln!("Controlled complete tab={id} navigation={navigation_id} success={} status={} http={http} current={:?} finished={} stopped={:?}",success.as_bool(),status.0,completion.current.get(),completion.finished.get(),completion.stopped.get());
+                        }
                         if !completion.finish(navigation_id) {
                             return Ok(());
                         }
