@@ -1,9 +1,18 @@
-# Rust Browser 0.11.0
+# Rust Browser 0.12.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.12 redesigns the toolbar: the address line shows a plain connection word and
+the site's host emphasised, tabs are text with a coloured rule under the active
+one, and tab and library actions sit behind the More (⋯) button (also reachable by
+keyboard shortcuts). It adds Windows high-contrast support, announces
+navigation errors to screen readers, names list actions by their item, extends the
+controlled compatibility suite to service workers and Cache Storage, fixes false
+errors after rapid successive navigations, and makes CI faster
+([CI.md](CI.md)). Accessibility evidence and gaps: [ACCESSIBILITY.md](validation/ACCESSIBILITY.md).
 
 v0.11 adds bounded local application diagnostics, improved navigation/Stop
 feedback, AltGr-safe shortcuts, a light theme and a controlled modern-site
@@ -66,18 +75,18 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Close a specific tab | Its × button |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab (wraps around) |
 | Select a tab | Click its title |
-| Reorder tabs | Drag a tab, Move left/right, or Ctrl+Shift+PageUp/PageDown |
-| Pin/unpin active tab | Pin tab button or Ctrl+Shift+P |
+| Reorder tabs | Drag a tab, More (⋯) → Move left/right, or Ctrl+Shift+PageUp/PageDown |
+| Pin/unpin active tab | More (⋯) → Pin tab, or Ctrl+Shift+P |
 | Navigate focused tab strip | Left/Right, Home/End; Tab reaches the selected tab |
 | Find an overflowed tab | All-tabs selector or tab-strip scroll buttons |
-| Prevent active tab sleeping | Keep awake button (saved per normal tab) |
+| Prevent active tab sleeping | More (⋯) → Keep awake (saved per normal tab) |
 | Focus webpage from toolbar | F7 |
 | Bookmark current page | Ctrl+D |
-| Bookmark manager | Bookmarks button or Ctrl+Shift+O |
-| Browsing history | History button or Ctrl+H |
-| Download manager | Downloads button or Ctrl+J |
-| New private window | Private window button or Ctrl+Shift+N |
-| Privacy and security | Privacy & security button or connection indicator |
+| Bookmark manager | More (⋯) → Bookmarks, or Ctrl+Shift+O |
+| Browsing history | More (⋯) → History, or Ctrl+H |
+| Download manager | More (⋯) → Downloads, or Ctrl+J |
+| New private window | More (⋯) → Private window, or Ctrl+Shift+N |
+| Privacy and security | Connection word at the start of the address line, More (⋯) → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
 
 Bare domains receive `https://`. Explicit `http://` supports local development.
@@ -458,9 +467,11 @@ cargo build --locked --release
 ```
 
 See [VALIDATION.md](VALIDATION.md) for checks actually performed and known gaps.
-GitHub Actions runs formatting, Clippy with warnings treated as errors, tests and
-an optimized Windows build. Dependency security runs `cargo audit --deny warnings`
-on main, pull requests and weekly. Dependabot proposes Cargo and Actions updates.
+GitHub Actions runs formatting, Clippy with warnings treated as errors, all regular
+and native WebView2 tests, and a parallel optimized Windows build on pull requests and
+`main` (open a draft pull request to get CI for a feature branch). Dependency security
+runs `cargo audit --deny warnings` on main, pull requests and weekly. Caching and
+measured timings: [CI.md](CI.md). Dependabot proposes Cargo and Actions updates.
 
 Development uses feature branches and pull requests into `main`, with Conventional
 Commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and release steps.

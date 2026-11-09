@@ -1,14 +1,21 @@
 name: CI
+# Validate pull requests and main. Feature-branch pushes no longer run a second,
+# duplicate full validation: open a (draft) pull request to get CI.
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**', 'chore/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # PR runs share a group so superseded pushes are cancelled. Every other run
+  # (main pushes, manual dispatch) gets its own per-commit group: a shared group
+  # would let GitHub drop a pending main run when a newer one queues.
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CARGO_TERM_COLOR: never
 jobs:
   windows:
     name: Windows quality and build
@@ -20,6 +27,9 @@ jobs:
           persist-credentials: false
       - name: Install Rust tools
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      # Caches the registry and compiled dependencies only (workspace crates are
+      # rebuilt). Key includes OS, rustc version, Cargo.lock and this job.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
@@ -33,7 +43,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Experimental fixture tests failed' }
           python -m unittest discover -s validation -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { throw 'Production fixture handshake tests failed' }
-      # Separate processes: winit permits one event loop per process.
+      # Separate processes: winit permits one event loop per process. These reuse
+      # the test binary built by `cargo test` above.
       - name: Native WebView2 isolation and permissions
         run: cargo test --locked --bin rust-browser native_private_storage_and_confirmed_engine_deletion -- --ignored --test-threads=1
       - name: Native application clearing
@@ -57,6 +68,19 @@ jobs:
             .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP "rust-browser-daily-validation-$attempt")
           }
       - run: cargo build --locked
+
+  # Independent of the quality job, so it runs in parallel on its own runner.
+  release:
+    name: Windows release build and package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --locked --release
       - name: Portable package metadata, integrity and output safety
         shell: powershell
@@ -68,3 +92,20 @@ jobs:
           name: rust-browser-windows-x64
           path: target/release/rust-browser.exe
           if-no-files-found: error
+
+  # Single stable check name for branch protection if it is enabled later.
+  result:
+    name: CI result
+    needs: [windows, release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then exit 1; fi
+          done

@@ -1,7 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (unreleased; awaiting review)
 
+- CI: pull requests, `main` and manual runs only (no duplicate feature-branch push
+  runs); SHA-pinned dependency caching; parallel release build and packaging job;
+  aggregate `CI result` check; pinned and cached cargo-audit 0.22.2 with a fresh
+  advisory database. Measured warm CI wall time 144–202 s (previous median 458 s),
+  dependency security under 30 s (previously 342 s). Cold runs cost more runner
+  time. See CI.md.
+- UI redesign ("graphite and signal"): the address line leads with a plain
+  connection word (Encrypted, Not encrypted, Connecting, Not connected, Browser
+  page) and shows the host in heavier Segoe UI Variable Display with the path
+  muted; the overlay uses `URL.host`, so embedded credentials are never shown.
+  Tabs are plain text with a signal-coloured rule under the active tab. Tab and
+  library actions move into a More (⋯) disclosure, so the chrome is one row
+  shorter. New palettes for Dark (graphite/yellow), Slate, Plum and Light
+  (paper/cobalt); sliding loading bar (static with reduced motion); Windows
+  high-contrast (forced-colors) styling; the "Normal" mode label and the new-tab
+  panel title are visually hidden but kept for screen readers.
+- Accessibility: assertive announcement of navigation failures; item-specific
+  names for library/download/favorite/permission actions; focus moves to the
+  heading of an opened panel; WCAG contrast test for all four themes; native
+  checks of forced-colors and reduced-motion styling under media emulation. See
+  validation/ACCESSIBILITY.md for the verified scope and manual gaps.
+- Compatibility: controlled fixture now covers service workers, Cache Storage,
+  structuredClone, AbortController and BroadcastChannel.
 - Fixed false "connection interrupted" errors when a new address replaced a page
   whose navigation had not started yet: a superseded host load's late
   `NavigationStarting` no longer becomes the current navigation. Adds unit tests

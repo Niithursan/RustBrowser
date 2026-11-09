@@ -1,5 +1,49 @@
 # Validation
 
+## Version 0.12.0
+
+Baseline: PR #14 squash `fef457a` (0.11.0). Work is on
+`feat/v0.12-ui-compatibility-ci` (PR #16), built on the separate navigation-race fix
+in PR #15. Main CI at `fef457a` failed in the daily native suite. The cause was a
+production race (a superseded host load's late start), fixed in PR #15 with a
+deterministic native regression: 0/10 before, 10/10 after.
+
+Local checks on Windows 11 Pro x64, Rust 1.99.1, WebView2 157.0.4341.42, 100%
+scaling, after the 0.12.0 version bump. **Passed:**
+
+- Formatting and strict Clippy.
+- 67 regular tests, including the new WCAG contrast test.
+- All seven separate native WebView2 suites.
+- Three independent daily-driver runs, including the new native assertions:
+  - same-turn navigation supersession
+  - assertive failure announcement
+  - active-tab indicator
+  - 150% zoom at 640 px
+  - panel focus and item-specific action names
+  - service worker, Cache Storage and modern APIs
+- Debug and release builds.
+- Sampler and Python fixture tests.
+- Portable package metadata and safety tests.
+- `cargo audit --deny warnings`.
+
+Every new native assertion was mutation-checked: it fails when its feature is removed.
+This found and fixed one vacuous zoom check. Forced-colors and reduced-motion styling
+are asserted under DevTools media emulation. Real-window captures (PrintWindow, disposable profiles) confirmed the redesigned
+Dark, Slate, Plum and Light themes, multi-tab, new-tab and 640 px error layouts. Accessibility scope and manual gaps:
+[ACCESSIBILITY.md](validation/ACCESSIBILITY.md). Compatibility additions:
+[COMPATIBILITY.md](validation/COMPATIBILITY.md). CI changes and cold/warm timings:
+[CI.md](CI.md).
+
+**Not tested:**
+- Real screen readers.
+- Windows contrast themes and the Windows text-size setting.
+- Physical keyboard layouts/IME.
+- Non-100% or mixed-DPI displays.
+- Real accounts, DRM and devices.
+- Clean-machine installation.
+
+No performance claim is made for the application in v0.12; only CI timings were measured.
+
 ## Version 0.11.0
 
 Verified baseline PR #13 squash `729198d023384103da0464f1148031aa6e681566`,

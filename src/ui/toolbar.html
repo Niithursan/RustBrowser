@@ -2,37 +2,124 @@
 <html lang="en"><head><meta charset="utf-8"><title>Browser controls</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
 <style>
-*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#17212f;color:#e8eef7;font:14px 'Segoe UI',sans-serif;overflow:hidden}
-#tabrow{display:flex;align-items:center;gap:6px;padding:6px 12px 0;height:38px}#tabs{display:flex;gap:4px;overflow-x:auto;flex:1;scrollbar-width:thin}
-.tab{display:flex;flex-shrink:0;max-width:210px}.tab button{height:28px;border-radius:0}.tab .select{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}.tab.active .select{background:#385477}
-form{display:flex;gap:6px;padding:8px 12px 6px;align-items:center}button,select{height:34px;min-width:34px;border:1px solid #425169;border-radius:6px;background:#243247;color:inherit;cursor:pointer}
-button:disabled{opacity:.35;cursor:default}button:focus-visible,input:focus,select:focus{outline:2px solid #69b8ff}input{flex:1;min-width:50px;height:34px;border:1px solid #536882;border-radius:6px;background:#0d1623;color:white;padding:0 12px;font:inherit}
-#status,#notice{padding:0 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#bacce0}#notice{color:#ffb4a8;height:17px}#status.error{color:#ffb4a8}select{max-width:112px;font:inherit}
-#manager{position:absolute;top:136px;bottom:0;left:0;right:0;overflow:auto;background:#101b29;padding:20px 28px}#manager[hidden]{display:none}
-.manager-head,.manager-tools,.row,.folder-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.manager-head{justify-content:space-between}h1{font-size:24px;margin:0 0 12px}h2{font-size:16px;margin:16px 0 8px}.manager-tools{padding:12px 0;border-bottom:1px solid #34445c}.manager-tools input{flex:initial;min-width:160px}.manager-tools input[type=date]{min-width:130px;width:150px}.manager-tools input[type=checkbox]{height:auto;min-width:0;width:auto}.manager-tools label{display:flex;align-items:center;gap:5px}
-#bookmark-form{padding:12px 0;display:flex;flex-wrap:wrap}#bookmark-form input{min-width:200px}.folder-tools input{max-width:240px}.folder-tools select,#bookmark-form select,#folder-filter{max-width:180px}
-.row{padding:14px 0;border-bottom:1px solid #34445c}.row .info{flex:1;min-width:200px;overflow-wrap:anywhere}.row .title{font-weight:600;display:block}.row .secondary{display:block;color:#a7bdd6;font-size:12px;margin-top:4px}.row button{padding:0 10px}.muted{color:#a7bdd6;font-size:12px}progress{width:160px}#library-links{display:flex;gap:4px}#library-links button{font-size:12px;padding:0 7px}
-#security{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px}#mode{color:#d8b8ff;font-weight:600}.settings-label{display:block;margin:14px 0}.settings-label input{min-width:0;width:auto;height:auto;margin-right:8px}#permission-prompt{border:2px solid #d8b8ff;padding:16px;border-radius:8px}#settings-message{white-space:pre-wrap;overflow-wrap:anywhere;color:#ffb4a8}
-:root{--chrome-height:170px;--surface:#17212f;--panel:#101b29;--card:#243247;--accent:#69b8ff;--text:#e8eef7}
-body{background:var(--surface);color:var(--text)}body[data-theme=slate]{--surface:#253446;--panel:#1c2938;--card:#344960;--accent:#8ed6c8}body[data-theme=plum]{--surface:#30243d;--panel:#231a30;--card:#483554;--accent:#dbb6ff}
-#tabrow{height:auto;min-height:44px;padding:6px 12px;gap:5px}#tabs{min-width:60px;scroll-behavior:smooth}#tab-picker{max-width:150px}#tab-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:0 12px 4px}#library-links{margin-left:auto;flex-wrap:wrap}#tab-actions button{font-size:12px;padding:0 8px}#manager{top:var(--chrome-height);background:var(--panel)}button,select{background:var(--card)}button:focus-visible,input:focus,select:focus{outline-color:var(--accent)}.tab.active{outline:2px solid var(--accent);outline-offset:-2px;border-radius:5px}.tab.active .select{font-weight:700;background:var(--card)}.tab.pinned .select{max-width:65px}.tab.sleeping .select{opacity:.7}.tab .close{min-width:28px}.tab[draggable=true]{cursor:grab}.tab.drop{outline:2px dashed var(--accent)}
-#newtab-body{max-width:980px;margin:12px auto 50px}#newtab-body h2{font-size:30px;margin:24px 0 10px}#newtab-search{padding:18px 0}#newtab-search input{height:48px;font-size:18px}#newtab-search button{height:48px;padding:0 20px}#favorite-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}.favorite-card{background:var(--card);border:1px solid #536882;border-radius:10px;padding:14px;overflow-wrap:anywhere}.favorite-card .visit{width:100%;height:auto;min-height:44px;border:0;font-weight:600;text-align:left}.favorite-card .remove{font-size:12px;margin-top:8px}#favorite-form{flex-wrap:wrap;padding:8px 0}#favorite-form input{min-width:160px}.home-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.recent-row{display:block;text-align:left;width:100%;height:auto;padding:12px;margin:6px 0;overflow-wrap:anywhere}.settings-label input{accent-color:var(--accent)}
-@media(max-width:700px){#tab-picker{max-width:100px}#mode{font-size:12px}#library-links{margin-left:0}#nav{flex-wrap:wrap}#nav input{order:2;flex-basis:calc(100% - 175px)}#nav select,#nav button[type=submit]{order:2}#security{max-width:170px}#manager{padding:16px}#newtab-body h2{font-size:24px}#newtab-search{flex-wrap:wrap}#newtab-search input{flex-basis:100%}}
-:root{--field:#0d1623;--secondary:#a7bdd6;--line:#536882;--error:#ffb4a8}
-body[data-theme=light]{color-scheme:light;--surface:#f3f6fa;--panel:#fff;--card:#e3ebf5;--accent:#175ca8;--text:#172b43;--field:#fff;--secondary:#3e5876;--line:#71869e;--error:#a41623}
+/* Graphite and signal: one bold element (the address line), everything else quiet.
+   Theme tokens are read by the ui::tests contrast checks; keep their names stable. */
+:root{--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--chrome-height:120px;--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}
+body[data-theme=slate]{--surface:#1F2A33;--panel:#1A232B;--card:#2A3742;--field:#162028;--line:#3D4D5A;--accent:#7CC4E4}
+body[data-theme=plum]{--surface:#2A2130;--panel:#231B29;--card:#382C40;--field:#1E1724;--line:#4C3D56;--accent:#E3B5FF}
+body[data-theme=light]{color-scheme:light;--surface:#EEF0F2;--panel:#F8F9FA;--card:#E2E6EA;--field:#fff;--text:#1B2430;--secondary:#4A5563;--line:#A7B0BA;--error:#A3192A;--accent:#2446B8;--on-accent:#fff;--hover:rgba(27,36,48,.06)}
 body:not([data-theme=light]){color-scheme:dark}
-input{background:var(--field);color:var(--text);border-color:var(--line)}.muted,.row .secondary,#status{color:var(--secondary)}#notice,#status.error,#settings-message{color:var(--error)}#mode{color:var(--accent)}
-button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-#load-progress{height:3px;background:var(--accent);opacity:0;transform-origin:left}#load-progress[aria-hidden=false]{opacity:1;animation:loading-pulse 1.3s ease-in-out infinite}
-@keyframes loading-pulse{0%,100%{transform:scaleX(.2)}50%{transform:scaleX(1)}}
-@media(prefers-reduced-motion:reduce){#load-progress[aria-hidden=false]{animation:none;transform:scaleX(1)}#tabs{scroll-behavior:auto}}
-#address{font-size:15px}#notice-row{display:flex;align-items:center}#notice{flex:1;min-width:0}#dismiss-notice{height:22px;min-width:24px;margin:0 10px 2px;font-size:12px}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--surface);color:var(--text);font:13px/1.4 var(--ui);overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+button,select{height:30px;min-width:30px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer}
+button:hover:not(:disabled),select:hover:not(:disabled){border-color:var(--secondary)}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input{height:30px;min-width:50px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--field)}
+
+/* Row 1: tabs as text; the active one carries the signal rule. */
+#tabrow{display:flex;align-items:center;gap:4px;min-height:40px;padding:0 8px 0 12px}
+#mode{font-size:12px;color:var(--secondary);padding-right:6px}
+/* Only a private window needs a mode label; normal mode stays available to assistive technology. */
+#mode[data-private=false]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+#mode[data-private=true]{color:var(--on-accent);background:var(--accent);border-radius:4px;padding:2px 8px;font-weight:600}
+#tabs{display:flex;flex:1;min-width:60px;overflow-x:auto;scrollbar-width:none;scroll-behavior:smooth;align-self:stretch}
+.tab{display:flex;flex-shrink:0;align-items:center;max-width:220px}
+.tab button{height:40px;border:0;border-radius:0;background:transparent}
+.tab .select{max-width:180px;padding:0 4px 0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary)}
+.tab .close{min-width:26px;padding:0 6px;color:var(--secondary);opacity:.55}
+.tab:hover .select,.tab:hover .close,.tab.active .close{color:var(--text);opacity:1}
+.tab.active{box-shadow:inset 0 -3px 0 var(--accent)}
+.tab.active .select{color:var(--text);font-weight:700}
+.tab.pinned .select{max-width:70px}.tab.sleeping .select{font-style:italic}
+.tab[draggable=true]{cursor:grab}.tab.drop{box-shadow:inset 3px 0 0 var(--accent)}
+#tabrow>button,#tabrow>select{border-color:transparent;background:transparent}
+#tabrow>button:hover:not(:disabled){background:var(--hover)}
+#new{font-size:18px;line-height:1}#tab-picker{max-width:150px;color:var(--secondary)}
+#more[aria-expanded=true]{background:var(--hover);border-color:var(--line)}
+
+/* Disclosure row for tab and library actions. */
+#tab-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 12px 6px}
+#tab-actions button{height:28px;font-size:12px;background:transparent}
+#library-links{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+
+/* Row 2: navigation and the location line. */
+#nav{display:flex;align-items:center;gap:2px;padding:4px 8px 6px}
+#nav>button[type=button]{width:32px;padding:0;border-color:transparent;background:transparent;font-size:16px}
+#nav>button[type=button]:hover:not(:disabled){background:var(--hover)}
+#location{flex:1;min-width:0;display:flex;align-items:center;height:36px;margin:0 6px;border:1px solid var(--line);border-radius:18px;background:var(--field)}
+#location:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+#security{flex-shrink:0;height:28px;margin-left:4px;padding:0 10px;border:0;border-radius:14px;background:var(--hover);font-size:12px;font-weight:600;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+#security[data-state=plain],#security[data-state=failed]{color:var(--error)}
+#security[data-state=page]{color:var(--secondary);font-weight:400}
+#address-wrap{position:relative;flex:1;min-width:0;align-self:stretch}
+#address{width:100%;height:100%;border:0;border-radius:0 18px 18px 0;background:transparent;padding:0 16px 0 10px;font-size:15px}
+#address:focus-visible{outline:0}
+/* Origin-emphasised view of the address; covers the field until it is focused. */
+#address-view{position:absolute;inset:1px 18px 1px 0;display:flex;align-items:center;padding-left:10px;background:var(--field);pointer-events:none;white-space:nowrap;overflow:hidden;font-size:15px}
+#address-view .origin{font:600 15.5px var(--display);letter-spacing:-.005em}
+#address-view .rest{color:var(--secondary);overflow:hidden;text-overflow:ellipsis}
+#location:focus-within #address-view{display:none}
+#search{max-width:120px;border-color:transparent;background:transparent;color:var(--secondary)}
+#nav>button[type=submit]{border-radius:15px;padding:0 14px}
+
+#status,#notice{padding:0 16px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--secondary)}
+#status.error{color:var(--error);font-weight:600}#status.error::before{content:'⚠ '}
+#notice-row{display:flex;align-items:center}#notice{flex:1;min-width:0;color:var(--error)}
+#dismiss-notice{height:22px;min-width:24px;margin:0 10px 4px;padding:0;font-size:12px}
+#load-progress{position:relative;height:2px;overflow:hidden}
+#load-progress::after{content:'';position:absolute;inset:0;width:30%;background:var(--accent);opacity:0}
+#load-progress[aria-hidden=false]::after{opacity:1;animation:loading-slide 1.2s ease-in-out infinite}
+@keyframes loading-slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+.visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* Library, settings and new-tab panels. */
+#manager{position:absolute;top:var(--chrome-height);bottom:0;left:0;right:0;overflow:auto;background:var(--panel);padding:24px 32px;line-height:1.5}
+#manager>*{max-width:1040px}
+.manager-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font:600 28px/1.15 var(--display);letter-spacing:-.01em;margin:0 0 8px}
+h2{font:600 19px/1.3 var(--display);margin:24px 0 8px}
+h3{font:600 15px/1.3 var(--display);margin:20px 0 8px}
+#manager-title:focus{outline:0}
+.muted,.row .secondary{color:var(--secondary);font-size:12px}
+.manager-tools,.row,.folder-tools{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
+.manager-tools{padding:12px 0;border-bottom:1px solid var(--line)}
+.manager-tools input{min-width:160px}.manager-tools input[type=date]{width:150px;min-width:130px}
+.manager-tools input[type=checkbox],.settings-label input{height:auto;min-width:0;width:auto;margin-right:8px;accent-color:var(--accent)}
+.manager-tools label{display:flex;align-items:center;gap:6px}
+#bookmark-form,#favorite-form{display:flex;flex-wrap:wrap;gap:8px;padding:12px 0}
+#bookmark-form input,#favorite-form input{min-width:200px}
+.folder-tools input{max-width:240px}.folder-tools select,#bookmark-form select,#folder-filter{max-width:180px}
+.row{padding:12px 6px;border-bottom:1px solid var(--line)}.row:hover{background:var(--hover)}
+.row .info{flex:1;min-width:200px;overflow-wrap:anywhere}
+.row .title{display:block;font-size:14px;font-weight:600}.row .secondary{display:block;margin-top:2px}
+.row button{height:28px;background:transparent}progress{width:160px;accent-color:var(--accent)}
+.settings-label{display:block;margin:12px 0}
+#permission-prompt{border:2px solid var(--accent);border-radius:10px;padding:16px}
+#settings-message{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--error)}
+#newtab-body{max-width:860px;margin:24px auto 56px}
+#newtab-body h2{font:600 34px/1.1 var(--display);letter-spacing:-.015em;margin:32px 0 8px}
+#newtab-search{display:flex;gap:8px;padding:20px 0}
+#newtab-search input{flex:1;height:48px;padding:0 20px;border-radius:24px;font-size:17px}
+#newtab-search button{height:48px;padding:0 22px;border-radius:24px}
+.home-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#favorite-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0}
+.favorite-card{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface);overflow-wrap:anywhere}
+.favorite-card .visit{width:100%;height:auto;min-height:40px;border:0;background:transparent;padding:0;text-align:left;font-weight:600}
+.favorite-card .remove{height:24px;margin-top:6px;font-size:12px;background:transparent}
+.recent-row{display:block;width:100%;height:auto;margin:4px 0;padding:10px 12px;text-align:left;overflow-wrap:anywhere;background:transparent}
+
+@media(max-width:700px){#tab-picker{max-width:100px}#nav{flex-wrap:wrap}#location{order:2;flex-basis:100%;margin:4px 0 0}#search,#nav>button[type=submit]{order:1}#security{max-width:110px}#manager{padding:16px}#newtab-body h2{font-size:26px}#newtab-search{flex-wrap:wrap}#newtab-search input{flex-basis:100%}}
+@media(prefers-reduced-motion:reduce){#load-progress[aria-hidden=false]::after{animation:none;width:100%}#tabs{scroll-behavior:auto}}
+/* Windows high contrast: system colours, and a non-colour active-tab cue. */
+@media(forced-colors:active){.tab.active{outline:2px solid Highlight;outline-offset:-2px;box-shadow:none}.tab.active .select{text-decoration:underline}button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible{outline:3px solid Highlight}#location:focus-within{outline:2px solid Highlight}#load-progress::after{background:Highlight}#address-view{background:Field;color:FieldText}button:disabled{color:GrayText;opacity:1}}
 </style></head><body>
-<div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab">+</button><button type="button" id="tabs-left" aria-label="Scroll tabs left">‹</button><button type="button" id="tabs-right" aria-label="Scroll tabs right">›</button><select id="tab-picker" aria-label="All browser tabs"></select></div>
-<div id="tab-actions"><button type="button" id="pin-active" title="Pin or unpin current tab (Ctrl+Shift+P)">Pin tab</button><button type="button" id="move-left" title="Move current tab left (Ctrl+Shift+PageUp)">Move left</button><button type="button" id="move-right" title="Move current tab right (Ctrl+Shift+PageDown)">Move right</button><button type="button" id="keep-awake" aria-pressed="false">Keep awake</button><button type="button" id="wake-tab">Wake tab</button><div id="library-links"><button type="button" id="show-bookmarks">Bookmarks</button><button type="button" id="show-history">History</button><button type="button" id="show-downloads">Downloads</button><button type="button" id="show-settings">Privacy &amp; security</button><button type="button" id="new-private" title="New private window (Ctrl+Shift+N)">Private window</button></div></div><form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><button type="button" id="security" aria-label="Connection information">Connection</button><input id="address" aria-label="Website address or search" placeholder="Search or enter address" autocomplete="off" spellcheck="false"><select id="search" aria-label="Default search engine"><option value="google">Google</option><option value="duck_duck_go">DuckDuckGo</option><option value="bing">Bing</option></select><button type="submit">Go</button></form>
-<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div>
+<div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab">+</button><button type="button" id="tabs-left" aria-label="Scroll tabs left">‹</button><button type="button" id="tabs-right" aria-label="Scroll tabs right">›</button><select id="tab-picker" aria-label="All browser tabs"></select><button type="button" id="wake-tab">Wake tab</button><button type="button" id="more" aria-expanded="false" aria-controls="tab-actions" aria-label="Tab and library actions" title="Tab and library actions">⋯</button></div>
+<div id="tab-actions" hidden><button type="button" id="pin-active" title="Pin or unpin current tab (Ctrl+Shift+P)">Pin tab</button><button type="button" id="move-left" title="Move current tab left (Ctrl+Shift+PageUp)">Move left</button><button type="button" id="move-right" title="Move current tab right (Ctrl+Shift+PageDown)">Move right</button><button type="button" id="keep-awake" aria-pressed="false">Keep awake</button><div id="library-links"><button type="button" id="show-bookmarks">Bookmarks</button><button type="button" id="show-history">History</button><button type="button" id="show-downloads">Downloads</button><button type="button" id="show-settings">Privacy &amp; security</button><button type="button" id="new-private" title="New private window (Ctrl+Shift+N)">Private window</button></div></div><form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><div id="location"><button type="button" id="security" aria-label="Connection information">Connection</button><div id="address-wrap"><input id="address" aria-label="Website address or search" placeholder="Search or enter address" autocomplete="off" spellcheck="false"><div id="address-view" aria-hidden="true" hidden><span class="origin"></span><span class="rest"></span></div></div></div><select id="search" aria-label="Default search engine"><option value="google">Google</option><option value="duck_duck_go">DuckDuckGo</option><option value="bing">Bing</option></select><button type="submit">Go</button></form>
+<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div><div id="alert" class="visually-hidden" role="alert"></div>
 </div><section id="manager" hidden aria-label="Browser library">
-<div class="manager-head"><h1 id="manager-title">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
+<div class="manager-head"><h1 id="manager-title" tabindex="-1">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
 <div id="library-tools" class="manager-tools"><input id="library-query" aria-label="Search library" placeholder="Search titles and URLs" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><label class="history-only">From <input id="history-from" type="date" aria-label="History from date"></label><label class="history-only">Through <input id="history-until" type="date" aria-label="History through date"></label><button type="button" id="refresh-library">Search / refresh</button><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only">Clear all history…</button></div>
 <div id="bookmark-editor"><h2>Add or edit bookmark</h2><form id="bookmark-form"><input id="bookmark-id" type="hidden"><input id="bookmark-title" aria-label="Bookmark title" placeholder="Title" maxlength="256" required><input id="bookmark-url" aria-label="Bookmark URL" placeholder="https://example.com/" maxlength="8192" required><select id="bookmark-folder" aria-label="Bookmark folder"></select><button type="submit">Save bookmark</button><button type="button" id="reset-bookmark">New bookmark</button></form>
@@ -82,7 +169,7 @@ byId('reset-bookmark').onclick=()=>{byId('bookmark-form').reset();byId('bookmark
 byId('edit-folder').onchange=e=>{byId('folder-name').value=libraryData.folders.find(f=>f.id===Number(e.target.value))?.name||''};
 byId('save-folder').onclick=()=>send('library',{kind:'save_folder',id:byId('edit-folder').value?Number(byId('edit-folder').value):null,name:byId('folder-name').value});
 byId('remove-folder').onclick=()=>{const id=Number(byId('edit-folder').value);if(id)send('library',{kind:'remove_folder',id})};
-function button(label,action){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=action;return b}
+function button(label,action,item){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=action;if(item)b.setAttribute('aria-label',label+' '+item);return b}
 function infoRow(title,secondary){const row=document.createElement('div');row.className='row';const info=document.createElement('div');info.className='info';const t=document.createElement('span');t.className='title';t.textContent=title;const sub=document.createElement('span');sub.className='secondary';sub.textContent=secondary;info.append(t,sub);row.append(info);return row}
 function folderOptions(id,first,folders){const select=byId(id),value=select.value;select.replaceChildren();for(const [value,label] of first.concat(folders.map(f=>[String(f.id),f.name]))){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option)}if([...select.options].some(o=>o.value===value))select.value=value}
 function renderLibrary(data,panel){
@@ -96,9 +183,9 @@ function renderLibrary(data,panel){
     for(const item of rows){
         const detail=panel==='history'?new Date(item.timestamp*1000).toLocaleString()+' · '+item.url:((data.folders.find(f=>f.id===item.folder)?.name||'Unfiled')+' · '+item.url);
         const row=infoRow(item.title||item.url,detail);
-        row.append(button('Open',()=>send('open_saved',{url:item.url,new_tab:false})),button('New tab',()=>send('open_saved',{url:item.url,new_tab:true})));
-        if(panel==='bookmarks')row.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()}));
-        row.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id})));list.append(row);
+        const name=item.title||item.url;row.append(button('Open',()=>send('open_saved',{url:item.url,new_tab:false}),name),button('New tab',()=>send('open_saved',{url:item.url,new_tab:true}),name));
+        if(panel==='bookmarks')row.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()},name));
+        row.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id}),name));list.append(row);
     }
 }
 const downloadNodes=new Map();
@@ -112,7 +199,7 @@ function renderDownloads(records){
         let node=downloadNodes.get(item.id);
         if(!node){
             const row=infoRow('',''),bar=document.createElement('progress');
-            const cancel=button('Cancel',()=>send('cancel_download',item.id)),folder=button('Open folder',()=>send('open_download_folder',item.id));
+            const cancel=button('Cancel',()=>send('cancel_download',item.id),'download '+item.name),folder=button('Open folder',()=>send('open_download_folder',item.id),'for '+item.name);
             row.append(bar,cancel,folder);node={row,bar,cancel,folder};downloadNodes.set(item.id,node);list.prepend(row);
         }
         const progress=item.total>0?Math.min(100,Math.round(item.received/item.total*100))+'% ('+item.received+' / '+item.total+' bytes)':item.received+' bytes';
@@ -123,13 +210,17 @@ function renderDownloads(records){
         if(item.total>0){node.bar.max=item.total;node.bar.value=item.received}else{node.bar.removeAttribute('value')}
     }
 }
-let editing=false,activeId=null,tabSignature='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null;
+let editing=false,activeId=null,tabSignature='',lastAlert='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null;
 function send(action,value){window.ipc.postMessage(JSON.stringify({action,value}));}
 for(const action of ['back','forward','reload','stop','home'])document.getElementById(action).onclick=()=>send(action);
 document.getElementById('new').onclick=()=>send('new_tab');
 document.getElementById('search').onchange=e=>send('set_search_engine',e.target.value);
 document.getElementById('nav').onsubmit=e=>{e.preventDefault();editing=false;send('navigate',input.value)};
-input.onfocus=()=>editing=true;input.oninput=()=>editing=true;input.onblur=()=>editing=false;
+input.onfocus=()=>editing=true;input.oninput=()=>{editing=true;updateAddressView()};input.onblur=()=>{editing=false;updateAddressView()};
+// Show the host emphasised and the rest muted while the field is not focused. URL.host
+// drops embedded credentials and keeps punycode, so the real host is what is emphasised.
+function updateAddressView(){const view=byId('address-view');let origin='',rest='';try{const u=new URL(input.value);if(u.protocol==='http:'||u.protocol==='https:'){origin=u.host;rest=(u.pathname==='/'?'':u.pathname)+u.search+u.hash}}catch{}view.hidden=!origin;view.firstChild.textContent=origin;view.lastChild.textContent=rest}
+byId('more').onclick=()=>{const open=byId('more').getAttribute('aria-expanded')!=='true';byId('more').setAttribute('aria-expanded',String(open));byId('tab-actions').hidden=!open};
 window.focusAddress=()=>{input.focus();input.select();editing=true};
 
 byId('pin-active').onclick=()=>send('pin_active');byId('move-left').onclick=()=>send('move_active',true);byId('move-right').onclick=()=>send('move_active',false);byId('keep-awake').onclick=()=>send('keep_awake');byId('wake-tab').onclick=()=>send('wake_tab');
@@ -160,16 +251,19 @@ function renderHome(s){
     const signature=JSON.stringify([s.settings,s.private,s.library.history]);if(signature===homeSignature)return;homeSignature=signature;
     const settings=s.settings;byId('home-theme').value=settings.theme;byId('home-recent').checked=!s.private&&settings.show_recent;byId('home-recent').disabled=s.private;byId('home-bookmarks').disabled=s.private;
     byId('home-description').textContent=s.private?'Private window: favorites and theme changes last for this window. Normal bookmarks and history stay separate.':'Search with '+{google:'Google',duck_duck_go:'DuckDuckGo',bing:'Bing'}[s.search_engine]+'. Favorites and theme are saved locally.';
-    const list=byId('favorite-list');list.replaceChildren();for(const [index,favorite] of settings.favorites.entries()){const card=document.createElement('div');card.className='favorite-card';const visit=button(favorite.title,()=>send('navigate',favorite.url));visit.className='visit';visit.title=favorite.url;const remove=button('Remove favorite',()=>send('remove_favorite',index));remove.className='remove';card.append(visit,remove);list.append(card)}if(!settings.favorites.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='Add a favorite website below.';list.append(empty)}
+    const list=byId('favorite-list');list.replaceChildren();for(const [index,favorite] of settings.favorites.entries()){const card=document.createElement('div');card.className='favorite-card';const visit=button(favorite.title,()=>send('navigate',favorite.url));visit.className='visit';visit.title=favorite.url;const remove=button('Remove favorite',()=>send('remove_favorite',index),favorite.title);remove.className='remove';card.append(visit,remove);list.append(card)}if(!settings.favorites.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='Add a favorite website below.';list.append(empty)}
     byId('home-history').hidden=s.private||!settings.show_recent;const recent=byId('recent-list');recent.replaceChildren();if(!s.private&&settings.show_recent){for(const item of s.library.history.slice(0,6)){const link=button(item.title||item.url,()=>send('open_saved',{url:item.url,new_tab:false}));link.className='recent-row';link.title=item.url;recent.append(link)}if(!recent.children.length)recent.textContent='No recent pages.';}
 }
 
 window.render=s=>{
     document.body.dataset.theme=s.settings.theme;byId('automatic-suspension').checked=s.settings.automatic_suspension;byId('suspend-delay').value=String(s.settings.suspend_after_seconds);
-    byId('mode').textContent=s.private?'PRIVATE':'Normal';
-    byId('security').textContent=s.security.scheme.toUpperCase()+' · '+s.security.origin;
-    byId('security').title=s.security.message;
-    byId('security').setAttribute('aria-label',s.security.scheme.toUpperCase()+' connection information for '+s.security.origin);
+    byId('mode').textContent=s.private?'Private':'Normal';byId('mode').dataset.private=String(s.private);
+    // Describe the connection, not the site: HTTPS does not establish trust.
+    const scheme=s.security.scheme,web=scheme==='https'||scheme==='http';
+    const state=web&&s.failed?'failed':web&&s.loading?'connecting':scheme==='https'?'encrypted':scheme==='http'?'plain':'page';
+    const word={failed:'Not connected',connecting:'Connecting',encrypted:'Encrypted',plain:'Not encrypted',page:scheme==='local'?'Browser page':'No site'}[state];
+    byId('security').dataset.state=state;byId('security').textContent=word;byId('security').title=s.security.message;
+    byId('security').setAttribute('aria-label',word+'. Connection information for '+s.security.origin);
     byId('connection-origin').textContent=s.security.origin;byId('connection-detail').textContent=s.security.message;
     byId('private-explanation').textContent=s.private?'PRIVATE WINDOW: cookies and site storage are isolated. History and session URLs are never retained. Private mode does not provide anonymity. Downloaded files remain on disk. Bookmarks are unavailable here.':'Normal browsing retains data according to these settings. Private window (Ctrl+Shift+N) opens a separate isolated context.';
     byId('settings-history').checked=!s.private&&s.history_enabled;byId('settings-history').disabled=s.private;
@@ -182,24 +276,28 @@ window.render=s=>{
     byId('permission-prompt').hidden=!permissionPrompt;
     if(permissionPrompt){byId('permission-origin').textContent=permissionPrompt.origin;byId('permission-kind').textContent='Requests access to: '+permissionPrompt.capability;if(promptChanged)byId('remember-permission').checked=false;}
     const rules=JSON.stringify(s.library.permissions||[]);
-    if(rules!==permissionSignature){permissionSignature=rules;const list=byId('permission-rules');list.replaceChildren();for(const rule of s.library.permissions||[]){const row=infoRow(rule.origin,rule.capability+' · '+rule.decision);row.append(button('Revoke',()=>{if(window.confirm('Revoke this permission and close all tabs to stop active access?'))send('revoke_permission',{origin:rule.origin,capability:rule.capability,confirmed:true})}));list.append(row)}if(!list.children.length)list.textContent='No remembered permission rules.';}
+    if(rules!==permissionSignature){permissionSignature=rules;const list=byId('permission-rules');list.replaceChildren();for(const rule of s.library.permissions||[]){const row=infoRow(rule.origin,rule.capability+' · '+rule.decision);row.append(button('Revoke',()=>{if(window.confirm('Revoke this permission and close all tabs to stop active access?'))send('revoke_permission',{origin:rule.origin,capability:rule.capability,confirmed:true})},rule.capability+' for '+rule.origin));list.append(row)}if(!list.children.length)list.textContent='No remembered permission rules.';}
     for(const id of ['nav','tabrow','settings-body'])byId(id).inert=s.busy;
     const changedPanel=currentPanel!==s.panel;currentPanel=s.panel;
     byId('manager').hidden=!s.panel;
     if(s.panel){
         byId('manager-title').textContent={bookmarks:'Bookmarks',history:'Browsing history',downloads:'Downloads',settings:'Privacy & security',new_tab:'New tab'}[s.panel];
         byId('manager-description').textContent=s.panel==='bookmarks'?'Save and organize pages. Search shows up to 200 entries.':s.panel==='settings'?'Control local data and website access. No privacy setting provides anonymity.':s.panel==='history'?'Successful visits only. Query-string URLs and credentials are excluded; fragments are stripped. Dates use UTC days; timestamps display locally. Up to 200 results.':'Choose a destination folder for each file. Existing files are kept. Downloaded files are never opened automatically. Records last for this browser session.';
-        byId('newtab-body').hidden=s.panel!=='new_tab';byId('close-manager').hidden=s.panel==='new_tab';byId('manager-description').hidden=s.panel==='new_tab';if(s.panel==='new_tab')renderHome(s);byId('settings-body').hidden=s.panel!=='settings';byId('library-tools').hidden=!['bookmarks','history'].includes(s.panel);byId('bookmark-editor').hidden=s.panel!=='bookmarks';byId('library-results').hidden=!['bookmarks','history'].includes(s.panel);byId('download-results').hidden=s.panel!=='downloads';byId('folder-filter').hidden=s.panel!=='bookmarks';
+        byId('newtab-body').hidden=s.panel!=='new_tab';document.querySelector('.manager-head').classList.toggle('visually-hidden',s.panel==='new_tab');byId('close-manager').hidden=s.panel==='new_tab';byId('manager-description').hidden=s.panel==='new_tab';if(s.panel==='new_tab')renderHome(s);byId('settings-body').hidden=s.panel!=='settings';byId('library-tools').hidden=!['bookmarks','history'].includes(s.panel);byId('bookmark-editor').hidden=s.panel!=='bookmarks';byId('library-results').hidden=!['bookmarks','history'].includes(s.panel);byId('download-results').hidden=s.panel!=='downloads';byId('folder-filter').hidden=s.panel!=='bookmarks';
         for(const element of document.querySelectorAll('.history-only'))element.hidden=s.panel!=='history';
         byId('history-enabled').checked=!s.private&&s.history_enabled;
         if(changedPanel){byId('library-query').value='';byId('history-from').value='';byId('history-until').value='';byId('folder-filter').value='';}
+        // Orient keyboard and screen-reader users on the opened panel.
+        if(changedPanel&&s.panel!=='new_tab')byId('manager-title').focus({preventScroll:true});
         const signature=s.panel+JSON.stringify(s.library);if(signature!==librarySignature||changedPanel){librarySignature=signature;renderLibrary(s.library,s.panel)}
         const downloads=JSON.stringify(s.downloads);if(downloads!==downloadSignature||changedPanel){downloadSignature=downloads;renderDownloads(s.downloads)}
     }
     if(activeId!==s.active_id){editing=false;activeId=s.active_id;}
-    if(!editing)input.value=s.url==='rust-browser:new-tab'?'':s.url;
+    if(!editing){input.value=s.url==='rust-browser:new-tab'?'':s.url;updateAddressView()}
     document.getElementById('back').disabled=!s.back;document.getElementById('forward').disabled=!s.forward;document.getElementById('stop').disabled=!s.loading;
     status.textContent=s.message;status.title=s.message;status.className=s.failed?'error':'';
+    // Announce each new navigation failure once through the assertive region.
+    if(s.failed&&s.message!==lastAlert)byId('alert').textContent=s.message;lastAlert=s.failed?s.message:'';if(!s.failed)byId('alert').textContent='';
     byId('load-progress').setAttribute('aria-hidden',String(!s.loading));
     document.getElementById('notice').textContent=s.notice;byId('notice').title=s.notice;byId('dismiss-notice').hidden=!s.notice;document.getElementById('search').value=s.search_engine;
     const signature=JSON.stringify(s.tabs);

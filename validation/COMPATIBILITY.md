@@ -7,6 +7,24 @@ Real provider/device/accessibility limitations remain open. The historical matri
 below is retained with its original v0.6 evidence dates and scope; it must not be
 interpreted as freshly repeated v0.11 manual testing.
 
+## v0.12 additions (controlled native fixtures)
+
+Windows 11 Pro x64, WebView2 157.0.4341.42, loopback fixtures only. No public
+sites, accounts or credentials were used for these rows.
+
+| Area | Verified evidence | Limits |
+| --- | --- | --- |
+| Service workers | The modern fixture registers `/sw.js` on loopback (a secure context), waits for `ready`, round-trips a `MessageChannel` message, then unregisters. Strict page CSP retained (`worker-src 'self'`). | No fetch interception, offline navigation, push or background sync is exercised. Registrations of real sites persist in the profile like other site storage. |
+| Cache Storage | `caches.open/put/match/delete` round trip. | Quota and eviction behaviour are not tested. |
+| structuredClone, AbortController, BroadcastChannel | Map/typed-array clone, aborted fetch rejects with `AbortError`, same-origin channel delivery. | Feature presence only. |
+| Rapid successive navigations | New native phase: two host loads in one event-loop turn. The superseded load's late start no longer becomes current or reports a false error (fix PR #15; 0/10 before, 10/10 after). | Same URI loaded twice in quick succession, and Back/Forward/Reload over a pending host load, are not covered. |
+| Existing coverage | fetch, modules, workers, WebCrypto, IndexedDB, cookies, localStorage, SPA history, two-origin redirect/storage isolation, popups/opener/auth, upload, audio, fullscreen, downloads, renderer crash recovery, untrusted TLS rejection: all still pass. | As recorded in DAILY_DRIVER.md. |
+
+Known limitation found during v0.12 GUI checks: an unresolvable `.invalid` host is
+reported by WebView2 as status 9 (connection aborted), so the toolbar shows "The
+connection was interrupted" instead of name-resolution advice. Unmodified `main`
+(`fef457a`) behaves identically. This is not a v0.12 regression, and it has not been fixed.
+
 ## v0.6 historical matrix
 
 This is a measured working subset, not certification as a daily-use browser. The

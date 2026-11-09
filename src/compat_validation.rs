@@ -95,6 +95,7 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
         "/modern.html"=>include_bytes!("../validation/modern.html").to_vec(),
         "/data.json"=>{kind="application/json";b"{\"value\":42}".to_vec()},
         "/worker.js"=>{kind="application/javascript";b"onmessage=e=>postMessage(e.data*2)".to_vec()},
+        "/sw.js"=>{kind="application/javascript";b"self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('message',e=>e.ports[0].postMessage(e.data*2+2))".to_vec()},
         "/slow"=>{std::thread::sleep(Duration::from_millis(800));b"<!doctype html><title>Slow old navigation</title>old".to_vec()},
         "/redirect-modern"=>{status="302 Found";extra="Location: /modern.html\r\n";Vec::new()},
         "/auth.html"=>b"<!doctype html><title>Fixture authentication</title><button id='finish' onclick=\"document.cookie='fixture_session=joined; SameSite=Lax; path=/';window.opener.postMessage('fixture-auth-complete',location.origin);window.close()\">Complete synthetic authentication</button>".to_vec(),

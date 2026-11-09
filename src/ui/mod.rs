@@ -164,6 +164,85 @@ pub fn repeatable(command: &Command) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Custom properties declared in `selector{...}` blocks of the shipped CSS.
+    fn tokens(selector: &str) -> std::collections::HashMap<String, String> {
+        let mut found = std::collections::HashMap::new();
+        let pattern = format!("{selector}{{");
+        let mut rest = HTML;
+        while let Some(start) = rest.find(&pattern) {
+            let block = &rest[start + pattern.len()..];
+            let end = block.find('}').unwrap();
+            for declaration in block[..end].split(';') {
+                if let Some((name, value)) = declaration.split_once(':')
+                    && name.trim().starts_with("--")
+                {
+                    found.insert(name.trim().to_owned(), value.trim().to_owned());
+                }
+            }
+            rest = &block[end..];
+        }
+        found
+    }
+    fn luminance(hex: &str) -> f64 {
+        let short = hex.trim_start_matches('#');
+        let hex: String = if short.len() == 3 {
+            short.chars().flat_map(|c| [c, c]).collect()
+        } else {
+            short.to_owned()
+        };
+        assert_eq!(hex.len(), 6, "opaque #rgb or #rrggbb token expected: {hex}");
+        let channel = |i: usize| {
+            let c = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap()) / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
+    }
+    fn contrast(a: &str, b: &str) -> f64 {
+        let (x, y) = (luminance(a), luminance(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+    #[test]
+    fn every_theme_meets_wcag_contrast_for_text_and_focus_indicators() {
+        let dark = tokens(":root");
+        for theme in ["dark", "slate", "plum", "light"] {
+            let mut palette = dark.clone();
+            palette.extend(tokens(&format!("body[data-theme={theme}]")));
+            let token = |name: &str| {
+                palette
+                    .get(name)
+                    .unwrap_or_else(|| panic!("{theme} lacks {name}"))
+            };
+            for background in ["--surface", "--panel", "--card", "--field"] {
+                // WCAG 1.4.3: normal text at least 4.5:1.
+                let ratio = contrast(token("--text"), token(background));
+                assert!(
+                    ratio >= 4.5,
+                    "{theme}: --text on {background} is {ratio:.2}"
+                );
+            }
+            for foreground in ["--secondary", "--error"] {
+                for background in ["--surface", "--panel"] {
+                    let ratio = contrast(token(foreground), token(background));
+                    assert!(
+                        ratio >= 4.5,
+                        "{theme}: {foreground} on {background} is {ratio:.2}"
+                    );
+                }
+            }
+            for background in ["--surface", "--panel", "--card"] {
+                // WCAG 1.4.11: focus rings and active-tab bar at least 3:1.
+                let ratio = contrast(token("--accent"), token(background));
+                assert!(
+                    ratio >= 3.0,
+                    "{theme}: --accent on {background} is {ratio:.2}"
+                );
+            }
+        }
+    }
     #[test]
     fn altgr_combinations_do_not_run_browser_commands() {
         for key in [0x44, 0x4c, 0x52, 0x54, 0x57, 0x48, 0x4a] {

@@ -8,6 +8,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  # Per-commit for non-PR runs so a scheduled audit never displaces a pending push.
+  group: security-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  # Pinned so the cached binary can never silently go stale; bump deliberately.
+  CARGO_AUDIT_VERSION: 0.22.2
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -17,5 +24,19 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.99.1 --profile minimal
-      - run: cargo install cargo-audit --locked
+      # Cache only the cargo-audit binary built from crates.io source on this
+      # runner; the advisory database is always fetched fresh by `cargo audit`.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: audit-tool
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ env.CARGO_AUDIT_VERSION }}-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
+      - if: steps.audit-tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+      - name: Verify cargo-audit version
+        run: |
+          # Prints e.g. "cargo-audit-audit 0.22.2" when run as a cargo subcommand.
+          actual="$(cargo audit --version)"
+          echo "$actual"
+          test "${actual##* }" = "$CARGO_AUDIT_VERSION"
       - run: cargo audit --deny warnings

@@ -1,10 +1,14 @@
 //! Controlled production-application checks. Run through validation/windows-daily.ps1.
 use super::*;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::SystemTime,
 };
-use windows::core::Interface;
+use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+use windows::core::{HSTRING, Interface};
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use wry::WebViewExtWindows;
 
@@ -22,8 +26,30 @@ struct Probe {
     other: TabId,
     core: usize,
     navigation_failures: Vec<String>,
+    emulated: Arc<AtomicBool>,
 }
 impl Probe {
+    /// Test-only CDP media emulation on the trusted toolbar; sets `emulated` on success.
+    fn emulate(&self, features: serde_json::Value) -> Result<(), String> {
+        let session = self.app.session.as_ref().ok_or("No session")?;
+        let done = self.emulated.clone();
+        done.store(false, Ordering::SeqCst);
+        let params = serde_json::json!({ "features": features }).to_string();
+        // SAFETY: UI-thread call on the live toolbar WebView2 owned by this fixture.
+        unsafe {
+            session.toolbar.webview().CallDevToolsProtocolMethod(
+                &HSTRING::from("Emulation.setEmulatedMedia"),
+                &HSTRING::from(params),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, _| {
+                    if result.is_ok() {
+                        done.store(true, Ordering::SeqCst);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|_| "Media emulation request failed".into())
+    }
     fn eval(&self, toolbar: bool, script: &str) -> Result<(), String> {
         let session = self.app.session.as_ref().ok_or("No session")?;
         let view = if toolbar {
@@ -122,7 +148,7 @@ impl Probe {
                 })
                 .map_err(|_| "Bookmark setup failed")?;
                 s.render();
-                self.eval(true,"document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(23, 43, 67)' && !document.getElementById('clear-diagnostics').disabled")?;
+                self.eval(true,"document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(27, 36, 48)' && !document.getElementById('clear-diagnostics').disabled")?;
                 self.phase = 1;
             }
             1 if value.is_some() => {
@@ -134,13 +160,13 @@ impl Probe {
                 self.phase = 2;
             }
             2 if loaded => {
-                self.eval(false,"JSON.stringify(window.controlled)==='{}' ? false : controlled.data===42 && controlled.worker===42 && controlled.digest===32 && controlled.cookie && controlled.storage==='ready' && controlled.ipc==='undefined' && (localStorage.setItem('origin_only','first'),true)")?;
+                self.eval(false,"JSON.stringify(window.controlled)==='{}' ? false : controlled.data===42 && controlled.worker===42 && controlled.digest===32 && controlled.serviceWorker===42 && controlled.cache==='cached-synthetic' && controlled.cloned===3 && controlled.aborted===true && controlled.broadcast==='broadcast-ok' && controlled.cookie && controlled.storage==='ready' && controlled.ipc==='undefined' && (localStorage.setItem('origin_only','first'),true)")?;
                 self.phase = 3;
             }
             3 if value.is_some() => {
                 if value.as_deref() != Some("true") {
                     return Err(
-                        "Modules/fetch/worker/crypto/storage or remote IPC fixture failed".into(),
+                        "Modules/fetch/worker/service worker/cache/crypto/storage/modern API or remote IPC fixture failed".into(),
                     );
                 }
                 self.eval(
@@ -285,8 +311,25 @@ impl Probe {
                         s.tabs.active().ok_or("No TLS state")?.content.state.message
                     ));
                 }
+                s.render();
+                self.eval(true, "document.getElementById('alert').getAttribute('role')==='alert' && document.getElementById('alert').textContent.includes('certificate') && document.getElementById('status').className==='error'")?;
+                self.phase = 22;
+            }
+            22 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Navigation failure was not announced assertively".into());
+                }
                 s.command(Command::ShowPanel(Panel::Settings))
                     .map_err(|_| "Cannot inspect diagnostics")?;
+                s.render();
+                // Panel heading receives focus; row actions name their item.
+                self.eval(true, "(()=>{const focused=document.activeElement.id==='manager-title';renderLibrary({folders:[],bookmarks:[{id:9,title:'Controlled row',url:'https://example.test/',folder:null}],history:[]},'bookmarks');const names=[...document.querySelectorAll('#library-results button')].map(b=>b.getAttribute('aria-label'));librarySignature='';return focused&&names.join('|')==='Open Controlled row|New tab Controlled row|Edit Controlled row|Remove Controlled row'})()")?;
+                self.phase = 23;
+            }
+            23 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Panel focus or contextual button names failed".into());
+                }
                 s.command(Command::ClearDiagnostics { confirmed: true })
                     .map_err(|_| "Confirmed diagnostic clear failed")?;
                 self.phase = 13;
@@ -334,6 +377,32 @@ impl Probe {
                             .into(),
                     );
                 }
+                // Text scaling: 150% zoom must not overflow the narrow window, and
+                // the active tab keeps a non-color accent bar plus bold label.
+                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const chrome=document.getElementById('chrome');const fits=chrome.scrollWidth<=chrome.clientWidth+1;document.body.style.zoom='';const more=document.getElementById('more'),actions=document.getElementById('tab-actions');more.click();const opened=more.getAttribute('aria-expanded')==='true'&&!actions.hidden;more.click();const closed=more.getAttribute('aria-expanded')==='false'&&actions.hidden;const draft=input.value;input.value='https://user:pw@example.test/path?q=1';updateAddressView();const view=document.getElementById('address-view');const host=!view.hidden&&view.firstChild.textContent==='example.test'&&view.lastChild.textContent==='/path?q=1'&&!view.textContent.includes('pw');input.value=draft;updateAddressView();return marked&&fits&&opened&&closed&&host})()")?;
+                self.phase = 20;
+            }
+            20 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Active-tab indicator, 150% scaling, More disclosure or address view failed".into());
+                }
+                self.emulate(serde_json::json!([
+                    {"name": "forced-colors", "value": "active"},
+                    {"name": "prefers-reduced-motion", "value": "reduce"}
+                ]))?;
+                self.phase = 24;
+            }
+            24 if self.emulated.load(Ordering::SeqCst) => {
+                // Windows high contrast keeps a non-colour active-tab outline; reduced
+                // motion stops the loading animation even while loading is shown.
+                self.eval(true, "(()=>{const media=matchMedia('(forced-colors: active)').matches&&matchMedia('(prefers-reduced-motion: reduce)').matches;const tab=getComputedStyle(document.querySelector('.tab.active'));const progress=document.getElementById('load-progress');progress.setAttribute('aria-hidden','false');const animation=getComputedStyle(progress,'::after').animationName;progress.setAttribute('aria-hidden','true');return media&&tab.outlineStyle==='solid'&&tab.outlineWidth==='2px'&&animation==='none'})()")?;
+                self.phase = 25;
+            }
+            25 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("High-contrast or reduced-motion styling failed".into());
+                }
+                // Emulation ends with this session's toolbar view.
                 s.persist();
                 self.app.session = None;
                 self.phase = 100;
@@ -428,6 +497,7 @@ fn native_daily_navigation_diagnostics_and_modern_sites() {
         other: 0,
         core: 0,
         navigation_failures: Vec::new(),
+        emulated: Arc::new(AtomicBool::new(false)),
     };
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
