@@ -120,6 +120,28 @@ There is no bounded local application diagnostic journal or installer.
   errors; Stop remains independently guarded. 60 regular tests, strict Clippy,
   sampler tests and the stronger native daily case pass. Current changes not
   committed yet. Withdrawn old comparisons must be replaced using fixed sampling.
+- NAVIGATION FIX `c3ed142` / SAMPLER FIX `c991377` / withdrawal checkpoint `28b292a`
+  are pushed. All eight native tests, debug/release builds, strict lint, 60 regular
+  tests, package/sampler tests, five Python tests and current audit (1430 records)
+  pass locally. PR CI passed at 28b292a but independent push CI failed at phase 9
+  with Modern compatibility failed; broader per-API failure diagnostics are being
+  added without changing production code or the frozen performance probe.
+- Corrected measurements are ACTIVE in exec session 96778. Orchestration script
+  `<workspace>/work/v11/run-corrected.ps1` validates frozen binaries and preserves
+  completed fresh/warm pairs. Progress: `work/v11/corrected-progress.json`.
+  Results: `work/v11/corrected-screening/{baseline,candidate}/tabs-N-rR/results.json`.
+  It alternates version order across repeats, then runs a strict 1800 s soak at
+  `work/v11/corrected-soak`. Do not launch local builds, native/GUI tests during it.
+  If interrupted, inspect process state first, then rerun that script; completed
+  pairs are retained. A partial continuous soak must restart in a fresh case.
+- Baseline original source 729198d plus identical test-only probe; candidate
+  production source c3ed142 / measured commit 28b292a. Frozen hashes are in
+  `work/v11/corrected-binaries.json`: baseline 7f54d2bb7d3e30451041073bdca61c382e998980ba020bcdb6ee8b7192909a37;
+  candidate 9865290a859ad80b2cfc31c8683518b77809304d7f39ba0356b856ef67f33981.
+- Final GUI recheck failed GetCursorPos access denied. Asked user to unlock via
+  async input; no reply yet. Stopped only the identity-verified new disposable
+  GUI process and waited for its matching children before measuring. No final GUI
+  pass is claimed; earlier actual GUI results remain scoped to their source.
 - Documentation and sanitized matched screening are prepared for checkpoint.
   Atomic TLS publication/empty-read polling checkpoint `dd00883` is pushed;
   three new Python tests pass locally. The modern native fixture and updated

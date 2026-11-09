@@ -10,12 +10,13 @@ try {
   const data = await fetch('/data.json').then(r => r.json());
   window.controlledStage='crypto';
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('fixture'));
-  window.controlledStage='database';
+  window.controlledStage='database_open';
   const db = await new Promise((resolve, reject) => {
     const request = indexedDB.open('controlled-fixture', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('values');
     request.onsuccess = () => resolve(request.result); request.onerror = reject; request.onblocked = () => reject(new Error('DatabaseBlocked'));
   });
+  window.controlledStage='database_write';
   await new Promise((resolve, reject) => {
     const transaction = db.transaction('values', 'readwrite');
     transaction.objectStore('values').put('synthetic', 'key');
@@ -34,5 +35,5 @@ try {
   document.getElementById('status').textContent=JSON.stringify(window.controlled,null,2);
   document.title='Modern compatibility ready';
   window.controlledStage='ready';
-} catch (error) { window.controlledFailure=error?.name||'FixtureError';document.title='Modern compatibility failed'; }
+} catch (error) { window.controlledFailure=(error?.target?.error?.name||error?.error?.name||error?.name||'FixtureError').slice(0,64);document.title='Modern compatibility failed'; }
 </script></html>

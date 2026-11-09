@@ -80,14 +80,15 @@ impl Probe {
             ));
         }
         match self.phase {
-            2 if s
-                .tabs
-                .active()
-                .is_some_and(|t| t.title == "Modern compatibility failed") =>
+            phase
+                if matches!(phase, 2 | 6 | 9 | 17)
+                    && s.tabs
+                        .active()
+                        .is_some_and(|t| t.title == "Modern compatibility failed") =>
             {
                 self.eval(
                     false,
-                    "JSON.stringify({stage:window.controlledStage,error:window.controlledFailure})",
+                    "JSON.stringify({stage:window.controlledStage,error:window.controlledFailure,title:document.title,state:document.readyState})",
                 )?;
                 self.phase = 99;
             }
