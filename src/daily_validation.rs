@@ -285,6 +285,14 @@ impl Probe {
                         s.tabs.active().ok_or("No TLS state")?.content.state.message
                     ));
                 }
+                s.render();
+                self.eval(true, "document.getElementById('alert').getAttribute('role')==='alert' && document.getElementById('alert').textContent.includes('certificate') && document.getElementById('status').className==='error'")?;
+                self.phase = 22;
+            }
+            22 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Navigation failure was not announced assertively".into());
+                }
                 s.command(Command::ShowPanel(Panel::Settings))
                     .map_err(|_| "Cannot inspect diagnostics")?;
                 s.command(Command::ClearDiagnostics { confirmed: true })
@@ -333,6 +341,15 @@ impl Probe {
                         "Compact toolbar, draft preservation or loading accessibility failed"
                             .into(),
                     );
+                }
+                // Text scaling: 150% zoom must not overflow the narrow window, and
+                // the active tab keeps a non-color accent bar plus bold label.
+                self.eval(true, "(()=>{const tab=document.querySelector('.tab.active');const style=getComputedStyle(tab);const marked=style.boxShadow.includes('inset')&&getComputedStyle(tab.querySelector('.select')).fontWeight==='700';document.body.style.zoom='1.5';const fits=document.getElementById('chrome').scrollWidth<=innerWidth+1;document.body.style.zoom='';return marked&&fits})()")?;
+                self.phase = 20;
+            }
+            20 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Active-tab indicator or 150% text scaling layout failed".into());
                 }
                 s.persist();
                 self.app.session = None;

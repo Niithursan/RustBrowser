@@ -27,10 +27,27 @@ button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pr
 @keyframes loading-pulse{0%,100%{transform:scaleX(.2)}50%{transform:scaleX(1)}}
 @media(prefers-reduced-motion:reduce){#load-progress[aria-hidden=false]{animation:none;transform:scaleX(1)}#tabs{scroll-behavior:auto}}
 #address{font-size:15px}#notice-row{display:flex;align-items:center}#notice{flex:1;min-width:0}#dismiss-notice{height:22px;min-width:24px;margin:0 10px 2px;font-size:12px}
+/* v0.12 polish layer: restrained overrides on the shared theme tokens above. */
+:root{--radius:8px;--hover:rgba(255,255,255,.08)}body[data-theme=light]{--hover:rgba(23,43,67,.08)}
+button:hover:not(:disabled),select:hover:not(:disabled){border-color:var(--accent)}
+.tab{border:1px solid transparent;border-radius:var(--radius);background:transparent;align-items:center}.tab:hover{background:var(--hover)}
+.tab button{border:0;background:transparent;height:30px}.tab .select{padding:0 10px;border-radius:var(--radius) 0 0 var(--radius)}.tab .close{border-radius:0 var(--radius) var(--radius) 0;opacity:.75}.tab .close:hover{opacity:1;background:var(--hover)}
+.tab.active{outline:0;background:var(--card);border-color:var(--line);box-shadow:inset 0 -3px 0 var(--accent)}.tab.active .select{background:transparent;font-weight:700}
+#nav{gap:4px;padding:6px 12px 8px}#nav>button[type=button]{background:transparent;border-color:transparent;font-size:16px}#nav>button[type=button]:hover:not(:disabled){background:var(--hover);border-color:transparent}
+#address{height:36px;border-radius:18px;padding:0 16px;margin:0 4px}#nav>#security{height:28px;border-radius:14px;font-size:12px;background:var(--hover);border-color:transparent}#nav>button[type=submit]{padding:0 14px;border-radius:18px}
+#status,#notice{padding:2px 16px 0}#status.error{font-weight:600}#status.error::before{content:'⚠ '}
+#load-progress{overflow:hidden;background:transparent;position:relative}#load-progress::after{content:'';position:absolute;inset:0;width:30%;background:var(--accent)}#load-progress[aria-hidden=false]{animation:none;transform:none}#load-progress[aria-hidden=false]::after{animation:loading-slide 1.2s ease-in-out infinite}
+@keyframes loading-slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+#manager{line-height:1.45}#manager>*{max-width:1100px}.row{gap:8px 10px;padding:12px 4px}.row:hover{background:var(--hover)}.row .title{font-size:15px}
+.visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media(max-width:560px){#tab-actions button,#library-links button{font-size:11px;padding:0 6px}#security{max-width:120px}}
+@media(prefers-reduced-motion:reduce){#load-progress[aria-hidden=false]::after{animation:none;width:100%}}
+/* Windows high contrast: rely on system colors, keep a non-color active-tab cue. */
+@media(forced-colors:active){.tab.active{outline:2px solid Highlight;outline-offset:-2px;box-shadow:none}.tab.active .select{text-decoration:underline}button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible{outline:3px solid Highlight}#load-progress::after{background:Highlight}button:disabled{color:GrayText;opacity:1}}
 </style></head><body>
 <div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab">+</button><button type="button" id="tabs-left" aria-label="Scroll tabs left">‹</button><button type="button" id="tabs-right" aria-label="Scroll tabs right">›</button><select id="tab-picker" aria-label="All browser tabs"></select></div>
 <div id="tab-actions"><button type="button" id="pin-active" title="Pin or unpin current tab (Ctrl+Shift+P)">Pin tab</button><button type="button" id="move-left" title="Move current tab left (Ctrl+Shift+PageUp)">Move left</button><button type="button" id="move-right" title="Move current tab right (Ctrl+Shift+PageDown)">Move right</button><button type="button" id="keep-awake" aria-pressed="false">Keep awake</button><button type="button" id="wake-tab">Wake tab</button><div id="library-links"><button type="button" id="show-bookmarks">Bookmarks</button><button type="button" id="show-history">History</button><button type="button" id="show-downloads">Downloads</button><button type="button" id="show-settings">Privacy &amp; security</button><button type="button" id="new-private" title="New private window (Ctrl+Shift+N)">Private window</button></div></div><form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><button type="button" id="security" aria-label="Connection information">Connection</button><input id="address" aria-label="Website address or search" placeholder="Search or enter address" autocomplete="off" spellcheck="false"><select id="search" aria-label="Default search engine"><option value="google">Google</option><option value="duck_duck_go">DuckDuckGo</option><option value="bing">Bing</option></select><button type="submit">Go</button></form>
-<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div>
+<div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div><div id="alert" class="visually-hidden" role="alert"></div>
 </div><section id="manager" hidden aria-label="Browser library">
 <div class="manager-head"><h1 id="manager-title">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
@@ -123,7 +140,7 @@ function renderDownloads(records){
         if(item.total>0){node.bar.max=item.total;node.bar.value=item.received}else{node.bar.removeAttribute('value')}
     }
 }
-let editing=false,activeId=null,tabSignature='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null;
+let editing=false,activeId=null,tabSignature='',lastAlert='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null;
 function send(action,value){window.ipc.postMessage(JSON.stringify({action,value}));}
 for(const action of ['back','forward','reload','stop','home'])document.getElementById(action).onclick=()=>send(action);
 document.getElementById('new').onclick=()=>send('new_tab');
@@ -200,6 +217,8 @@ window.render=s=>{
     if(!editing)input.value=s.url==='rust-browser:new-tab'?'':s.url;
     document.getElementById('back').disabled=!s.back;document.getElementById('forward').disabled=!s.forward;document.getElementById('stop').disabled=!s.loading;
     status.textContent=s.message;status.title=s.message;status.className=s.failed?'error':'';
+    // Announce each new navigation failure once through the assertive region.
+    if(s.failed&&s.message!==lastAlert)byId('alert').textContent=s.message;lastAlert=s.failed?s.message:'';if(!s.failed)byId('alert').textContent='';
     byId('load-progress').setAttribute('aria-hidden',String(!s.loading));
     document.getElementById('notice').textContent=s.notice;byId('notice').title=s.notice;byId('dismiss-notice').hidden=!s.notice;document.getElementById('search').value=s.search_engine;
     const signature=JSON.stringify(s.tabs);
