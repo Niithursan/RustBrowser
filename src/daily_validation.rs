@@ -295,6 +295,15 @@ impl Probe {
                 }
                 s.command(Command::ShowPanel(Panel::Settings))
                     .map_err(|_| "Cannot inspect diagnostics")?;
+                s.render();
+                // Panel heading receives focus; row actions name their item.
+                self.eval(true, "(()=>{const focused=document.activeElement.id==='manager-title';renderLibrary({folders:[],bookmarks:[{id:9,title:'Controlled row',url:'https://example.test/',folder:null}],history:[]},'bookmarks');const names=[...document.querySelectorAll('#library-results button')].map(b=>b.getAttribute('aria-label'));librarySignature='';return focused&&names.join('|')==='Open Controlled row|New tab Controlled row|Edit Controlled row|Remove Controlled row'})()")?;
+                self.phase = 23;
+            }
+            23 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Panel focus or contextual button names failed".into());
+                }
                 s.command(Command::ClearDiagnostics { confirmed: true })
                     .map_err(|_| "Confirmed diagnostic clear failed")?;
                 self.phase = 13;

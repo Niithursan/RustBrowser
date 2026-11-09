@@ -38,7 +38,7 @@ button:hover:not(:disabled),select:hover:not(:disabled){border-color:var(--accen
 #status,#notice{padding:2px 16px 0}#status.error{font-weight:600}#status.error::before{content:'⚠ '}
 #load-progress{overflow:hidden;background:transparent;position:relative}#load-progress::after{content:'';position:absolute;inset:0;width:30%;background:var(--accent)}#load-progress[aria-hidden=false]{animation:none;transform:none}#load-progress[aria-hidden=false]::after{animation:loading-slide 1.2s ease-in-out infinite}
 @keyframes loading-slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
-#manager{line-height:1.45}#manager>*{max-width:1100px}.row{gap:8px 10px;padding:12px 4px}.row:hover{background:var(--hover)}.row .title{font-size:15px}
+#manager{line-height:1.45}#manager-title:focus{outline:0}#manager>*{max-width:1100px}.row{gap:8px 10px;padding:12px 4px}.row:hover{background:var(--hover)}.row .title{font-size:15px}
 .visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 @media(max-width:560px){#tab-actions button,#library-links button{font-size:11px;padding:0 6px}#security{max-width:120px}}
 @media(prefers-reduced-motion:reduce){#load-progress[aria-hidden=false]::after{animation:none;width:100%}}
@@ -49,7 +49,7 @@ button:hover:not(:disabled),select:hover:not(:disabled){border-color:var(--accen
 <div id="tab-actions"><button type="button" id="pin-active" title="Pin or unpin current tab (Ctrl+Shift+P)">Pin tab</button><button type="button" id="move-left" title="Move current tab left (Ctrl+Shift+PageUp)">Move left</button><button type="button" id="move-right" title="Move current tab right (Ctrl+Shift+PageDown)">Move right</button><button type="button" id="keep-awake" aria-pressed="false">Keep awake</button><button type="button" id="wake-tab">Wake tab</button><div id="library-links"><button type="button" id="show-bookmarks">Bookmarks</button><button type="button" id="show-history">History</button><button type="button" id="show-downloads">Downloads</button><button type="button" id="show-settings">Privacy &amp; security</button><button type="button" id="new-private" title="New private window (Ctrl+Shift+N)">Private window</button></div></div><form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload">↻</button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop">×</button><button type="button" id="home" title="Home" aria-label="Home">⌂</button><button type="button" id="security" aria-label="Connection information">Connection</button><input id="address" aria-label="Website address or search" placeholder="Search or enter address" autocomplete="off" spellcheck="false"><select id="search" aria-label="Default search engine"><option value="google">Google</option><option value="duck_duck_go">DuckDuckGo</option><option value="bing">Bing</option></select><button type="submit">Go</button></form>
 <div id="status" role="status" aria-live="polite">Starting Rust Browser…</div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div><div id="alert" class="visually-hidden" role="alert"></div>
 </div><section id="manager" hidden aria-label="Browser library">
-<div class="manager-head"><h1 id="manager-title">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
+<div class="manager-head"><h1 id="manager-title" tabindex="-1">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
 <div id="library-tools" class="manager-tools"><input id="library-query" aria-label="Search library" placeholder="Search titles and URLs" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><label class="history-only">From <input id="history-from" type="date" aria-label="History from date"></label><label class="history-only">Through <input id="history-until" type="date" aria-label="History through date"></label><button type="button" id="refresh-library">Search / refresh</button><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only">Clear all history…</button></div>
 <div id="bookmark-editor"><h2>Add or edit bookmark</h2><form id="bookmark-form"><input id="bookmark-id" type="hidden"><input id="bookmark-title" aria-label="Bookmark title" placeholder="Title" maxlength="256" required><input id="bookmark-url" aria-label="Bookmark URL" placeholder="https://example.com/" maxlength="8192" required><select id="bookmark-folder" aria-label="Bookmark folder"></select><button type="submit">Save bookmark</button><button type="button" id="reset-bookmark">New bookmark</button></form>
@@ -99,7 +99,7 @@ byId('reset-bookmark').onclick=()=>{byId('bookmark-form').reset();byId('bookmark
 byId('edit-folder').onchange=e=>{byId('folder-name').value=libraryData.folders.find(f=>f.id===Number(e.target.value))?.name||''};
 byId('save-folder').onclick=()=>send('library',{kind:'save_folder',id:byId('edit-folder').value?Number(byId('edit-folder').value):null,name:byId('folder-name').value});
 byId('remove-folder').onclick=()=>{const id=Number(byId('edit-folder').value);if(id)send('library',{kind:'remove_folder',id})};
-function button(label,action){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=action;return b}
+function button(label,action,item){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=action;if(item)b.setAttribute('aria-label',label+' '+item);return b}
 function infoRow(title,secondary){const row=document.createElement('div');row.className='row';const info=document.createElement('div');info.className='info';const t=document.createElement('span');t.className='title';t.textContent=title;const sub=document.createElement('span');sub.className='secondary';sub.textContent=secondary;info.append(t,sub);row.append(info);return row}
 function folderOptions(id,first,folders){const select=byId(id),value=select.value;select.replaceChildren();for(const [value,label] of first.concat(folders.map(f=>[String(f.id),f.name]))){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option)}if([...select.options].some(o=>o.value===value))select.value=value}
 function renderLibrary(data,panel){
@@ -113,9 +113,9 @@ function renderLibrary(data,panel){
     for(const item of rows){
         const detail=panel==='history'?new Date(item.timestamp*1000).toLocaleString()+' · '+item.url:((data.folders.find(f=>f.id===item.folder)?.name||'Unfiled')+' · '+item.url);
         const row=infoRow(item.title||item.url,detail);
-        row.append(button('Open',()=>send('open_saved',{url:item.url,new_tab:false})),button('New tab',()=>send('open_saved',{url:item.url,new_tab:true})));
-        if(panel==='bookmarks')row.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()}));
-        row.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id})));list.append(row);
+        const name=item.title||item.url;row.append(button('Open',()=>send('open_saved',{url:item.url,new_tab:false}),name),button('New tab',()=>send('open_saved',{url:item.url,new_tab:true}),name));
+        if(panel==='bookmarks')row.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()},name));
+        row.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id}),name));list.append(row);
     }
 }
 const downloadNodes=new Map();
@@ -129,7 +129,7 @@ function renderDownloads(records){
         let node=downloadNodes.get(item.id);
         if(!node){
             const row=infoRow('',''),bar=document.createElement('progress');
-            const cancel=button('Cancel',()=>send('cancel_download',item.id)),folder=button('Open folder',()=>send('open_download_folder',item.id));
+            const cancel=button('Cancel',()=>send('cancel_download',item.id),'download '+item.name),folder=button('Open folder',()=>send('open_download_folder',item.id),'for '+item.name);
             row.append(bar,cancel,folder);node={row,bar,cancel,folder};downloadNodes.set(item.id,node);list.prepend(row);
         }
         const progress=item.total>0?Math.min(100,Math.round(item.received/item.total*100))+'% ('+item.received+' / '+item.total+' bytes)':item.received+' bytes';
@@ -177,7 +177,7 @@ function renderHome(s){
     const signature=JSON.stringify([s.settings,s.private,s.library.history]);if(signature===homeSignature)return;homeSignature=signature;
     const settings=s.settings;byId('home-theme').value=settings.theme;byId('home-recent').checked=!s.private&&settings.show_recent;byId('home-recent').disabled=s.private;byId('home-bookmarks').disabled=s.private;
     byId('home-description').textContent=s.private?'Private window: favorites and theme changes last for this window. Normal bookmarks and history stay separate.':'Search with '+{google:'Google',duck_duck_go:'DuckDuckGo',bing:'Bing'}[s.search_engine]+'. Favorites and theme are saved locally.';
-    const list=byId('favorite-list');list.replaceChildren();for(const [index,favorite] of settings.favorites.entries()){const card=document.createElement('div');card.className='favorite-card';const visit=button(favorite.title,()=>send('navigate',favorite.url));visit.className='visit';visit.title=favorite.url;const remove=button('Remove favorite',()=>send('remove_favorite',index));remove.className='remove';card.append(visit,remove);list.append(card)}if(!settings.favorites.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='Add a favorite website below.';list.append(empty)}
+    const list=byId('favorite-list');list.replaceChildren();for(const [index,favorite] of settings.favorites.entries()){const card=document.createElement('div');card.className='favorite-card';const visit=button(favorite.title,()=>send('navigate',favorite.url));visit.className='visit';visit.title=favorite.url;const remove=button('Remove favorite',()=>send('remove_favorite',index),favorite.title);remove.className='remove';card.append(visit,remove);list.append(card)}if(!settings.favorites.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='Add a favorite website below.';list.append(empty)}
     byId('home-history').hidden=s.private||!settings.show_recent;const recent=byId('recent-list');recent.replaceChildren();if(!s.private&&settings.show_recent){for(const item of s.library.history.slice(0,6)){const link=button(item.title||item.url,()=>send('open_saved',{url:item.url,new_tab:false}));link.className='recent-row';link.title=item.url;recent.append(link)}if(!recent.children.length)recent.textContent='No recent pages.';}
 }
 
@@ -199,7 +199,7 @@ window.render=s=>{
     byId('permission-prompt').hidden=!permissionPrompt;
     if(permissionPrompt){byId('permission-origin').textContent=permissionPrompt.origin;byId('permission-kind').textContent='Requests access to: '+permissionPrompt.capability;if(promptChanged)byId('remember-permission').checked=false;}
     const rules=JSON.stringify(s.library.permissions||[]);
-    if(rules!==permissionSignature){permissionSignature=rules;const list=byId('permission-rules');list.replaceChildren();for(const rule of s.library.permissions||[]){const row=infoRow(rule.origin,rule.capability+' · '+rule.decision);row.append(button('Revoke',()=>{if(window.confirm('Revoke this permission and close all tabs to stop active access?'))send('revoke_permission',{origin:rule.origin,capability:rule.capability,confirmed:true})}));list.append(row)}if(!list.children.length)list.textContent='No remembered permission rules.';}
+    if(rules!==permissionSignature){permissionSignature=rules;const list=byId('permission-rules');list.replaceChildren();for(const rule of s.library.permissions||[]){const row=infoRow(rule.origin,rule.capability+' · '+rule.decision);row.append(button('Revoke',()=>{if(window.confirm('Revoke this permission and close all tabs to stop active access?'))send('revoke_permission',{origin:rule.origin,capability:rule.capability,confirmed:true})},rule.capability+' for '+rule.origin));list.append(row)}if(!list.children.length)list.textContent='No remembered permission rules.';}
     for(const id of ['nav','tabrow','settings-body'])byId(id).inert=s.busy;
     const changedPanel=currentPanel!==s.panel;currentPanel=s.panel;
     byId('manager').hidden=!s.panel;
@@ -210,6 +210,8 @@ window.render=s=>{
         for(const element of document.querySelectorAll('.history-only'))element.hidden=s.panel!=='history';
         byId('history-enabled').checked=!s.private&&s.history_enabled;
         if(changedPanel){byId('library-query').value='';byId('history-from').value='';byId('history-until').value='';byId('folder-filter').value='';}
+        // Orient keyboard and screen-reader users on the opened panel.
+        if(changedPanel&&s.panel!=='new_tab')byId('manager-title').focus({preventScroll:true});
         const signature=s.panel+JSON.stringify(s.library);if(signature!==librarySignature||changedPanel){librarySignature=signature;renderLibrary(s.library,s.panel)}
         const downloads=JSON.stringify(s.downloads);if(downloads!==downloadSignature||changedPanel){downloadSignature=downloads;renderDownloads(s.downloads)}
     }
