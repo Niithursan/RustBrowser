@@ -98,7 +98,8 @@ There is no bounded local application diagnostic journal or installer.
   Preserve work/v11/soak-results as partial evidence; do not count it as a pass
   or infer an application crash. No matching owned engine children remained.
 - A fresh 1800-second retry is active in work/v11/soak-retry-results using the
-  same fixed candidate. Do not run competing local builds/native tests/GUI.
+  same fixed candidate (exec session 53583, started 2026-11-09 12:45 Toronto).
+  Do not run competing local builds/native tests/GUI.
 - Documentation and sanitized matched screening are prepared for checkpoint.
   Atomic TLS publication/empty-read polling checkpoint `dd00883` is pushed;
   three new Python tests pass locally. The modern native fixture and updated
@@ -112,6 +113,11 @@ There is no bounded local application diagnostic journal or installer.
 - PE import inspection found VCRUNTIME140.dll/VCRUNTIME140_1.dll. Installation
   docs and package prerequisites now disclose x64 Visual C++ v14 as well as
   WebView2. Neither runtime is bundled/installed; clean-machine testing remains open.
+- Fixture-stage diagnostics `e26e617`, runtime prerequisites `9f85af4` and native
+  loopback failure reporting `c83093a` are pushed. Windows PR run 42668712718
+  and dependency run 42668712732 passed at c83093a. Earlier phase-2/phase-6
+  hosted failures remain unexplained; no retry or assertion relaxation was added.
+  CI now requires three independent fresh-profile daily runs, every one passing.
 - Documentation/screening checkpoint `3c0c975e8debd04971f45473c22aaf35522cdef1`
   is pushed. [PR #14](https://github.com/Niithursan/RustBrowser/pull/14) is open
   **as a draft**, targeting unchanged main. Do not mark ready before final checks.
@@ -132,7 +138,7 @@ Active soak command (already launched; first inspect output/process completion):
 
 ```powershell
 .\benchmarks\windows.ps1 -ProbeExecutable <scratch>/work/v11/candidate.exe `
-  -OutputRoot <scratch>/work/v11/soak-results -Label v0.11-58cdef9-soak `
+  -OutputRoot <scratch>/work/v11/soak-retry-results -Label v0.11-58cdef9-soak-retry `
   -TabCounts 20 -Repeats 1 -SettleSeconds 30 -SampleSeconds 10 `
   -SoakSeconds 1800 -RecoverySeconds 15 -FreshOnly -Churn
 ```

@@ -49,7 +49,12 @@ jobs:
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
       - name: Native daily-driver compatibility, diagnostics and untrusted TLS
         shell: powershell
-        run: .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-daily-validation')
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Independent fresh profiles; every run must pass. These are not retries.
+          foreach ($attempt in 1..3) {
+            .\validation\windows-daily.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP "rust-browser-daily-validation-$attempt")
+          }
       - run: cargo build --locked
       - run: cargo build --locked --release
       - name: Portable package metadata, integrity and output safety

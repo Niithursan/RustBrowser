@@ -81,6 +81,14 @@ error. Replacing the fixture with OpenSSL/Python preserved the original TLS
 rejection assertion. Native Stop initially returned status 9 and failed the test;
 the host now associates it with a recorded Stop rather than suppressing errors.
 
+Hosted CI also exposed intermittent loopback navigation failures: one old run
+timed out at phase 2, and a later run reached phase 6 with native failure state.
+The fixture now reports per-API stage failures and native navigation status
+immediately. No navigation/storage assertions were removed, timeout increased,
+or success-after-retry rule added. Production CI requires three independent
+fresh-profile daily runs and fails on any one failure. The cause is still under
+investigation; isolated subsequent passes alone are not proof of a fix.
+
 ## Remaining daily-driver blockers
 
 Broader account/provider compatibility, device media/WebRTC/DRM, accessibility and
