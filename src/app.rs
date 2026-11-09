@@ -201,8 +201,13 @@ impl Session {
             },
             proxy.clone(),
         )?;
+        use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+        let icon =
+            winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
         let window = event_loop.create_window(
             Window::default_attributes()
+                .with_window_icon(icon.clone())
+                .with_taskbar_icon(icon)
                 .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
                 .with_inner_size(LogicalSize::new(1200.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(560.0, 320.0)),

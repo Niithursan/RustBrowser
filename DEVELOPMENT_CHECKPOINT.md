@@ -20,9 +20,32 @@
   in `work/v13/tools/inno`; not bundled with application or committed.
 - Signing identity and trusted update root are unavailable. Do not add automatic
   download/execution, invent keys, change release permissions, merge, tag or publish.
-- Next: implement installer/build/verification scripts, branding and application-running
-  coordination; controlled preservation tests; full quality gates and PR-head CI.
-- No v0.13 installation, clean-machine, GUI, CI timing or upgrade result is claimed yet.
+- Implemented Inno script/compiler bootstrap/build/unsigned metadata verifier, six-size
+  source-owned globe icon/PE/window/taskbar integration and non-exclusive running mutex.
+  Added `--version` without profile/engine startup; no protocol/default registration.
+- Initial same-version lifecycle and actual 0.12→0.13 controlled upgrade passed under a
+  GUID validation identity: exact executable, HKCU/Start Menu integration, profile hashes
+  and rich session/SQLite/download semantics, downgrade/future/invalid metadata, running
+  install/uninstall refusal, profile directory/reparse refusal, uninstall and reinstall.
+  No real installation/profile targeted. Additional full contents/desktop/unowned-file
+  assertions are added and still need their final run.
+- Found/handled two harness issues: Inno cleanup child outlives its original process;
+  wait for its directory, not a pre-existing empty application root. Sharing a Cargo
+  target across archived package versions reused a stale build script; the pinned
+  baseline now has its own target. Verified fresh baseline source build: 37.834 seconds.
+- Version now 0.13.0; lock root updated, no crate version/dependency added. Two existing
+  Windows feature gates enable named mutex APIs. Fmt/strict Clippy and 69 regular tests
+  passed locally; running-marker lifetime and representative profile tests included.
+  Five production Python tests passed, including two icon/resource checks. Verifier
+  passed positive pin/integrity/repair plus 31 malformed/tampered/downgrade refusals.
+- CI changes preserve caching, parallel jobs, no branch push duplicates and aggregate;
+  add immutable old-fixture cache, controlled installer tests and five-file review bundle.
+  Release application builds remain uncached; pinned audit tool cache/version verification
+  and full script/native coverage added. Publication gate and permissions unchanged.
+- Next: finish documentation/threat model, full native/build/audit/package checks, actual
+  Windows GUI if accessible, push/open draft PR, measure/verify exact-head Actions.
+- No clean-machine, physical GUI, interrupted mid-copy/power-loss, Windows 10 or v0.13
+  hosted CI timing result is claimed yet. No release workflow/publication invoked.
 
 ## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
 
