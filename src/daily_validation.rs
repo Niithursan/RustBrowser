@@ -43,7 +43,22 @@ impl Probe {
             return Ok(());
         }
         if self.started.elapsed() > Duration::from_secs(90) {
-            return Err(format!("Daily fixture timed out at phase {}", self.phase));
+            let state = self
+                .app
+                .session
+                .as_ref()
+                .and_then(|s| s.tabs.active())
+                .map(|t| {
+                    (
+                        t.title.as_str(),
+                        t.content.state.loading,
+                        t.content.state.failed,
+                    )
+                });
+            return Err(format!(
+                "Daily fixture timed out at phase {}: {state:?}",
+                self.phase
+            ));
         }
         let value = self.result.lock().map_err(|_| "Result lock failed")?.take();
         let s = self.app.session.as_mut().ok_or("No application session")?;
@@ -55,6 +70,18 @@ impl Probe {
             .active()
             .is_some_and(|t| !t.content.state.loading && t.title == "Modern compatibility ready");
         match self.phase {
+            2 if s
+                .tabs
+                .active()
+                .is_some_and(|t| t.title == "Modern compatibility failed") =>
+            {
+                self.eval(
+                    false,
+                    "JSON.stringify({stage:window.controlledStage,error:window.controlledFailure})",
+                )?;
+                self.phase = 99;
+            }
+            99 if value.is_some() => return Err(format!("Modern fixture API failure: {value:?}")),
             0 if s.diagnostics.snapshot().enabled => {
                 self.first = s.tabs.active().ok_or("No initial tab")?.id;
                 self.core = s
