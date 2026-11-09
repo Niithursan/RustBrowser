@@ -13,6 +13,11 @@ Completed (all local gates passed at 0.12.0; see VALIDATION.md):
    forced-colors CSS, WCAG contrast test (`ui::tests`). validation/ACCESSIBILITY.md.
 4. Compatibility: service worker / Cache Storage / modern APIs in modern.html.
 5. Version 0.12.0, README/CHANGELOG/VALIDATION/CONTRIBUTING/COMPATIBILITY updated.
+6. User-requested toolbar redesign ("graphite and signal") added to PR #16:
+   origin-emphasised address line with plain connection word, rule-underlined text
+   tabs, More (⋯) disclosure, new four-theme palette (contrast min 5.84:1 text,
+   6.31:1 accent), Segoe UI Variable. Native assertions for the disclosure and
+   credential-free address overlay, mutation-checked; earlier style mutants re-run.
 
 PR #15 (navigation race fix) was squash-merged at `f440d54`, and `origin/main` was
 merged into this branch with a merge commit (no rebase or force-push). The conflicts

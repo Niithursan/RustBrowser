@@ -8,10 +8,16 @@
   advisory database. Measured warm CI wall time 144–202 s (previous median 458 s),
   dependency security under 30 s (previously 342 s). Cold runs cost more runner
   time. See CI.md.
-- UI: active tab marked by card background, accent bar and bold label; hover
-  states; borderless navigation icons; rounded address bar and compact security
-  chip; sliding loading bar (static with reduced motion); readable library rows;
-  narrow-window tweaks; Windows high-contrast (forced-colors) styling.
+- UI redesign ("graphite and signal"): the address line leads with a plain
+  connection word (Encrypted, Not encrypted, Connecting, Not connected, Browser
+  page) and shows the host in heavier Segoe UI Variable Display with the path
+  muted; the overlay uses `URL.host`, so embedded credentials are never shown.
+  Tabs are plain text with a signal-coloured rule under the active tab. Tab and
+  library actions move into a More (⋯) disclosure, so the chrome is one row
+  shorter. New palettes for Dark (graphite/yellow), Slate, Plum and Light
+  (paper/cobalt); sliding loading bar (static with reduced motion); Windows
+  high-contrast (forced-colors) styling; the "Normal" mode label and the new-tab
+  panel title are visually hidden but kept for screen readers.
 - Accessibility: assertive announcement of navigation failures; item-specific
   names for library/download/favorite/permission actions; focus moves to the
   heading of an opened panel; WCAG contrast test for all four themes; native
