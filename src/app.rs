@@ -116,6 +116,7 @@ struct Session {
     permissions: native_security::Shared,
     popups: native_popup::Shared,
     fullscreen: Option<TabId>,
+    focus_pending: bool,
     profile: PathBuf,
     private: bool,
     ready: bool,
@@ -267,6 +268,7 @@ impl Session {
             permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
             popups: Rc::new(RefCell::new(native_popup::Manager::default())),
             fullscreen: None,
+            focus_pending: false,
             ready: false,
             clearing: None,
             next_clear: 0,
@@ -491,7 +493,17 @@ impl Session {
                 .set_visible(index == active && panel.is_none())?;
         }
         self.resize()?;
-        if panel.is_some() {
+        self.focus_active()
+    }
+
+    fn focus_active(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // WebView2 MoveFocus rejects a minimized parent (E_INVALIDARG). Keep
+        // visibility/tab changes, then request focus once Windows restores it.
+        self.focus_pending = self.window.is_minimized() == Some(true);
+        if self.focus_pending {
+            return Ok(());
+        }
+        if self.effective_panel().is_some() {
             self.toolbar.focus()?;
         } else if let Some(tab) = self.tabs.active() {
             tab.content.engine.focus()?;
@@ -1491,6 +1503,14 @@ impl ApplicationHandler<Event> for App {
                     && session.resize().is_err()
                 {
                     session.notice = "Could not resize webpage.".into();
+                    session.render();
+                }
+                if let Some(session) = &mut self.session
+                    && session.focus_pending
+                    && session.focus_active().is_err()
+                {
+                    session.notice =
+                        "Could not focus the selected tab. Select it again to retry.".into();
                     session.render();
                 }
             }

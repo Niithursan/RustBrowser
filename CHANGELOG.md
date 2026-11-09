@@ -14,9 +14,11 @@
   from stale completion and actual network/certificate failures.
 - Fixed superseded blank-page aborts arriving before the replacement's starting
   event; focused unit/native/churn regressions preserve real connection failures.
+- Fixed minimized-window tab activation reporting `E_INVALIDARG`: defer only focus
+  until restoration, retaining visibility, resize and engine error handling.
 - Corrected benchmark process identity after reproducing PID reuse contamination;
   sampling/cleanup now validate creation times and export numeric fields only.
-  The initial comparisons are withdrawn and replaced with corrected measurements.
+  The initial comparisons are withdrawn; corrected measurements remain incomplete.
 - Added status-specific navigation recovery advice, Light chrome, stronger keyboard
   focus outlines, reduced-motion-aware loading progress and dismissible notices.
 - Added controlled modern JavaScript/storage/SPA/cross-origin/TLS/native regression

@@ -1,5 +1,26 @@
 # v0.11 development checkpoint
 
+## Latest continuation — supersedes older active/passing claims below
+
+- PR #14 remains draft. Main, tags and releases are unchanged.
+- Corrected campaign session 96778 exited with failure after 13 successful cases:
+  candidate five-tab repeat-2 warm run reported `Tab closing failed`. Preserve
+  partial evidence; no completed corrected matrix or clean 30-minute soak exists.
+- Four separate diagnostic five-tab fresh/warm cases passed; this does not explain
+  the failed case. A new deterministic minimized-window regression reproduced
+  tab-close activation failing with WebView2 E_INVALIDARG, native Awake/not suspended.
+  Defer focus while minimized and process it on restoration; the new native regression
+  and strict Clippy pass. This is not proof of the original warm-case cause.
+- At 7abdfa3, push CI run 42678244042 failed controlled phase-6 HTTP navigation
+  with WebView2 status 0. Audit 42678256583 passed; PR Windows 42678256422 pending.
+  Added test-only scalar native start/completion/status/HTTP trace, enabled only by
+  the controlled TLS fixture environment, without URLs or production diagnostics.
+  All assertions remain strict. Investigate subsequent hosted failures.
+- Local daily native TLS test passed with scalar trace. Final GUI recheck remains
+  blocked by desktop access denied; no user unlock reply yet.
+- Before measurements, freeze new candidate production source including focus fix;
+  do not silently combine old and new candidate measurements or retry away failures.
+
 ## Current baseline and scope
 
 - Read the supplied v0.11 request and AGENTS.md.
