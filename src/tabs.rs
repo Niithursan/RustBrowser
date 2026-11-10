@@ -127,9 +127,50 @@ impl<T> Tabs<T> {
     }
 }
 
+/// Addresses of recently closed tabs for "reopen closed tab". Kept in memory only:
+/// never written to the session file, and gone when the window closes.
+#[derive(Default)]
+pub struct ClosedTabs(Vec<String>);
+impl ClosedTabs {
+    pub const LIMIT: usize = 16;
+    pub fn push(&mut self, url: String) {
+        if self.0.len() == Self::LIMIT {
+            self.0.remove(0);
+        }
+        self.0.push(url);
+    }
+    pub fn pop(&mut self) -> Option<String> {
+        self.0.pop()
+    }
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn closed_tabs_reopen_most_recent_first_and_are_bounded() {
+        let mut closed = ClosedTabs::default();
+        assert!(closed.pop().is_none());
+        for n in 0..ClosedTabs::LIMIT + 3 {
+            closed.push(format!("https://example.test/{n}"));
+        }
+        assert_eq!(
+            closed.pop().as_deref(),
+            Some("https://example.test/18"),
+            "most recently closed first"
+        );
+        let mut remaining = 1;
+        while closed.pop().is_some() {
+            remaining += 1;
+        }
+        assert_eq!(remaining, ClosedTabs::LIMIT);
+        closed.push("https://example.test/x".into());
+        closed.clear();
+        assert!(closed.pop().is_none());
+    }
     #[test]
     fn identity_and_selection_survive_closing_and_wraparound() {
         let mut tabs = Tabs::default();

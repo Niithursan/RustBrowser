@@ -246,6 +246,7 @@ fn native_application_clear_preserves_bookmarks_and_prevents_session_rewrites() 
             proxy: event_loop.create_proxy(),
             failure: None,
             modifiers: ModifiersState::default(),
+            closing: None,
         },
         profile: root.clone(),
         phase: 0,

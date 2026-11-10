@@ -1,5 +1,123 @@
 # Validation
 
+## Version 0.14.0
+
+Baseline: verified PR #17 squash `ca7ac142031569279f1e1be0beffb53473af8cf7`, version
+0.13.0. Main CI 42730890112 and dependency security 42730890455 passed before
+branching. Work is on `feat/v0.14-daily-driver-reliability`. No merge, tag, release
+publication, deployment or change to a real profile or installation.
+
+Environment for everything below: one Windows 11 Pro x64 machine (10.0.26200),
+Rust 1.99.1/MSVC, WebView2 Runtime 157.0.4341.42, 100% display scaling, 2026-11-09.
+
+### Automated tests (local, all passed)
+
+- Formatting, strict Clippy, **79 regular tests** (69 in v0.13; 10 new).
+- **Eight** separate native WebView2 suites: the seven existing ones and the new
+  `native_failure_reporting_tab_retirement_and_engine_restart`.
+- **Three** independent daily-driver runs (TLS, modern APIs, accessibility, navigation).
+- Debug and release builds. Dependency audit: 369 crates, 1,430 advisory records, no
+  denied warnings, unchanged exceptions. No crate was added or updated.
+- Process-tree sampler and launcher PowerShell tests, two experimental and five
+  production Python tests.
+- Portable package: deterministic ZIP, checksums, manifest, unsafe-output refusals and
+  the new check that packaged documentation has no relative link to an unpackaged file.
+- Installer lifecycle with Inno Setup 6.7.4 under a GUID validation identity: fresh
+  install of the pinned **v0.13** build (`ca7ac14`, rebuilt from source in 35.9 s),
+  refusal while that v0.13 process runs, **upgrade to v0.14**, exact installed file
+  set and bytes, Apps & Features version, CLI launch, downgrade/future/invalid
+  version refusal, running install and uninstall refusal, reparse and profile
+  destination refusal, uninstall, reinstall with the optional desktop shortcut, and
+  byte-identical profile and download data throughout. Release metadata verifier:
+  36 refusal cases.
+
+The new native regression was mutation-checked. Each of these changes made it fail:
+follow-up suppression disabled; HTTP status ignored; immediate view destruction;
+no engine recovery; download failure kept in diagnostics; download leaving the
+failed state; blocked link reported as a page error.
+
+### External website testing (manual, network-dependent)
+
+`validation/site-survey.ps1`, production session, disposable profiles, no credentials.
+Results and the defect list are in [COMPATIBILITY.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md).
+Final run: 29 addresses, 26 loaded (three of them HTTP error pages reported as
+such), 3 intended failures correctly diagnosed, 0 timeouts, 0 engine exits, 0
+crash dumps.
+
+Engine crash measurements, Microsoft sign-in page, 3 s after load:
+
+| Action | Before | After |
+| --- | --- | --- |
+| Close the tab (engine browser-process exit observed) | 6 of 8 runs | 0 of 12 runs |
+| Close the window with the page visible (crash dump in profile) | 8 of 8 runs | 0 of 8 runs |
+| Control: close the window on example.com, GitHub/Google sign-in, Wikipedia, YouTube | 0 of 6 runs | not repeated |
+
+Burst close (`site-survey.ps1 -BurstCloseFillers n`, 2026-11-10): after the sign-in
+page loads, it and `n` blank tabs are closed in one event-loop turn. The first fix held
+at most 16 closed views and destroyed the oldest at once beyond that, which was the
+sign-in page:
+
+| Views closed at once | 16-view cap | 64-view cap (shipped) |
+| --- | --- | --- |
+| 11 or 16 | 0 of 8 runs | not repeated |
+| 17 | 4 of 6 runs | 0 of 5 runs |
+| 18 | 6 of 6 runs | 0 of 5 runs |
+| 33 | not run | 0 of 3 runs |
+| Control: example.com + 17 blank tabs | 0 of 3 runs | not repeated |
+| Control: window exit with 19 tabs (18 sign-in pages) | 0 of 2 runs | not repeated |
+
+The native regression now fills the window to 64 tabs and closes 62 in one turn; it
+fails with the 16-view cap ("16 of 62 kept"). Clearing browsing data retires every
+open tab at once and was subject to the same cap; that path was not measured.
+
+Hiding the view for 0 or 100 ms before destroying it still crashed 8 of 8 times;
+300 ms and 1 s did not crash in 8 runs each. The shipped delay is 1 s. Disabling
+every application event handler on the view did not prevent the crash. These are
+small samples on one machine, one Runtime version and one page; the crash is avoided,
+its cause inside WebView2 is unknown, and other pages or Runtime versions may differ.
+
+### Real GUI observations (release executable, disposable profile)
+
+Scripted through real windows, not simulated input: the release build opened titled
+"Rust Browser 0.14.0" and loaded `example.com`; starting it again for the same
+profile showed the "already running" message box, exited with code 1 and left the
+first window running; closing the window ended the process 1,089 ms later with exit
+code 0; the diagnostic journal held only starting, started and clean_shutdown; no
+running marker and no crash dump remained; restarting restored both tabs. Not
+observed by a person: visual appearance, the new shortcuts on a physical keyboard,
+the engine-restart notice outside the fixture, and any installer wizard page.
+
+### Performance and soak
+
+[benchmarks/V014_RESULTS.md](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/V014_RESULTS.md). 32 matched runs:
+no difference between v0.13 and v0.14 can be established, and none is claimed.
+One 30-minute churn soak of the v0.14 candidate completed: 1,799 s, 178 cycles, no
+failed navigation, no engine or renderer failure, normal exit. It is a single
+synthetic run and does not prove the absence of memory leaks.
+
+### Not tested
+
+- Windows 10, a clean virtual machine, a standard-user account, and machines without
+  the WebView2 Runtime or the Visual C++ runtime. No virtual machine was available,
+  and the real system was not altered to imitate a missing prerequisite.
+- The interactive installer wizard, taskbar pinning and icon appearance, mid-copy
+  termination, power loss and a full disk.
+- Signing in to any website, popup sign-in with a real provider, public-site uploads,
+  video playback, DRM, WebRTC, and permission or notification prompts on real sites.
+- Screen readers, real contrast themes, Windows text size, display scaling other
+  than 100%, multiple monitors, IME composition and non-US keyboard layouts.
+- Engine recovery for failures other than process termination of the content
+  browser process; GPU and utility failure handling is unit-tested classification
+  only. Recovery of the toolbar's engine process does not exist.
+- Physical sleep/wake, and browsing sessions by a person longer than the scripted checks.
+
+### Remaining blockers for a daily-use release
+
+Unsigned installer and no authenticated update; no clean-machine or Windows 10
+evidence; one normal window per profile; no accessibility acceptance with assistive
+technology; downloads do not resume; an engine restart reloads pages and loses
+unsaved page state.
+
 ## Version 0.13.0
 
 Baseline: verified PR #16 squash `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`,
@@ -119,9 +237,9 @@ Every new native assertion was mutation-checked: it fails when its feature is re
 This found and fixed one vacuous zoom check. Forced-colors and reduced-motion styling
 are asserted under DevTools media emulation. Real-window captures (PrintWindow, disposable profiles) confirmed the redesigned
 Dark, Slate, Plum and Light themes, multi-tab, new-tab and 640 px error layouts. Accessibility scope and manual gaps:
-[ACCESSIBILITY.md](validation/ACCESSIBILITY.md). Compatibility additions:
-[COMPATIBILITY.md](validation/COMPATIBILITY.md). CI changes and cold/warm timings:
-[CI.md](CI.md).
+[ACCESSIBILITY.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/ACCESSIBILITY.md). Compatibility additions:
+[COMPATIBILITY.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md). CI changes and cold/warm timings:
+[CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md).
 
 **Not tested:**
 - Real screen readers.
@@ -168,9 +286,9 @@ Local Windows 11 x64 / Rust 1.99.1 / WebView2 157.0.4341.42 checks passed on
 - Actual shipping Windows GUI: HTTPS pages/redirect, loading feedback, Light,
   Ctrl+L/T/W/Tab/D/H/J/Shift+O/Shift+P, drag reordering, bookmark/history/download
   panels and normal restart with URLs/active tab/pin/theme/bookmark preserved.
-  See [the acceptance matrix](validation/DAILY_DRIVER.md) for precise limits.
+  See [the acceptance matrix](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md) for precise limits.
 
-[Corrected matched measurements](benchmarks/V011_RESULTS.md) record two fresh/warm
+[Corrected matched measurements](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/V011_RESULTS.md) record two fresh/warm
 repeats at 1/5/10/20 tabs, alternating order, against unchanged baseline using the
 identity-validated sampler. Results are mixed; no performance improvement is
 claimed. A fresh 30-minute 20-tab synthetic churn soak at `d77d9c9` passed with
@@ -197,7 +315,7 @@ level; no tag, workflow publication, installer or GitHub release was executed.
 
 Based on verified PR #12 squash commit
 `bba82c9b6a34c990f1e04f70c32abeda898f5e23`; production remains 0.8.0.
-The [detailed record](experiments/servo/VALIDATION_V010.md) includes commands,
+The [detailed record](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/VALIDATION_V010.md) includes commands,
 counts, repeated numeric samples, GUI observations and failures.
 
 - Production fmt, strict Clippy, 47 regular tests, seven native WebView2
@@ -219,7 +337,7 @@ counts, repeated numeric samples, GUI observations and failures.
 
 The branch is based on verified PR #11 squash commit
 `469cddf2c080f7b1fa0a8dcd2c5c6993fbe3effa`. The
-[detailed validation record](experiments/servo/VALIDATION_V09.md) describes
+[detailed validation record](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/VALIDATION_V09.md) describes
 the isolation decision, tests, script timing endpoints and remaining work.
 
 - Formatting, strict production Clippy, 47 regular tests, debug/release
@@ -260,7 +378,7 @@ passed.
   presentation and exited cleanly. Reusing a run was refused.
 - Actual Windows GUI checks exercised the local fixture, input, resize,
   navigation, popup refusal, and normal closure. The separate source
-  build procedure and [detailed results](experiments/servo/EMBEDDER_RESULTS.md)
+  build procedure and [detailed results](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/EMBEDDER_RESULTS.md)
   document the exact manual scope, upstream lockfile findings, and
   measurements. Production CI retains the existing WebView2 gates.
 
@@ -286,12 +404,12 @@ production engine; Servo is an isolated opt-in experiment with no Cargo dependen
   reported no `window.ipc`. The measured Servo process exited with code 0 after
   normal window closure. Its disposable profile retained files after exit.
 - The sanitized one-run resource sample in
-  [Servo results](experiments/servo/RESULTS.md) was checked against its raw values
+  [Servo results](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/RESULTS.md) was checked against its raw values
   and fixture digest. It is not a controlled engine-only or statistical comparison.
 - A full Servo source build (`mach bootstrap`/`mach build`) was not performed. The
   required dedicated native-toolchain environment and pinned Servo toolchain are
   separate from Rust Browser's; feasibility constraints are in
-  [Servo research](experiments/servo/RESEARCH.md). Real-site compatibility,
+  [Servo research](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/RESEARCH.md). Real-site compatibility,
   in-process embedding, Windows OS isolation, daily-use security, and equivalent
   startup/input latency remain unverified. No Servo engine selector or profile
   migration is implemented.
@@ -344,15 +462,15 @@ observed. Desktop access initially failed; after the user confirmed it was unloc
 and the automation session was reset, the GUI checks above were completed. No OS
 privacy/security settings or device grants changed.
 
-See [compatibility matrix](validation/COMPATIBILITY.md) for exact limits and
-[test procedures](validation/README.md) for repeatable 30–60 minute interactive and
+See [compatibility matrix](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md) for exact limits and
+[test procedures](https://github.com/Niithursan/RustBrowser/blob/main/validation/README.md) for repeatable 30–60 minute interactive and
 automated workloads. Physical sleep/wake, real accounts/devices, full-disk hardware
 failure, 125/150/200% mixed-DPI/multi-monitor and spoken screen-reader acceptance
 remain unverified. Historical v0.5 benchmark numbers below are not v0.6 measurements.
 The 30-minute automated soak passed 178 churn cycles, all twenty final responsiveness
 checks, close-to-one recovery and normal shutdown. It is distinct from the shorter
 actual GUI checks, and includes documented concurrent activity and sampling limits.
-See [SOAK.md](validation/SOAK.md) for numeric evidence and
+See [SOAK.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/SOAK.md) for numeric evidence and
 [PR #9](https://github.com/Niithursan/RustBrowser/pull/9) for final-commit CI results.
 
 ## Version 0.5.0
@@ -368,7 +486,7 @@ passed. All 28 regular baseline tests passed locally. Development uses
 The v0.4 measurements below used different pages and short samples. They are retained
 as historical observations and cannot establish an improvement. The controlled v0.5
 comparison uses an identical test-only synthetic workload on both versions; see
-[benchmark procedure](benchmarks/README.md) and [results](benchmarks/RESULTS.md).
+[benchmark procedure](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/README.md) and [results](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/RESULTS.md).
 
 New regular coverage checks live tab identity/ordering/pinned groups, every explicit
 protected-activity flag, generation races, native refusal/timeout/resume failure
@@ -433,7 +551,7 @@ corrected 20-tab idle CPU means were 15–24% lower in the two sampled condition
 Private bytes were modestly lower, with no general physical-RAM or startup speedup
 established. Some switching/all-loaded timings regressed. Initial CPU measurements
 were excluded after discovering integer rounding in the PowerShell harness; corrected
-data, numeric samples, exact methods and variability are in [RESULTS.md](benchmarks/RESULTS.md).
+data, numeric samples, exact methods and variability are in [RESULTS.md](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/RESULTS.md).
 
 ## Version 0.4.0
 

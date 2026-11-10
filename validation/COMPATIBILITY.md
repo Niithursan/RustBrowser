@@ -1,5 +1,56 @@
 # Compatibility matrix
 
+## v0.14 public-website survey and controlled fixtures
+
+Windows 11 Pro x64 (10.0.26200), WebView2 Runtime as installed on the test machine,
+2026-11-09. `validation/site-survey.ps1` drives the **production session** (test
+executable, disposable profile): a new tab per address, wait for completion, read
+the tab state and a small page probe, close the tab. No credentials were entered, no
+permission was granted, and no personal account was used. These are observations of
+third-party sites on one day and one network, not a compatibility guarantee.
+
+Final run on the v0.14 candidate, 29 addresses, 0 timeouts, 0 engine or renderer
+exits, 0 crash dumps:
+
+| Category | Addresses | Result |
+| --- | --- | --- |
+| Search engines | Google, DuckDuckGo, Bing result pages | Loaded |
+| Documentation and news | Rust book, MDN, Wikipedia, BBC News, Hacker News | Loaded |
+| JavaScript-heavy applications | GitHub repository, react.dev, Excalidraw | Loaded |
+| JavaScript-heavy applications | OpenStreetMap | Answered HTTP 429 to this client; shown as such |
+| Video and embedded media | YouTube and Vimeo home pages | Loaded; playback was not exercised |
+| Sign-in pages, authentication redirects | GitHub, Google (3 redirects), Microsoft (3 redirects) | Sign-in page loaded; nothing was entered |
+| Scheme upgrade, redirect chains | `http://github.com`, `http://example.com`, httpbin 5-hop and absolute 3-hop | Loaded at the final address |
+| Service-worker sites | web.dev, Squoosh, Excalidraw, YouTube (controller present after load), x.com | Loaded |
+| Server errors | httpbin 404 and 500 | Reported as the website's HTTP answer |
+| Unresolvable name | `.invalid` host | Failed once, with name-resolution advice (status 13) |
+| Certificate errors | expired and self-signed (badssl.com) | Failed with certificate advice; no bypass |
+
+`window.ipc` was undefined on every surveyed page.
+
+Defects found by the survey, all Rust Browser integration defects except where noted:
+
+| Finding | Classification | State in v0.14 |
+| --- | --- | --- |
+| WebView2 browser process ends with an access violation when a visible view showing the Microsoft sign-in page is destroyed (tab close 6/8, window exit 8/8). No application event handler is involved (each was disabled in turn). | WebView2 engine defect, triggered by destroying a visible view | Avoided: views are hidden for one second before destruction (0/12 and 0/8 after). A burst of 17+ closes still destroyed one early under the first 16-view cap (10/12); up to 64 are now held (0/13) |
+| After that exit every tab failed with `0x8007139F` | Integration defect: no handling of browser-process exit | Fixed: views are rebuilt and reloaded |
+| HTTP 404/429/500 shown as "page could not be loaded (status 0)" | Integration defect | Fixed |
+| Unreachable host shown with the wrong reason (status 9) | Integration defect: the engine's follow-up navigation was treated as a new failure | Fixed |
+| Download navigation marked the page failed | Integration defect | Fixed |
+| `mailto:` link marked the page failed | Integration defect | Fixed |
+
+Controlled fixtures added to the native suite (loopback only): 404 and 503 pages,
+a refused connection and its Reload, a blocked app link, a download started from the
+address bar, tab retirement timing, engine-process termination and restart, reopen
+closed tab and select-by-position. Popup checks (script-written `about:blank`
+popup, `noopener` popup, link download inside a popup tab) were observed once with a
+temporary probe and behaved correctly; they are not new automated assertions.
+
+Not tested in v0.14: signing in to any account, popup-based sign-in with a real
+provider, real file uploads to public sites, video playback and DRM, notification
+and permission prompts on public sites, WebRTC calls, multiple windows (not
+supported), and any site behind a login.
+
 Current v0.11 results are in [DAILY_DRIVER.md](DAILY_DRIVER.md): the new native
 modern-site/certificate/navigation/diagnostic suite and all seven previous native
 regressions passed, with actual release GUI HTTPS/tab/bookmark/theme/restart checks.

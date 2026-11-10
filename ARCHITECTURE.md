@@ -1,6 +1,6 @@
 # Production architecture
 
-WebView2 remains the production engine in 0.11.0. Servo is a separate fixture-only
+WebView2 remains the production engine in 0.14.0. Servo is a separate fixture-only
 experiment; none of its dependency graph, profiles, privileges or process work
 is introduced into normal browsing by this milestone.
 
@@ -36,10 +36,45 @@ or network status is globally converted to success.
 
 WebView2 can report explicit Stop as `CONNECTION_ABORTED` (9), as well as
 `OPERATION_CANCELED` (14). A status-9 result is cancellation only when this host
-recorded Stop for that same navigation. Otherwise it remains an error. Failed
+recorded Stop for that same navigation. Otherwise it remains an error, except for
+the engine follow-up and download cases described under failure reporting below. Failed
 Stop calls restore the previous marker. Cancellation does not record a successful
 history visit or replace the newer tab's loading state. A completed HTTP error
 response can still be a successful engine navigation, as before.
+
+## View lifetime and engine restart (v0.14)
+
+A tab's WebView2 view is never destroyed while visible. `Session::close_tab` and
+data clearing move the page to `Session::retired` after hiding it; `reap_retired`
+destroys it one second later (`RETIRE_DELAY`) from `about_to_wait`. At most
+`MAX_TABS` (64) retired views are held, so closing every tab within the delay keeps
+all of them; only opening and closing more than 64 tabs within one second destroys
+the oldest early. Window close
+goes through `App::begin_shutdown`: persist, hide the window and every view, then
+drop the session after the same delay. Events for a retired tab find no tab and are
+ignored. Engine data clearing does not start while a retired view exists.
+
+`native_activity::classify` maps WebView2 `ProcessFailed` kinds to four cases.
+Only a browser-process exit sets `Session::engine_lost`; `recover_engine` then runs
+once on the next idle turn, after already queued events for the dead views. It
+builds a new engine per tab with the same tab ID through the same `build_engine`
+path as ordinary tabs, reloads each address, resets suspension state and opener
+links, cancels permission and popup deferrals, and re-runs startup security
+initialization if it had not completed. `admit_engine_restart` allows three
+restarts per two minutes. The toolbar lives in its own WebView2 process group and
+is not covered.
+
+## Failure reporting (v0.14)
+
+`NavigationCompleted` with `IsSuccess == false`, an unknown web error status and an
+HTTP status of 400 to 599 is a completed navigation carrying `http_status`; it sets
+no failed state. After a reported connection failure, the next engine-initiated
+start for the same address is treated as the engine's follow-up: it produces no
+loading event, and if it ends as "connection aborted" it is dropped. Any other
+outcome of that navigation, a redirect of it, or any host command in between is
+reported normally. Navigation failures are written to diagnostics after two
+seconds so that a download request arriving in between can claim the "aborted"
+result of the navigation it replaced.
 
 ## Diagnostic lifecycle
 

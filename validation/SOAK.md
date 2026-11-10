@@ -1,5 +1,9 @@
 # v0.6 extended Windows soak
 
+The most recent soak is the v0.14 run recorded in
+[../benchmarks/V014_RESULTS.md](../benchmarks/V014_RESULTS.md). This page keeps
+the original v0.6 record.
+
 Measured on 2026-11-07 (America/Toronto), Windows 11 Pro 10.0.26200 x64,
 AMD Ryzen 5 5600 / 12 logical processors, 31.93 GiB RAM, WebView2 157.0.4341.42,
 Rust 1.99.1/MSVC and scale factor 1.0. Power plan and unrelated OS/desktop activity

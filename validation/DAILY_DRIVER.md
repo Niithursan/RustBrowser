@@ -113,6 +113,17 @@ Earlier phase-6/phase-9 hosted failures were not individually re-traced and may
 belong to either cause. Not covered: loading the same URI twice in quick
 succession, and Back/Forward/Reload issued over a pending host load.
 
+## v0.14 update
+
+v0.14 closed these gaps from the list below: complete loss of the session after an
+engine-process exit (now recovered), and misleading failure text for server errors,
+unreachable hosts, downloads and app links. See
+[COMPATIBILITY.md](COMPATIBILITY.md) for the public-site survey and
+[../VALIDATION.md](../VALIDATION.md) for measurements. Everything else in the
+list remains open, together with: a second normal window per profile, recovery of
+the toolbar's own engine process, and the unexplained WebView2 crash itself, which
+is avoided by delaying view destruction rather than fixed.
+
 ## Remaining daily-driver blockers
 
 Broader account/provider compatibility, device media/WebRTC/DRM, accessibility and

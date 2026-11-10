@@ -41,12 +41,12 @@ $baseline = .\tests\build_install_baseline.ps1 -OutputRoot C:\BuildScratch\basel
   -Compiler C:\BuildScratch\inno\inno\ISCC.exe -SourceCommit (git rev-parse HEAD)
 ```
 
-The actual pinned v0.12 source builds in a **separate** target: sharing one target
+The actual pinned v0.13 source builds in a **separate** target: sharing one target
 reproduced stale workspace build-script reuse. The candidate is never replaced.
 PR CI separately caches this immutable fixture by commit/OS/architecture/Rust.
-Release application builds remain clean/uncached. The v0.12 binary is repackaged
-by the test harness because no historical v0.12 installer exists; this does not
-certify an unknown old installer.
+Release application builds remain clean/uncached. The v0.13 binary is repackaged
+by the test harness with the current installer script rather than taken from a
+published v0.13 installer; this does not certify an unknown old installer.
 
 Tests compare bytes around lifecycle operations and use current typed readers to
 check sessions/pins/settings, schema-3 folders/bookmarks/history/permissions, opaque
@@ -68,9 +68,11 @@ released packages record the tagged commit.
 
 **Packaged documentation links.** The shipped Markdown files link to repository-only
 documents (packaging, CI, benchmarks, Servo research, validation records) with
-absolute GitHub URLs for the v0.13 install and update-trust references. Older
-relative links in README, SECURITY and VALIDATION still do not resolve inside an
-installed or extracted copy. Read those on GitHub.
+absolute GitHub URLs. Since v0.14 this covers every such link (41 were converted),
+and `tests/windows_package.ps1` fails if a packaged file gains a relative link to a
+file that is not in the package. The absolute links point at `main`, so an older
+installed copy shows the current repository documents, and they need a network
+connection.
 
 See [installation/recovery](../../INSTALL_WINDOWS.md),
 [update security](UPDATE_SECURITY.md), [validation](../../VALIDATION.md) and [CI](../../CI.md).

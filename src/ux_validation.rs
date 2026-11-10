@@ -454,6 +454,7 @@ fn run(private: bool) {
             proxy: event_loop.create_proxy(),
             failure: None,
             modifiers: ModifiersState::default(),
+            closing: None,
         },
         root: root.clone(),
         private,

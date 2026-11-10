@@ -1,0 +1,38 @@
+# Default public addresses for validation/site-survey.ps1. No sign-in is performed.
+# Search engines
+https://www.google.com/search?q=rust+language
+https://duckduckgo.com/?q=rust+language
+https://www.bing.com/search?q=rust+language
+# Documentation and news
+https://doc.rust-lang.org/book/
+https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API
+https://en.wikipedia.org/wiki/Web_browser
+https://www.bbc.com/news
+https://news.ycombinator.com/
+# JavaScript-heavy applications
+https://github.com/rust-lang/rust
+https://react.dev/
+https://www.openstreetmap.org/
+https://excalidraw.com/
+# Video and embedded media
+https://www.youtube.com/
+https://vimeo.com/
+# Sign-in pages and authentication redirects (pages only; nothing is entered)
+https://github.com/login
+https://accounts.google.com/
+https://login.microsoftonline.com/
+# Scheme upgrades and redirect chains
+http://github.com/
+http://example.com/
+https://httpbin.org/redirect/5
+https://httpbin.org/absolute-redirect/3
+# Service workers, IndexedDB and Cache Storage users
+https://web.dev/
+https://squoosh.app/
+https://x.com/
+# Server errors, unresolvable names and certificate failures
+https://httpbin.org/status/404
+https://httpbin.org/status/500
+https://nonexistent-rust-browser-test.invalid/
+https://expired.badssl.com/
+https://self-signed.badssl.com/

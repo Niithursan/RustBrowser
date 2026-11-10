@@ -23,6 +23,23 @@ Record the exact source commit, executable hash, Runtime/Rust versions, hardware
 display scaling, scenario and observed failures. Keep profiles, downloads and logs
 outside Git. [COMPATIBILITY.md](COMPATIBILITY.md) records the tested subset and gaps.
 
+## Public-website survey (manual, v0.14)
+
+```powershell
+.\validation\site-survey.ps1 -OutputRoot (Join-Path $env:TEMP 'rust-browser-survey')
+```
+
+This drives the production session against the addresses in
+`site-survey-sites.txt` (or `-Urls`), one new tab per address, and writes a JSON
+report: result, status text, reported failures, engine and renderer exits, and the
+number of WebView2 crash dumps left in the disposable profile. `-KeepTabsOpen`
+leaves every tab open and exits with the last one visible. `-BurstCloseFillers n`
+opens `n` blank tabs first and, after the visits, closes every visited and blank tab
+in one event-loop turn, then waits 4 s for engine exits. It needs a network
+connection, enters no credentials and grants no permission. It is not a CI gate and
+its results describe third-party sites on the day it ran. Do not add addresses that
+require an account.
+
 ## Native regressions
 
 Run each separately: winit permits one event loop per process. These six historical
@@ -35,7 +52,13 @@ cargo test --locked --bin rust-browser native_tab_sleep_resume_and_local_page_se
 cargo test --locked --bin rust-browser native_private_newtab_settings_are_ephemeral -- --ignored --test-threads=1
 cargo test --locked --bin rust-browser native_popup_opener_upload_audio_fullscreen_and_redirects -- --ignored --test-threads=1
 cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_failure_reporting_tab_retirement_and_engine_restart -- --ignored --test-threads=1
 ```
+
+The last one (v0.14) checks HTTP error pages, a refused connection and its Reload,
+a blocked app link, a download started from the address bar, deferred destruction
+of a closed tab, restart after the fixture ends its **own** WebView2 browser
+process, reopen-closed-tab, select-by-position and the delayed shutdown.
 
 The compatibility test binds a random loopback port, generates quiet PCM audio, and
 uses disposable folders for synthetic HTTP downloads. Test-only CDP user gestures

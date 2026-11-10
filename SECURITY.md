@@ -1,5 +1,30 @@
 # Security
 
+## v0.14 reliability changes and their boundaries
+
+- Engine restart reuses the same profile, private-window isolation, permission
+  handler, download handler and navigation policy as ordinary tab creation. Pending
+  permission prompts and popup requests are cancelled, never auto-granted. If the
+  engine ends before startup security initialization finished, that initialization
+  is run again before any website loads.
+- A closed tab's document stays alive, hidden, for one second. It can no longer be
+  shown or focused, and events from it are ignored. Clearing browsing data waits
+  until every such view is destroyed before asking WebView2 to clear.
+- "Reopen closed tab" keeps up to 16 addresses in memory for the running window. They
+  are never written to the session file and are discarded when browsing data is
+  cleared. Private windows keep theirs in memory until the window closes.
+- HTTP error pages are no longer described as failed connections. Certificate
+  failures are unchanged: they remain failures, and no validation bypass exists.
+- The public-site survey and the test that ends the engine process are compiled only
+  into the test executable. The survey enters no credentials and grants no permission.
+- No new native interface is exposed to websites, no telemetry is added, and the
+  installer remains unsigned: a matching SHA-256 checksum detects corruption but does
+  not identify the publisher.
+
+Not addressed: recovery when the toolbar's own engine process ends; the root cause
+of the WebView2 crash, which is inside the engine and is avoided, not fixed; and
+single-instance hand-off, which would need a new local interface between processes.
+
 ## v0.13 installation and manual updates
 
 The new unsigned Inno installer uses a fixed per-user target, exact payload and
@@ -50,7 +75,7 @@ transaction with all engine/session/SQLite shutdown work, and missing markers do
 prove every flush succeeded. Early startup failures may have no profile/journal.
 Release startup and panic feedback is static; no payload/path/backtrace or automatic
 crash report is uploaded. It does not replace Runtime/OS crash reporting or restore
-unsaved forms. See [architecture](ARCHITECTURE.md) and [acceptance limits](validation/DAILY_DRIVER.md).
+unsaved forms. See [architecture](https://github.com/Niithursan/RustBrowser/blob/main/ARCHITECTURE.md) and [acceptance limits](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md).
 
 The unsigned executable embeds version metadata and `asInvoker`, with `uiAccess=false`.
 It requests no administrator access but inherits its launcher's rights; this is not
@@ -66,7 +91,7 @@ features justify the version jump; the default data folder and database formats 
 preserved. Older binaries may reject Light settings; use closed-profile backups for
 rollback rather than editing a live SQLite database or deleting locks.
 
-The v0.10 [rendering decision](experiments/servo/SECURE_RENDERING_V010.md)
+The v0.10 [rendering decision](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/SECURE_RENDERING_V010.md)
 keeps the Servo host fixture-only. The synthetic diagnostic workers retain
 Win32k and child-process restrictions, zero capabilities and verified token
 limits. Launch first derives a restricted LUA primary token with maximum
@@ -85,12 +110,12 @@ inability to query catalog keys is evidence for investigation, not a proven
 unique cause. No network timeout/nonreceipt establishes general containment.
 OpenGL initialization fails under retained Win32k lockdown, and the pinned
 offscreen/software paths still depend on WGL. No real Servo renderer was
-launched under these restrictions. See [diagnostics](experiments/servo/isolation/DIAGNOSTICS_V010.md).
+launched under these restrictions. See [diagnostics](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/isolation/DIAGNOSTICS_V010.md).
 The separate upstream lockfile audit and strict minimal-feature Clippy
-remain failing as recorded in [validation](experiments/servo/VALIDATION_V010.md).
+remain failing as recorded in [validation](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/VALIDATION_V010.md).
 Production audit and strict Clippy pass independently.
 
-The v0.9 [threat model](experiments/servo/isolation/THREAT_MODEL.md) keeps
+The v0.9 [threat model](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/isolation/THREAT_MODEL.md) keeps
 arbitrary Servo browsing blocked. A separate synthetic worker validates
 selected AppContainer and Job Object mechanisms. Its standard AppContainer
 probe observed inconclusive loopback timeouts, and its capability-free LPAC
@@ -127,7 +152,7 @@ from that verified extraction. No TLS bypass, arbitrary command-line flags, devt
 WebDriver, user scripts or Rust IPC bridge is enabled. The static loopback fixture
 has no host/file API or network callbacks. The small shared navigation interface
 does not grant privileged capabilities to content. See
-[Servo security findings](experiments/servo/RESEARCH.md). Cargo audit covers the
+[Servo security findings](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/RESEARCH.md). Cargo audit covers the
 application's locked Rust dependencies, **not** the downloaded Servo distribution
 or all of its native libraries; a green application audit is not Servo certification.
 
@@ -147,7 +172,7 @@ requests, refuses new views, and supplies no external launcher, native file pick
 download destination, or Rust Browser IPC. Download refusal relies on the fixed
 fixture and navigation/resource policy. The pinned API exposes no dedicated
 download decision hook in this host. The experiment has no TLS bypass and permits
-only the local fixture URLs. See [Servo results](experiments/servo/EMBEDDER_RESULTS.md)
+only the local fixture URLs. See [Servo results](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/EMBEDDER_RESULTS.md)
 for the separate upstream dependency audit and the limits of these checks.
 
 Session URLs and provider settings are saved

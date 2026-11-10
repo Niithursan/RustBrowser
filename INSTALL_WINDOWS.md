@@ -69,8 +69,14 @@ v0.13 running marker and a non-writing mapped-file probe protect running copies,
 including legacy v0.12 executables. No processes are terminated or scheduled for
 replacement on reboot. The marker is Windows-session scoped, not an atomic updater.
 
-For v0.12 portable users, close the old copy, install v0.13 normally and launch
-it: both use the same separate profile. Do not point Setup at the portable folder.
+Upgrading v0.13 to v0.14 changes no stored data format. After closing the last
+window, the browser process now stays for about one second while it shuts the engine
+down; wait for it before running Setup, which otherwise reports the browser as
+running. If the browser is started while a normal window is already open for the
+same profile, it shows "Rust Browser is already running" and changes nothing.
+
+For v0.12 or v0.13 portable users, close the old copy, install the new version
+normally and launch it: both use the same separate profile. Do not point Setup at the portable folder.
 Verify tabs/bookmarks/settings before removing old application files. Portable
 upgrades use new sibling version directories.
 

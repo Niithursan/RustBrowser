@@ -9,6 +9,26 @@ use webview2_com::{
 use windows::core::{BOOL, Interface};
 use winit::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewExtWindows};
+/// What a WebView2 process failure means for the tab that reported it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// The shared browser process ended: every view in the profile is unusable.
+    Browser,
+    /// This tab's renderer ended; Reload creates a new one.
+    Renderer,
+    /// The renderer stopped responding and may still recover by itself.
+    Unresponsive,
+    /// Frame, GPU, utility and similar helpers. WebView2 restarts these itself.
+    Helper,
+}
+pub fn classify(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> Failure {
+    match kind {
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => Failure::Browser,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => Failure::Renderer,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => Failure::Unresponsive,
+        _ => Failure::Helper,
+    }
+}
 #[derive(Default)]
 pub struct Activity {
     pub protected: Cell<bool>,
@@ -34,7 +54,17 @@ pub fn install(
             &mut token,
         )?;
         let p = proxy.clone();
-        core.add_ProcessFailed(&ProcessFailedEventHandler::create(Box::new(move|_,_|{let _=p.send_event(Event::RendererFailed);let _=p.send_event(Event::Page(id,crate::app::PageEvent::Error("A WebView2 process failed. Keep this tab and try Reload; if that fails, restart the browser. Unsaved page changes may be lost.".into())));Ok(())})),&mut token)?;
+        core.add_ProcessFailed(
+            &ProcessFailedEventHandler::create(Box::new(move |_, args| {
+                if let Some(args) = args {
+                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                    args.ProcessFailedKind(&mut kind)?;
+                    let _ = p.send_event(Event::EngineProcess(id, classify(kind)));
+                }
+                Ok(())
+            })),
+            &mut token,
+        )?;
         let a = activity.clone();
         let p = proxy.clone();
         core.add_ContainsFullScreenElementChanged(
@@ -91,5 +121,37 @@ pub fn watch_resources(view: &WebView, activity: Rc<Activity>) -> windows::core:
             activity.observable.set(true);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_browser_and_renderer_exits_invalidate_views() {
+        assert_eq!(
+            classify(COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED),
+            Failure::Browser
+        );
+        assert_eq!(
+            classify(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED),
+            Failure::Renderer
+        );
+        assert_eq!(
+            classify(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE),
+            Failure::Unresponsive
+        );
+        // Self-healing helpers must never mark a healthy page as failed.
+        for kind in [
+            COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_PLUGIN_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED,
+        ] {
+            assert_eq!(classify(kind), Failure::Helper);
+        }
     }
 }

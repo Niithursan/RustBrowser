@@ -346,6 +346,7 @@ fn windows_performance_probe() {
             proxy: event_loop.create_proxy(),
             failure: None,
             modifiers: ModifiersState::default(),
+            closing: None,
         },
         root,
         profile,

@@ -69,6 +69,9 @@ pub enum Command {
     CloseTab(TabId),
     SelectTab(TabId),
     CycleTab(bool),
+    /// Select by position; any position past the end selects the last tab.
+    SelectIndex(usize),
+    ReopenClosedTab,
     SetSearchEngine(SearchEngine),
     BookmarkCurrent,
     ShowPanel(Panel),
@@ -135,6 +138,14 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
     match (key, ctrl, alt) {
         (0x21, true, _) if shift => Some(Command::MoveActive(true)),
         (0x22, true, _) if shift => Some(Command::MoveActive(false)),
+        (0x21, true, _) => Some(Command::CycleTab(true)),
+        (0x22, true, _) => Some(Command::CycleTab(false)),
+        (0x54, true, _) if shift => Some(Command::ReopenClosedTab),
+        // Ctrl+1..8 select that tab; Ctrl+9 selects the last one.
+        (0x31..=0x38, true, _) if !shift => Some(Command::SelectIndex((key - 0x31) as usize)),
+        (0x39, true, _) if !shift => Some(Command::SelectIndex(usize::MAX)),
+        (0x73, true, _) => Some(Command::CloseActive),
+        (0x24, _, true) => Some(Command::Home),
         (0x50, true, _) if shift => Some(Command::PinActive),
         (0x4e, true, _) if shift => Some(Command::NewPrivateWindow),
         (0x44, true, _) => Some(Command::BookmarkCurrent),
@@ -276,5 +287,51 @@ mod tests {
             Some(Command::CycleTab(true))
         ));
         assert!(shortcut(0x46, true, false, false).is_none());
+    }
+    #[test]
+    fn standard_tab_shortcuts_match_other_windows_browsers() {
+        assert!(matches!(
+            shortcut(0x54, true, false, true),
+            Some(Command::ReopenClosedTab)
+        ));
+        assert!(matches!(
+            shortcut(0x31, true, false, false),
+            Some(Command::SelectIndex(0))
+        ));
+        assert!(matches!(
+            shortcut(0x38, true, false, false),
+            Some(Command::SelectIndex(7))
+        ));
+        assert!(matches!(
+            shortcut(0x39, true, false, false),
+            Some(Command::SelectIndex(usize::MAX))
+        ));
+        assert!(matches!(
+            shortcut(0x22, true, false, false),
+            Some(Command::CycleTab(false))
+        ));
+        assert!(matches!(
+            shortcut(0x21, true, false, false),
+            Some(Command::CycleTab(true))
+        ));
+        // Ctrl+Shift+PageUp/PageDown still move the tab instead of switching.
+        assert!(matches!(
+            shortcut(0x21, true, false, true),
+            Some(Command::MoveActive(true))
+        ));
+        assert!(matches!(
+            shortcut(0x73, true, false, false),
+            Some(Command::CloseActive)
+        ));
+        assert!(matches!(
+            shortcut(0x24, false, true, false),
+            Some(Command::Home)
+        ));
+        // Plain digits, Home and F4 stay with the page; AltGr digits type symbols.
+        for key in [0x31, 0x39, 0x24, 0x73] {
+            assert!(shortcut(key, false, false, false).is_none());
+        }
+        assert!(shortcut(0x32, true, true, false).is_none());
+        assert!(!repeatable(&Command::ReopenClosedTab));
     }
 }
