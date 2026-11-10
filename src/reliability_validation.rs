@@ -75,21 +75,22 @@ fn terminate_engine(session: &Session) -> Result<(), String> {
 
 impl Probe {
     fn eval(&self, script: &str) -> Result<(), String> {
+        self.eval_in(false, script)
+    }
+    fn eval_in(&self, toolbar: bool, script: &str) -> Result<(), String> {
         let session = self.app.session.as_ref().ok_or("No session")?;
         let result = self.result.clone();
-        session
-            .tabs
-            .active()
-            .ok_or("No tab")?
-            .content
-            .engine
-            .view
-            .evaluate_script_with_callback(script, move |value| {
-                if let Ok(mut slot) = result.lock() {
-                    *slot = Some(value)
-                }
-            })
-            .map_err(|_| "Fixture evaluation failed".into())
+        let view = if toolbar {
+            &session.toolbar
+        } else {
+            &session.tabs.active().ok_or("No tab")?.content.engine.view
+        };
+        view.evaluate_script_with_callback(script, move |value| {
+            if let Ok(mut slot) = result.lock() {
+                *slot = Some(value)
+            }
+        })
+        .map_err(|_| "Fixture evaluation failed".into())
     }
     fn poll(&mut self, el: &ActiveEventLoop) -> Result<(), String> {
         if self.phase == 100 {
@@ -162,6 +163,15 @@ impl Probe {
                     .any(|e| e.code == DiagnosticCode::NavigationFailed)
                 {
                     return Err("HTTP 404 was recorded as a navigation failure".into());
+                }
+                // Announced politely as status text, not assertively as an error.
+                s.render();
+                self.eval_in(true, "document.getElementById('alert').textContent==='' && document.getElementById('status').className==='' && document.getElementById('status').getAttribute('role')==='status' && document.getElementById('status').textContent.includes('HTTP 404')")?;
+                self.phase = 18;
+            }
+            18 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("HTTP 404 was announced as an error".into());
                 }
                 s.command(Command::Navigate(format!("{}status-503", self.url)))
                     .map_err(|_| "503 navigation failed")?;
@@ -336,6 +346,15 @@ impl Probe {
                     .any(|e| e.code == DiagnosticCode::EngineRestarted)
                 {
                     return Err("Engine restart was not recorded".into());
+                }
+                // The restart is announced in the polite, dismissible notice region.
+                s.render();
+                self.eval_in(true, "document.getElementById('notice').textContent.includes('was restarted') && document.getElementById('notice').getAttribute('role')==='status' && !document.getElementById('dismiss-notice').hidden && document.getElementById('alert').textContent===''")?;
+                self.phase = 19;
+            }
+            19 if value.is_some() => {
+                if value.as_deref() != Some("true") {
+                    return Err("Engine restart notice was not announced accessibly".into());
                 }
                 self.eval("window.marker==='retained' && location.search==='?second'")?;
                 self.phase = 10;
