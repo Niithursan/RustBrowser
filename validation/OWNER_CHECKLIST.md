@@ -27,7 +27,10 @@ untouched during this milestone.
 2. Read each page: licence, notice, the optional desktop shortcut task, ready,
    finish. There is no folder page; the folder is fixed per user.
 3. Tick **Create a desktop shortcut** (it is off by default) and finish. Setup does
-   not start the browser; start it from the Start Menu.
+   not start the browser. Inspect the Start Menu and desktop shortcut icons without
+   opening them. Start the installed executable only through the supplied
+   isolated-profile launch command. The validation installer changes installation
+   identity and destination, not the application's default profile path.
 
 **Pass:** every page is readable and its buttons work; Windows warns about an
 unknown publisher (expected, the build is unsigned) and nothing else; the browser
@@ -81,7 +84,8 @@ Use a site and account you control, preferably a test account, in the disposable
 profile. Enter credentials yourself and do not include them in the report.
 
 1. Sign in normally.
-2. Close the browser window, start it again.
+2. Close the browser window, then start it again through the same isolated-profile
+   launch command.
 
 **Pass:** the sign-in page works (including any second factor), you are still
 signed in after the restart, and the site looks as it does in your usual browser.

@@ -48,8 +48,19 @@ Current continuation:
 - README/CHANGELOG/VALIDATION, readiness, compatibility, accessibility and installation
   docs now describe v0.15, provenance and limits. No new production code/dependency,
   signing, updater, CRT mode, Windows feature, hand-off or profile-format change.
-- Next: full final local gates, record results, commit, push once and open exactly one
-  draft PR. The whole branch includes code/packaged docs, so Windows CI must run.
+- `25bfda8` records v0.15 evidence/limits; `5c8822e` formats the inherited keyboard
+  test after the first fmt check failed. All 26 final local gates passed on that
+  source: 79 regular tests, 10 separate native suites, 3 daily runs, both builds,
+  PowerShell fixtures, 2 experimental and 18 production Python tests, packaging,
+  v0.14 installer lifecycle, metadata and audit (369 crates / 1,446 advisories).
+  A live release EXE lock was avoided with isolated build output; a 273-character
+  Inno scratch path was shortened. No user browser was stopped or assertion weakened.
+  Raw result pointer: `work/v15/current-final-gates.json` (outside Git).
+- Final documentation also requires owner launches through an isolated-profile
+  command: validation installer identity alone does not isolate the browser profile.
+- Next: recheck packaging after the results-only documentation commit, push once
+  and open exactly one draft PR. The whole branch includes code/packaged docs, so
+  Windows CI must run.
   Verify exact final head with `gh pr checks`; no rerun/dispatch unless a hosted
   failure is reproduced and fixed locally. Mark ready only after required validation.
 - Hosted final run IDs/results will be recorded in the PR and final report, avoiding

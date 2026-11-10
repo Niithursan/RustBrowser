@@ -10,8 +10,41 @@ production installation or real-profile write is authorized.
 Recorded local environment: Windows 11 Pro x64, Rust 1.99.1/MSVC, WebView2 as
 installed, 2026-11-10. Raw evidence is in workspace `work/v15`, outside Git.
 Inherited results below were checked against the saved logs/JSON, not assumed
-from the handoff. Final local gate status: **pending**; hosted v0.15 checks have
-not run because no PR is open yet. The delivery record will distinguish them.
+from the handoff. All **26 local gates passed** on source commit `5c8822e`;
+the subsequent changes only record results and clarify the owner checklist.
+Hosted v0.15 checks have not run because no PR is open yet. Exact final-head
+hosted status belongs in the PR delivery record, separately from local results.
+
+### Final local gates (2026-11-10)
+
+| Gate | Result |
+| --- | --- |
+| Formatting and strict Clippy | Passed; `--all-targets --all-features`, warnings denied |
+| Regular Rust tests | 79 passed, zero failures; Windows-only/manual tests remain ignored in this command and are invoked separately below |
+| Windows debug and release builds | Passed, locked dependency graph; release output isolated from the already running executable |
+| Native WebView2 | All 10 standalone suites passed, each in its own process, including toolbar recovery and keyboard/layout |
+| Daily-driver fixtures | Three independent fresh-profile runs passed, not retries |
+| PowerShell fixtures | Process-tree sampler and experimental launcher safety passed; no Servo build/download/launch |
+| Python | 2 experimental fixture tests and 18 production CI-scope tests passed |
+| Portable package | Deterministic contents, hashes, metadata, offline links and unsafe-input refusal passed |
+| Installer lifecycle | Fresh install, pinned v0.14 upgrade, repair/removal/reinstall, refusal cases, shortcuts and disposable profile preservation passed |
+| Release metadata | Positive integrity/pin/repair checks and 36 malformed/downgrade/tampered/missing-input refusals passed |
+| Dependency security | `cargo audit --deny warnings` passed: 369 dependencies, 1,446 advisory records; three existing unsupported-platform exceptions unchanged |
+
+The first formatting check found the inherited keyboard test needed rustfmt;
+`5c8822e` applies formatting only. The release build initially hit a running EXE
+file lock; a separate output directory passed without stopping the user's browser.
+Inno's baseline compiler then refused a 273-character scratch output path; the
+same installer test passed under a shorter owned directory. Already-passed checks
+on the unchanged source were retained, not rerun as retries. No product assertion,
+profile path, security setting or dependency exception was weakened.
+
+Raw records: `work/v15/current-final-gates.json`, its referenced `results.json`,
+`final-gates.stdout.log`, `final-gates-resume.{stdout,stderr}.log` and
+`final-gates-short.{stdout,stderr}.log`. They stay outside Git. Packaging is checked
+again against the final documentation commit before delivery; exact-head hosted
+checks cover the final committed tree. These are automated native Windows GUI
+tests, not a human walkthrough of the owner checklist.
 
 ### Reproduced defects and before/after evidence
 
