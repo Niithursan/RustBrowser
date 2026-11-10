@@ -55,6 +55,16 @@ and interactive-wizard tests (no VM); screen reader, contrast theme, DPI, IME an
 multi-monitor checks; toolbar engine-process recovery; single-instance hand-off
 (needs approval for a new local interface).
 
+Burst-close follow-up (Claude Code, 2026-11-10):
+- New survey option `-BurstCloseFillers n` closes the visited tab and `n` blank tabs in
+  one event-loop turn. It showed the retirement fix was incomplete: `MAX_RETIRED` was
+  16, so a 17th close within 1 s destroyed the oldest hidden view at once. Sign-in
+  page crashed in 10/11 bursts over the cap, 0/8 at or under it; example.com 0/3;
+  window exit with 19 tabs 0/2. Fix: `MAX_RETIRED = MAX_TABS`; 0/13 bursts after.
+- Native regression now closes 62 tabs in one turn; mutation (cap 16) caught.
+- Gates passed: fmt, Clippy, 79 tests, debug and release builds
+  (`work/v14/gates-burst.log`). Raw runs: `work/v14/burst-rate/`.
+
 Next: re-verify CI on whatever head is current with `gh pr checks 18`. Await the
 user's review. Do not merge, tag or publish without explicit approval.
 
