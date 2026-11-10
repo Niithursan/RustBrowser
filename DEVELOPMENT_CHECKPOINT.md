@@ -1,6 +1,6 @@
 # Development checkpoint
 
-## v0.15: `feat/v0.15-release-candidate-prep` (Claude Code, in progress)
+## v0.15: `feat/v0.15-release-candidate-prep`
 
 Branch from verified `origin/main` `b4f0c23` (PR #18; CI 42857529540 and security
 42857529076 passed). Scratch: `<workspace>/work/v15`. No PR is open yet: pushing the
@@ -22,8 +22,39 @@ Findings: PR #18 head `36c8d2f` did get CI run 42857550749 (passed), created 10 
 after the merge at 16:44:00Z and about 7 minutes after the push. Windows Sandbox is
 not enabled (no WindowsSandbox.exe); the session is not elevated.
 
-Next: release criteria, survey, interrupted install, accessibility, owner
-checklist, docs, archive of v0.10 to v0.13 checkpoint sections, full gates, draft PR.
+Further committed work, verified against the handoff evidence:
+- `224f58b` public-site survey/download containment: 41 addresses, no engine/renderer
+  exits, crash dumps or timeouts; two nine-site/20-filler burst runs passed. Three
+  intentional DNS/TLS failures diagnosed; OpenStreetMap HTTP 429 remains unexplained.
+- `54b19e0` moved v0.10 to v0.13 checkpoints into the archive without losing text.
+- `ca1e9e2` and `bb86517` installer interruption fixes and manual sweep. Two final
+  32-case fresh/v0.14-upgrade sweeps repaired all cases with no leftovers and preserved
+  synthetic profile bytes/semantics. Completed-process controls are included; 24 and
+  26 cases respectively recorded killed owned processes. Real-profile read-only
+  metadata fingerprint unchanged. Reserved Setup filenames are documented.
+- `4d4900c` version 0.15.0; `dc8ec72` pinned v0.14 upgrade fixture/cache.
+- `0e57adb` native keyboard/layout regression: 3 passing runs, 4 caught compiled
+  product mutants. DPR/CSS renderer emulation is not physical Windows DPI. Optional
+  foreground-guarded UIA walks passed 3 times (24/33 controls, 29 distinct reached).
+- `7e68a66` reviewed and committed CI minute-economy docs, proposed release criteria
+  and owner checklist. Checklist now requires a disposable profile and validation
+  installer; it does not imply ordinary browsing leaves data unchanged. Owner scope,
+  static CRT, dependency-PR order and acceptance checks remain decisions, not approvals.
+
+Current continuation:
+- Read AGENTS.md, this file, readiness/CI/proposal/checklist and the supplied handoff.
+  Verified clean base ancestry, PR #18 merge at `b4f0c23`, baseline CI/security and
+  absence of a v0.15 PR. Preserved the three pending documents before further edits.
+- README/CHANGELOG/VALIDATION, readiness, compatibility, accessibility and installation
+  docs now describe v0.15, provenance and limits. No new production code/dependency,
+  signing, updater, CRT mode, Windows feature, hand-off or profile-format change.
+- Next: full final local gates, record results, commit, push once and open exactly one
+  draft PR. The whole branch includes code/packaged docs, so Windows CI must run.
+  Verify exact final head with `gh pr checks`; no rerun/dispatch unless a hosted
+  failure is reproduced and fixed locally. Mark ready only after required validation.
+- Hosted final run IDs/results will be recorded in the PR and final report, avoiding
+  a post-CI packaged-document push that spends another full Windows run. No remote
+  v0.15 result is claimed in this pre-PR checkpoint. Do not merge, tag, publish or deploy.
 
 ## v0.14 — `feat/v0.14-daily-driver-reliability` (Claude Code, 2026-11-09)
 

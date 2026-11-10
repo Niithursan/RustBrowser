@@ -98,8 +98,8 @@ allow it; the camera light goes off within a few seconds of closing the tab.
 
 ## 8. Two monitors with different scale (2 minutes)
 
-Both of your displays are 1920x1080. This needs one of them set to a different
-scale for the duration of the check.
+Needs two available monitors with different display scales. If that setup is not
+available, mark this item not tested. Record each original scale before changing it.
 
 1. **Settings > System > Display**, select one display, set **Scale** to 150%.
 2. Drag the browser window from one display to the other and back.

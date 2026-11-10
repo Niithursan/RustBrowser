@@ -1,10 +1,11 @@
 # Continuous integration
 
-v0.15 reduces Actions cost without removing coverage. A small Linux job,
+v0.15 adds Actions cost controls without removing required coverage. A small Linux job,
 **Change scope**, runs first and skips the two Windows jobs only when every file the
 pull request changes is Markdown that no build, test or package reads. Dependabot
-updates are grouped and checked monthly. v0.15 also adds one native step
-(`native_toolbar_engine_failure_is_recovered`, about 5 seconds locally) and moves the
+updates are grouped and checked monthly. v0.15 also adds two native steps
+(toolbar engine recovery and keyboard/layout checks, about 5 and 14 seconds in
+recorded local runs) and moves the
 installer upgrade fixture to the pinned v0.14 commit `b4f0c23` (new immutable cache
 key `installer-fixture-v4-...`, target `target-v014`). **The first CI run after this
 change builds the fixture cold** (the previous fixture's cold build measured 154.5 s; see below). Details
@@ -287,4 +288,3 @@ computed the test merge commit that `pull_request` runs build, but the cause of 
 delay is **not established**. Branch protection with a required `CI result` check
 would prevent merging before the head's run finishes; this repository's plan does not
 offer it (see above), so check `gh pr checks` on the exact head before merging.
-

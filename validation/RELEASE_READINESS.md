@@ -1,47 +1,47 @@
-# Windows release readiness (v0.14)
+# Windows release readiness (v0.15 preparation)
 
-This records what is and is not established for a Windows release of 0.14.0. No
-release, tag or publication was made in this milestone.
+This is preparation for a release candidate, not a declaration of one. No release,
+tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
+are proposals awaiting the owner; [owner checks](OWNER_CHECKLIST.md) remain open.
+WebView2 stays production and Servo remains experimental/fixture-only.
 
-## Established by tests in this repository
+## Recorded local evidence
 
-| Area | Evidence |
+| Area | Evidence and limit |
 | --- | --- |
-| Build | `cargo build --locked --release` on Windows x64, Rust 1.99.1 |
-| Quality gates | fmt, strict Clippy, 79 regular tests, eight native WebView2 suites, three daily runs |
-| Dependencies | `cargo audit --deny warnings`, pinned cargo-audit 0.22.2 |
-| Portable ZIP | Deterministic bytes, fixed eight-entry allowlist, checksums, manifest, unsafe-output refusals, packaged-link check |
-| Installer | Fresh install, v0.13 → v0.14 upgrade, profile and download bytes preserved, metadata, Start Menu shortcut, optional desktop shortcut, uninstall, reinstall, refusal of downgrade, invalid metadata, running browser, reparse and profile destinations |
-| Release metadata | Unsigned JSON, verifier with 36 refusal cases |
-| Startup after upgrade | Installed 0.14.0 `--version` launch; separate GUI start, close and restore of the release executable |
-| Workflows | `ci.yml` runs all of the above on pull requests; `release.yml` repeats them from a clean build for an approved tag and publishes only on manual approval |
+| Existing functionality | Profile path `%LOCALAPPDATA%/RustBrowser/v0.1`, session 1 and SQLite schema 3 remain unchanged; pinned upgrade baseline is v0.14 `b4f0c23` |
+| Toolbar recovery | Browser-process and renderer failure reproduced before fixing; four passing native runs, five caught product mutants; recovery bounded to three attempts per two minutes |
+| Public-site survey | 41 addresses, zero engine/renderer exits, dumps and timeouts; three deliberate DNS/TLS failures diagnosed; OpenStreetMap HTTP 429 remains a known site response |
+| Burst closure | Two nine-site runs with 20 filler tabs: no exits, dumps or timeouts |
+| Interrupted Setup | Two 32-case fresh/upgrade timing sweeps repaired every case, including completed-process controls; 24 and 26 cases respectively recorded killed owned processes; no uninstall leftovers; synthetic profile hashes/semantics preserved |
+| Keyboard/layout | Three native keyboard/layout runs and four caught mutants; DPR/CSS emulation is distinct from physical Windows DPI |
+| Windows accessibility metadata/input | Three foreground-guarded UIA walks: 24 initial/33 expanded controls, 29 distinct controls reached; not a spoken screen-reader test |
+| Distribution | Portable and per-user installer retained; validation identities only; unsigned metadata/checksums provide integrity, not independent authenticity |
+| CI economy | Whole-change classification, packaged-document protection, stable aggregate and mandatory audit retained; docs-only hosted skip is not yet exercised; no saving claimed |
 
-Installer tests use a GUID validation identity and directory. The production
-identity, a real installation and a real profile were never touched.
+The final full local gates and exact-head hosted status are recorded in
+[VALIDATION.md](../VALIDATION.md) and the final pull-request delivery record.
+The public survey, interruption sweep and physical/foreground checks are manual,
+not recurring CI workloads. Their raw data stays outside Git.
 
-## Not established
+## Not established or requiring an owner decision
 
-| Area | State |
+| Area | Current state |
 | --- | --- |
-| Windows 10 x64 | Not tested |
-| Clean machine or virtual machine | Not tested; none was available |
-| Standard-user account without administrator membership | Not tested separately; Setup requests no elevation |
-| Missing WebView2 Runtime | Not tested. The browser shows a startup message; Setup does not install the Runtime |
-| Missing Visual C++ v14 runtime | Not tested. Windows reports the missing DLL before any browser code runs |
-| Installer wizard pages used by a person | Not tested; all runs were silent |
-| Application icon and taskbar identity appearance | Icon resources are checked by script; appearance was not inspected by a person in v0.14 |
-| Interrupted installation (kill, power loss, full disk) | Not tested |
-| Code signing, SmartScreen reputation | None. The installer and executable are unsigned |
-| Authenticated updates | None. SHA-256 sidecars detect corruption; they do not identify the publisher |
+| Clean machine / Windows Sandbox / VM | Not available; Sandbox is not enabled. No Windows feature or VM was enabled/created |
+| Windows 10 | Not tested; a Windows-11-only 1.0 scope is proposed, not approved or implemented |
+| Standard user outside Administrators | Not separately tested; non-elevated local token is only partial evidence |
+| Missing WebView2 | No missing-runtime host test; existing checks/instructions remain; no automatic runtime installation |
+| Missing Visual C++ runtime | EXE imports both VCRUNTIME140 DLLs; Setup checks them, portable loader can fail before application code. Static CRT is proposed and requires approval |
+| Human installer wizard / icon / taskbar review | Owner checklist, not established by silent installation or resource checks |
+| Narrator / contrast themes / physical IME / native mixed DPI | Still owner checks; renderer emulation and UIA do not replace them |
+| Real sign-in / camera / microphone / video call | Owner-controlled test-account/device checks outstanding |
+| Power loss / full disk / every interruption timing | Unverified; controlled process termination is only a tested subset |
+| 30-minute v0.15 soak | Not repeated in this continuation; the existing v0.14 soak is historical evidence, not a pass for a new candidate |
+| Signing / authenticated updates | No identity/root/service; no signing, updater or invented key added |
+| Second-launch address hand-off | Not approved; existing already-running behavior retained |
 
-## Decisions that need the owner
-
-1. Signing identity and trusted update root, before any automatic update work.
-2. Whether a second launch should hand its address to the running window. That needs
-   a local interface between processes and was not added without approval.
-3. A Windows 10 machine and a clean virtual machine for prerequisite and wizard tests.
-
-See [INSTALL_WINDOWS.md](https://github.com/Niithursan/RustBrowser/blob/main/INSTALL_WINDOWS.md),
-[packaging notes](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md),
-[update security](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md) and
-[VALIDATION.md](https://github.com/Niithursan/RustBrowser/blob/main/VALIDATION.md).
+Approval of the proposed dispositions is separate from approval of this milestone's
+implementation. Do not treat automated success as owner acceptance or permission to
+tag/publish. See [installation/recovery](../INSTALL_WINDOWS.md),
+[update security](../packaging/windows/UPDATE_SECURITY.md) and [CI](../CI.md).

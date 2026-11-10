@@ -1,9 +1,18 @@
-# Rust Browser 0.14.0
+# Rust Browser 0.15.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.15 prepares release criteria; it does not declare a release candidate. The
+toolbar now recovers if its separate WebView2 process or renderer fails, and Setup
+can repair the tested interrupted installations. Native keyboard/layout coverage,
+public-site survey containment and CI minute controls are extended. Profile path,
+session format 1, SQLite schema 3 and the WebView2 production engine stay unchanged.
+See the [readiness record](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_READINESS.md),
+[proposed criteria](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_CRITERIA.md)
+and [owner checklist](https://github.com/Niithursan/RustBrowser/blob/main/validation/OWNER_CHECKLIST.md).
 
 v0.14 is a reliability release found by browsing real websites through the
 production session. Closing a tab or the window no longer crashes the WebView2
@@ -305,6 +314,16 @@ storage-device or power failure.
 
 See [validation/README.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/README.md) for controlled fixtures, the
 compatibility matrix, and repeatable 30–60 minute interactive and automated procedures.
+
+The public survey is manual (`validation/site-survey.ps1`), uses disposable
+profiles and saves any downloads inside that test profile. It does not enter
+credentials or grant real permissions. `validation/interrupted-install.ps1` is a
+separate manual installer timing sweep, not a power-loss/full-disk test. The optional
+`validation/accessibility-uia.ps1` needs an interactive desktop and stops if its
+window loses foreground. Its synthetic Windows input and UIA names are distinct
+from spoken screen-reader, physical keyboard/IME and real display-scale checks.
+These procedures are not background CI workloads; native controlled regressions
+remain in CI. Do not use real profiles or the production installer identity for tests.
 
 ## Private browsing
 

@@ -1,5 +1,40 @@
 # Compatibility matrix
 
+## v0.15 survey and toolbar reliability
+
+Recorded on 2026-11-10, Windows 11 x64, through the production session with
+disposable profiles. The full survey visited **41 addresses**: no engine exits,
+renderer exits, crash dumps or timeouts. This is one network's point-in-time
+observation, not certification of complete sites or signed-in workflows.
+
+| Area added to the survey | Observed result | Limit |
+| --- | --- | --- |
+| Mail/account entry pages: Gmail, Outlook, Proton | Pages/redirects loaded | No credentials entered; authenticated session persistence not tested |
+| Daily-use web apps: Figma, diagrams.net, CodePen | Entry pages loaded | Editing/saving/collaboration not exercised |
+| Additional search/privacy and browser-check pages | Brave Search, BrowserLeaks and W3C pages loaded | No privacy/anonymity guarantee follows from page loading |
+| Downloads | One httpbin download initiation recorded; destination stays inside the marked disposable profile | No real Downloads-folder picker or automatic execution; broader transfer coverage remains in native fixtures |
+| Permission observation | Per-visit prompts recorded; no real grants made | Separate `html5demos.com/geo` visit makes a non-user-initiated geolocation request, denied without a prompt by existing policy |
+| OpenStreetMap | HTTP 429 reported as the site's answer, also observed on v0.14 | Site-side cause is not established; no user-agent spoofing or policy bypass |
+| Intended negative cases | One `.invalid` DNS failure, expired certificate and self-signed certificate rejected | No TLS bypass or certificate-store change |
+| Burst close | Two independent nine-site runs with 20 blank filler tabs closed in the same turn: zero exits, dumps and timeouts | Does not cover arbitrary websites or every failure timing |
+
+The survey harness now selects only its own disposable download directory; its
+earlier behavior could have opened the real destination picker. Raw titles, URLs,
+downloads and profiles stay outside Git. Reports here contain aggregate results.
+
+Toolbar failures are now separately observed and recovered. Before the fix, ending
+the toolbar's browser process left the controls dead with `0x8007139F`; ending its
+renderer left a silent dead toolbar while page views remained usable. The shared
+trusted toolbar builder now replaces it and shows a notice, with three recovery
+attempts allowed within two minutes. Four native runs passed; five product mutants
+failed the regression. A recorded run replaced the browser-process case in 353 ms
+and renderer case in 109 ms. These are recovery observations, not general latency
+benchmarks. Unsaved toolbar drafts can be lost during reconstruction.
+
+Real account sign-in, device permissions, DRM/video calls and the owner acceptance
+checks remain open. See [proposed release criteria](RELEASE_CRITERIA.md) and
+[owner checklist](OWNER_CHECKLIST.md).
+
 ## v0.14 public-website survey and controlled fixtures
 
 Windows 11 Pro x64 (10.0.26200), WebView2 Runtime as installed on the test machine,
