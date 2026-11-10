@@ -1,19 +1,24 @@
 # Continuous integration
 
-v0.14 adds one native step to the quality job
-(`native_failure_reporting_tab_retirement_and_engine_restart`, about 12 seconds
-locally) and moves the installer upgrade fixture from v0.12 to the pinned v0.13
-commit `ca7ac14` (new immutable cache key `installer-fixture-v3-…`, target
-`target-v013`). The public-site survey, the matched benchmark campaign and the
-30-minute soak are manual and are not part of any workflow: they depend on the
-network or take about an hour. Measured durations for this change are recorded
-under "v0.14 measurements" below.
+v0.15 reduces Actions cost without removing coverage. A small Linux job,
+**Change scope**, runs first and skips the two Windows jobs only when every file the
+pull request changes is Markdown that no build, test or package reads. Dependabot
+updates are grouped and checked monthly. v0.15 also adds one native step
+(`native_toolbar_engine_failure_is_recovered`, about 5 seconds locally) and moves the
+installer upgrade fixture to the pinned v0.14 commit `b4f0c23` (new immutable cache
+key `installer-fixture-v4-...`, target `target-v014`). **The first CI run after this
+change builds the fixture cold** (the previous fixture's cold build measured 154.5 s; see below). Details
+under "v0.15: minute economy" below.
+
+The public-site survey, the interrupted-installation test, the matched benchmark
+campaign and the 30-minute soak are manual and are not part of any workflow: they
+depend on the network, run Setup dozens of times or take about an hour.
 
 ## Workflows
 
 | Workflow | Triggers | Jobs |
 | --- | --- | --- |
-| `CI` (`ci.yml`) | pull requests, pushes to `main`, manual dispatch | **Windows quality and build** (fmt, strict Clippy, all regular tests, launcher/sampler/Python fixture tests, every native WebView2 suite, three daily-driver runs, debug build); parallel **Windows release build and package** (release, portable/installer/profile/metadata checks, review artifacts); **CI result** requires both jobs |
+| `CI` (`ci.yml`) | pull requests, pushes to `main`, manual dispatch | **Change scope** (Linux; decides whether the Windows jobs run); **Windows quality and build** (fmt, strict Clippy, all regular tests, launcher/sampler/Python fixture tests, every native WebView2 suite, three daily-driver runs, debug build); parallel **Windows release build and package** (release, portable/installer/profile/metadata checks, review artifacts); **CI result** requires the scope job, and both Windows jobs unless the change is documentation only |
 | `Dependency security` (`security.yml`) | pull requests, pushes to `main`, weekly schedule, manual dispatch | `cargo audit --deny warnings` with pinned cargo-audit 0.22.2 |
 | `Windows release` (`release.yml`) | version tags, manual dispatch | Clean/uncached application build, all script/native/audit gates, validated ZIP/setup/metadata. Only pinned audit tool cached. Existing-tag/manual publication approval and permissions unchanged. |
 
@@ -178,3 +183,108 @@ completion. One sample each; hosted-runner variance is large.
 | Run | Head | Caches | CI wall | Quality job | Release job | Security |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
 | 42758473146 / 42758473338 | `0a204aa` | Cold: `Cargo.lock` changed (version) and the upgrade fixture has a new key, so the pinned v0.13 build was compiled | 334 s | 229 s | 326 s | 25 s |
+
+## v0.15: minute economy
+
+### Where the minutes went (measured, 2026-11-07 to 2026-11-10)
+
+The billing API (`/actions/runs/{id}/timing`) returns 0 billable milliseconds for
+this repository, so these figures are **estimates** from job start and end times:
+each job rounded up to whole minutes, Windows jobs counted twice (the 2x rate). The
+script and raw table are in the v0.15 scratch folder (`ci_cost.py`,
+`ci-cost-since-1106.tsv`).
+
+| Source | Runs | Estimated billed minutes |
+| --- | --- | --- |
+| Feature branches and pull requests, CI | 90 | 1,092 |
+| Dependabot pull requests, CI | 24 | 379 |
+| `main` pushes, CI | 15 | 227 |
+| Feature branches and pull requests, dependency audit | 49 | 200 |
+| Dependabot pull requests, dependency audit | 24 | 110 |
+| `main` pushes, dependency audit | 16 | 74 |
+| Experimental Windows boundaries (10 runs) and Dependabot update jobs (25) | 35 | 47 |
+| **Total** | 253 | **2,130** |
+
+A full pull-request CI run cost an estimated 15 to 21 billed minutes in v0.14 (its
+four runs: 21, 15, 15 and 17). Dependabot accounted for about a quarter of the total
+(about 525 minutes): three open pull requests, each rerun every time Dependabot
+rebased it after `main` changed (after PR #17 and after PR #18 merged), plus the
+Windows boundaries workflow for the checkout update.
+
+### Documentation-only changes skip the Windows jobs
+
+`.github/scripts/ci_scope.py` (standard library only) decides. It classifies the
+**whole pull request** (merge base to head), not only the latest push, so a
+documentation commit on top of code still runs everything, and a head whose earlier
+run was cancelled cannot report green without the Windows jobs. For a push to `main`
+it classifies the pushed commits.
+
+The Windows jobs are skipped only when every changed path ends in `.md` and is not
+one of the five packaged documents (README, CHANGELOG, SECURITY, VALIDATION,
+INSTALL_WINDOWS). Renames count as a deletion plus an addition, so moving code into a
+Markdown file runs everything. Any other file, a manual dispatch, a missing or
+all-zero base commit, an empty diff or any classification error runs everything.
+
+`CI result` still reports on every run. It succeeds only if the scope job succeeded
+and either both Windows jobs succeeded (full run) or both were skipped (documentation
+only).
+
+Evidence: 18 Python tests in `validation/test_ci_scope.py` (run in the CI quality job)
+cover the rules, the verdict, real git diffs in a temporary repository, and that the
+packaged list matches `package.ps1`, `installer.iss` and `windows_package.ps1`. Two
+mutations (dropping `--no-renames`, ignoring packaged documents) were each caught.
+**The skip path has not run on GitHub yet**: this milestone changes code, so its pull
+request runs everything. The first documentation-only pull request will be the first
+hosted evidence. No saving is claimed until then. Because most milestone
+documentation changes touch the packaged README or CHANGELOG, the expected saving is
+for checkpoint, CI, validation and planning documents.
+
+### Dependabot
+
+`.github/dependabot.yml` now groups updates into one pull request per ecosystem
+(cargo, GitHub Actions), checks monthly instead of weekly, allows one open pull
+request per ecosystem and disables automatic rebasing. Comment `@dependabot rebase`
+on a Dependabot pull request when you are ready to review it; that starts one run.
+Security updates are not affected by the schedule. Expected effect, not yet measured:
+scheduled version updates are grouped by ecosystem at the monthly check, with at
+most one open version-update pull request per ecosystem. Security updates and
+requested rebases can add runs; this is not a guaranteed two-run monthly budget.
+
+Review of the three open Dependabot pull requests (none merged):
+
+| Pull request | Change | Recommendation |
+| --- | --- | --- |
+| #4 base64 0.22.1 to 0.23.1 | Direct dependency; another crate already pulls in 0.23.1, so the lock file currently carries both | **Merge.** Removes a duplicate crate. CI passed on its current head (run 42858162667). Only `STANDARD.encode` is used. |
+| #2 actions/checkout 6.1.0 to 7.0.1 | v7 blocks checking out fork pull requests under `pull_request_target` and `workflow_run`, and moves to ESM | **Merge.** This repository uses neither trigger. CI passed (run 42858985681). `release.yml` also uses checkout and is only exercised on a tag. |
+| #3 actions/upload-artifact 4.6.2 to 7.0.2 | v5 to v6 move to Node.js 24; v7 adds an opt-in `archive: false` | **Merge, low risk.** Defaults (zipped artifacts) are unchanged, which `release.yml`'s `gh run download --name` relies on; that publish path only runs on an approved release. Its CI run is older (42731132640). |
+
+Cost note: merging this milestone changes `ci.yml` and `Cargo.lock`, so open
+Dependabot pull requests would conflict, and with automatic rebasing still on in the
+old configuration each would rebase and rerun. Cheapest order, for the owner to
+choose: either merge #2 to #4 before this milestone (each merge then changes `main`
+and the remaining ones may rebase), or close them and let the grouped configuration
+open at most two new pull requests at its next monthly check.
+
+### Why PR #18's last head looked unchecked
+
+The brief for v0.15 said `36c8d2f` never received a CI run. It did: run
+42857550749 (all jobs passed) and audit run 42857550411. What made it look
+unchecked is timing:
+
+| Event | Time (UTC, 2026-11-10) |
+| --- | --- |
+| `6311f88` committed and pushed | about 16:34 |
+| CI run for `6311f88` created | 16:38:26 (about 4 minutes later) |
+| `36c8d2f` committed and pushed | about 16:37 |
+| PR #18 merged | 16:44:00 |
+| CI run for `main` `b4f0c23` created | 16:44:03 |
+| CI run for `36c8d2f` created | 16:44:10 (about 7 minutes after the push, 10 seconds after the merge) |
+
+So at merge time the pull request page showed no checks for its head. Earlier heads
+received their runs within seconds (for example `849711a`). The pull request's
+mergeable state read `UNKNOWN` while waiting, which fits GitHub not yet having
+computed the test merge commit that `pull_request` runs build, but the cause of the
+delay is **not established**. Branch protection with a required `CI result` check
+would prevent merging before the head's run finishes; this repository's plan does not
+offer it (see above), so check `gh pr checks` on the exact head before merging.
+
