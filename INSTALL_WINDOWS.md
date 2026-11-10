@@ -154,3 +154,13 @@ Equal portable inputs produce equal ZIP bytes. Byte-identical
 application/installer builds across machines/SDKs/paths/timestamps are not established.
 PR CI uploads review artifacts. Tags package only; GitHub Release publication
 continues to require an explicitly approved manual action.
+## Isolated owner acceptance
+
+For candidate acceptance, use the prepared validation bundle's `OWNER_BUILD.md`,
+`owner.json` and `Launch.ps1`. Run `Launch.ps1 -VerifyOnly` before the portable
+launch, or `Launch.ps1 -Installed` after that bundle's validation-only Setup.
+Do not use the ordinary production review installer or open validation shortcuts
+directly for an isolated-profile check. The launcher pins the executable hash and
+explicit test profile. Keep the bundle at its prepared location; Setup's destination
+is fixed. Neither qualification nor owner testing authorizes publication.
+The opt-in static CRT experiment retains existing prerequisite checks/disclosures.

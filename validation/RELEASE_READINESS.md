@@ -2,8 +2,16 @@
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
-are proposals awaiting the owner; [owner checks](OWNER_CHECKLIST.md) remain open.
+are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) remain open.
 WebView2 stays production and Servo remains experimental/fixture-only.
+
+After PR #19 merged at `13ff603`, Windows 11 x64 is the initial qualification
+priority. Technical qualification is separate from declaring/tagging/publishing
+an RC, which remains unapproved. The [static CRT investigation](STATIC_CRT.md)
+is opt-in; production linking and Setup's prerequisite checks remain unchanged.
+A safe owner bundle now supplies an explicit profile launcher as well as a
+validation installer identity. Neither passing automation nor preparing the bundle
+marks human acceptance as passed.
 
 ## Recorded local evidence
 

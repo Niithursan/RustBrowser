@@ -14,6 +14,14 @@ See the [readiness record](https://github.com/Niithursan/RustBrowser/blob/main/v
 [proposed criteria](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_CRITERIA.md)
 and [owner checklist](https://github.com/Niithursan/RustBrowser/blob/main/validation/OWNER_CHECKLIST.md).
 
+Post-merge qualification prioritizes Windows 11 x64 and investigates an opt-in
+[static CRT build](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md).
+Production linking and prerequisite checks remain unchanged. Owner acceptance uses
+a validation-identity installer plus a hash-checked disposable-profile launcher;
+the normal review installer and its shortcuts are not isolated acceptance launchers.
+Technical qualification does not authorize declaring, tagging or publishing an RC.
+Windows 10 validation and human acceptance checks remain outstanding.
+
 v0.14 is a reliability release found by browsing real websites through the
 production session. Closing a tab or the window no longer crashes the WebView2
 engine on pages that triggered it (reproduced with the Microsoft sign-in page), and

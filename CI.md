@@ -1,5 +1,14 @@
 # Continuous integration
 
+Post-v0.15 qualification also tests the owner acceptance bundle in the existing
+Windows release/package job. It verifies dynamic CRT remains the production build,
+then exercises hash/identity/path refusals, caller environment restoration and
+portable/validation-installed GUI startup/shutdown with disposable data. Generated
+profiles and validation installers are excluded from the fixed review upload.
+Static CRT gates and the 30-minute soak are local opt-in investigation workloads;
+no new recurring Windows job or publication trigger is added. The additional step's
+hosted overhead is recorded in the final review PR, not assumed in advance.
+
 v0.15 adds Actions cost controls without removing required coverage. A small Linux job,
 **Change scope**, runs first and skips the two Windows jobs only when every file the
 pull request changes is Markdown that no build, test or package reads. Dependabot

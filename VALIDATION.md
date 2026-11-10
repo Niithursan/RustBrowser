@@ -1,5 +1,44 @@
 # Validation
 
+## Post-merge v0.15 qualification investigation
+
+PR #19 was squash-merged at `13ff603b84ba2b0c0429dc61bc338de738e9025b`.
+Post-merge Windows CI 42898120216 and dependency security 42898120222 passed.
+Work is isolated on `feat/rc-static-crt-validation`; main remains unchanged.
+Windows 11 x64 is the initial qualification priority. RC status is **unapproved**;
+technical acceptance is separate from declaration, tagging and publication.
+
+Pinned static experiment: source `da054bf2b390b4df6dfd609b543a3ce6ff218962`,
+Rust 1.99.1 x64 MSVC, `-C target-feature=+crt-static`, shipping EXE SHA-256
+`bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+Its application sources/Cargo files/toolchain equal the merged baseline. Production
+linking stays dynamic. The initial feasibility build is a different artifact;
+gates were repeated on the pinned configuration rather than assuming equal hashes.
+PE timestamps/CodeView GUIDs differ; reproducible executable builds are not claimed.
+
+Pinned static gates passed: format, strict Clippy, 79 regular tests, debug/release,
+ten native suites in separate processes, three independent daily runs, portable
+packaging, v0.14 installer lifecycle and metadata verification. Owner-bundle tests
+passed portable and validation-installed GUI startup/shutdown, exact identity/hash
+refusal, foreign-profile/production-path refusal and caller environment restoration.
+These are automated GUI checks, not human owner acceptance.
+
+MSVC import inspection reports 16 system DLL imports and no direct/delay external
+CRT imports for the static EXE, versus 27 total/11 CRT imports for the dynamic
+control. Static size is 4,443,648 bytes versus 4,311,552 dynamic. No installed DLL
+was removed/hidden, and a missing-runtime host remains untested. Setup retains its
+existing VC Runtime check; static production adoption has not been approved.
+
+A fresh public survey and exact-source 30-minute release-probe soak are in progress.
+Their final results will be added before delivery. Raw evidence stays outside Git
+in `work/rc15`, with source/flags/hashes in the pinned manifest. Final exact-head
+production CI results belong in the PR delivery record; no extra workflow dispatch
+or rerun is planned. The [investigation](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md)
+and [separate #4 review](https://github.com/Niithursan/RustBrowser/blob/main/validation/BASE64_REVIEW.md)
+describe reproducible commands and limitations. No dependency changed; closed #2/#3
+were left alone. Human owner checks, clean-machine/runtime tests and risk acceptance
+remain open. No release candidate, merge, tag or publication is authorized.
+
 ## Version 0.15.0: release candidate preparation
 
 Baseline: PR #18 squash `b4f0c2388a80853110baa9d43a8cec56a796d220`, version

@@ -1,5 +1,26 @@
 # Security
 
+## Post-v0.15 candidate investigation
+
+Static CRT linking is an opt-in validation experiment, not the production default.
+Direct/delay import checks do not prove every dynamically loaded module or WebView2
+dependency works on a missing-runtime host. Bundled runtime security fixes require
+an application rebuild; no security improvement is claimed from static linking.
+No TLS, permission, private-profile, IPC or installer safeguard is relaxed.
+
+Owner bundles contain unsigned validation artifacts, not authenticated releases.
+The launcher checks the expected executable hash, installed identity and disposable
+profile path; it does not authenticate a modified bundle or its publisher. Review
+the source/commit and hashes through the PR. Do not open its installation shortcuts
+directly, because they do not select the test profile. Foreign profiles, reparse
+paths and production destinations are refused; test data is never deleted by the
+launcher. Never share credentials, profile contents or private meeting links.
+
+Qualification, owner acceptance and publication authorization are separate gates.
+No RC, tag, signing identity, updater or publication is approved by automated success.
+See the [investigation](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md)
+and [acceptance baseline](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_CRITERIA.md).
+
 ## v0.14 reliability changes and their boundaries
 
 - Engine restart reuses the same profile, private-window isolation, permission
@@ -21,8 +42,8 @@
   installer remains unsigned: a matching SHA-256 checksum detects corruption but does
   not identify the publisher.
 
-Not addressed: recovery when the toolbar's own engine process ends; the root cause
-of the WebView2 crash, which is inside the engine and is avoided, not fixed; and
+At v0.14, toolbar engine recovery was not addressed; v0.15 adds it. Still unresolved:
+the root cause of the WebView2 crash, which is inside the engine and is avoided, not fixed; and
 single-instance hand-off, which would need a new local interface between processes.
 
 ## v0.13 installation and manual updates

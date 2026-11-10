@@ -1,5 +1,40 @@
 # Development checkpoint
 
+## Post-merge v0.15: static CRT and owner acceptance investigation
+
+Owner direction after PR #19: continue qualification without declaring or publishing
+an RC. Verified merge `13ff603b84ba2b0c0429dc61bc338de738e9025b`; main CI
+42898120216 and security 42898120222 passed. Created
+`feat/rc-static-crt-validation` from that verified main. Read AGENTS.md and this file.
+Scratch: `<workspace>/work/rc15`. Do not touch the real profile/install, change
+system features, merge, tag or publish. Windows 11 x64 is the initial priority;
+Windows 10 is untested. Acceptance criteria remain proposed, publication separate.
+
+- `1c642ec`: opt-in static build/import inspection, safe owner bundle and production
+  CI coverage. `da054bf`: separate technical acceptance from publication authorization.
+- Pinned shipping build source `da054bf2b390b4df6dfd609b543a3ce6ff218962`, hash
+  `bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+  No Rust/Cargo/toolchain change from main, no default static linking or new dependency.
+  Import inspection: no direct/delay external CRT, 16 system imports, 4,443,648 bytes.
+  Initial feasibility artifact hash differs because PE timestamp/CodeView GUID differ;
+  pinned configuration was tested again, not assumed reproducible.
+- Pinned static format/strict Clippy/79 regular tests/builds/10 separate native suites/
+  three daily runs/package/installer/metadata passed. Owner bundle GUI and refusal
+  tests passed. Setup's VC Runtime check remains; missing-runtime host not tested.
+- Owner acceptance bundle pointer: `work/rc15/owner-bundle.json`. Prepared, not installed
+  for the owner. Follow its OWNER_BUILD.md and Launch.ps1; shortcuts alone do not
+  isolate profiles. Human checklist remains open.
+- PR #4 reviewed separately: scalar API remains, SIMD default feature adds separate
+  unsafe engines, Windows graph currently excludes 0.23.1. Offline scalar/SIMD parity
+  probe passed 4097 lengths on AVX2; no fallback/ARM audit claim. Defer change while
+  qualifying. No dependency file or PR changed; closed #2/#3 left alone.
+- Fresh survey/burst and 30-minute release-probe soak are running sequentially with
+  pinned source/flags. Qualification phase pointer: `work/rc15/qualification-phase.json`.
+  Avoid builds/GUI tests during resource sampling. Record failures and unavailable
+  observations, then finish local checks, push once and open one review PR.
+- RC status stays unapproved. Final hosted results belong in the PR/final report to
+  avoid a packaged-document push after CI. No merge/tag/publication is authorized.
+
 ## v0.15: `feat/v0.15-release-candidate-prep`
 
 Branch from verified `origin/main` `b4f0c23` (PR #18; CI 42857529540 and security
