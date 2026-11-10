@@ -85,6 +85,22 @@ Name: "{userdesktop}\{#ProductName}"; Filename: "{app}\rust-browser.exe"; Workin
 [Code]
 function GetFileAttributesW(Name: String): Cardinal;
   external 'GetFileAttributesW@kernel32.dll stdcall';
+function OpenForWrite(Name: String; Access, Share: Cardinal; Security: THandle;
+  Creation, Flags: Cardinal; Template: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+function CloseFile(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function ExecutableIsWritable(Path: String): Boolean;
+var
+  Handle: THandle;
+begin
+  { Open an existing file without writing. Mapped executables (including v0.12,
+    which has no mutex) and inaccessible/read-only files must fail before copying. }
+  Handle := OpenForWrite(Path, $40000000, 7, 0, 3, $80, 0);
+  Result := Handle <> THandle(-1);
+  if Result then CloseFile(Handle);
+end;
 
 function PathIsSafe(Path: String): Boolean;
 var
@@ -203,6 +219,10 @@ begin
     end;
   end;
   if FileExists(Directory + '\rust-browser.exe') then begin
+    if not ExecutableIsWritable(Directory + '\rust-browser.exe') then begin
+      Result := 'The installed executable is currently in use or not writable. Close every browser window and retry. No process was terminated.';
+      exit;
+    end;
     if not GetPackedVersion(Directory + '\rust-browser.exe', Existing) then begin
       Result := 'Installed executable version cannot be read; preserve it for manual recovery.';
       exit;

@@ -1,8 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$Executable,
     [Parameter(Mandatory=$true)][string]$OutputRoot,
-    [Parameter(Mandatory=$true)][ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')][string]$Version,
-    [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$SourceCommit,
+    [Parameter(Mandatory=$true)][ValidatePattern('\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z')][string]$Version,
+    [Parameter(Mandatory=$true)][ValidatePattern('\A[0-9a-fA-F]{40}\z')][string]$SourceCommit,
     [Parameter(Mandatory=$true)][string]$Compiler
 )
 $ErrorActionPreference='Stop'

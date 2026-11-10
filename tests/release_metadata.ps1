@@ -27,7 +27,7 @@ $pin=(Get-FileHash -LiteralPath $metadata).Hash
 $result=& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion '0.0.0' -ExpectedMetadataSha256 $pin
 if(-not $result.MetadataPinMatched -or $result.PublisherAuthenticated){throw 'Metadata pin reported publisher authentication.'}
 Refused {& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion '0.0.0' -ExpectedMetadataSha256 ('0'*64)}
-foreach($bad in @('01.2.3','1.2','1.2.3.4','1.2.3-beta','65536.0.0','9999999999999999999.0.0','../escape','1.2.3 ')){
+foreach($bad in @('01.2.3','1.2','1.2.3.4','1.2.3-beta','65536.0.0','9999999999999999999.0.0','../escape','1.2.3 ',"1.2.3`n","1.2.3`r`n")){
     Refused {& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion $bad}
 }
 Refused {& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion $source.version}
@@ -35,6 +35,9 @@ $null=& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion 
 Refused {& $verify -MetadataPath $metadata -ArtifactDirectory $run -CurrentVersion '999.0.0'}
 foreach($mutation in @(
     {param($r) $r.schema=2},
+    {param($r) $r.schema='1'},
+    {param($r) $r.profile_session='1'},
+    {param($r) $r.assets[0].bytes=[double]$r.assets[0].bytes+0.5},
     {param($r) $r.signed=$true},
     {param($r) $r.signed='false'},
     {param($r) $r.version='01.2.3'},

@@ -80,6 +80,32 @@ try {
     if(Test-Path -LiteralPath $desktop){throw 'Desktop shortcut was created without opt-in.'}
     $machineKey=$registry.Replace('HKCU:','HKLM:')
     if(Test-Path -LiteralPath $machineKey){throw 'Per-user installer wrote machine-wide registration.'}
+    # v0.12 has no named marker. Its mapped executable must still block upgrade.
+    $previousProfile=$env:RUST_BROWSER_PROFILE
+    $oldProcess=$null
+    try {
+        $env:RUST_BROWSER_PROFILE=Join-Path $run 'old-launch-profile'
+        $oldProcess=Start-Process -FilePath (Join-Path $app 'rust-browser.exe') -PassThru -WindowStyle Hidden
+        $null=$oldProcess.Handle
+        $created=$oldProcess.StartTime.ToUniversalTime()
+        Start-Sleep -Milliseconds 500
+        if($oldProcess.HasExited){throw 'Owned v0.12 process exited before the file-use check.'}
+        Invoke-Owned $new (Args-For 'legacy-running-refusal') -Refuse
+        Assert-Preserved
+    } finally {
+        $env:RUST_BROWSER_PROFILE=$previousProfile
+        if($oldProcess){
+            . (Join-Path $repo 'benchmarks/process-tree.ps1')
+            $children=@(Get-ProcessTreeIdentities (Get-CimInstance Win32_Process) $oldProcess.Id $created)
+            if(-not $oldProcess.HasExited){$oldProcess.Kill();$oldProcess.WaitForExit()}
+            $clock=[Diagnostics.Stopwatch]::StartNew()
+            while(@(Live-ObservedChildren $children $oldProcess.Id).Count -gt 0){
+                if($clock.Elapsed.TotalSeconds -gt 30){throw 'Observed owned old-browser children did not exit.'}
+                Start-Sleep -Milliseconds 100
+            }
+            $oldProcess.Dispose()
+        }
+    }
     Invoke-Owned $new (Args-For 'upgrade');Assert-Preserved
     $expectedFiles=@((Get-ChildItem -LiteralPath $package.payload -File).Name)+@('installation.ini')
     if(((@(Get-ChildItem -LiteralPath $app -File).Name | Sort-Object) -join '|') -cne (($expectedFiles | Sort-Object) -join '|')){throw 'Installed file allowlist mismatch.'}

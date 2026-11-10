@@ -9,7 +9,9 @@ function Assert-PlainPath([string]$Path) {
     }
 }
 function Assert-PackageOutput([string]$Path,[string]$Repository) {
-    $base=[IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $absolute=[IO.Path]::GetFullPath($Path)
+    if($absolute -cnotmatch '\A[A-Za-z]:\\' -or $absolute -eq [IO.Path]::GetPathRoot($absolute)){throw 'Use a named local output directory, not a drive/share root.'}
+    $base=$absolute.TrimEnd('\')
     $repo=[IO.Path]::GetFullPath($Repository).TrimEnd('\')
     if($base -eq $repo -or $base.StartsWith($repo+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Output must be outside the repository.'}
     foreach($protected in @($env:RUST_BROWSER_PROFILE,(Join-Path $env:LOCALAPPDATA 'RustBrowser'))){

@@ -1,17 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference='Stop'
 $repo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd('\')
-$base=[IO.Path]::GetFullPath($Destination).TrimEnd('\')
-if($base -eq $repo -or $base.StartsWith($repo+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Build tools must be outside the repository.'}
-foreach($profile in @($env:RUST_BROWSER_PROFILE,(Join-Path $env:LOCALAPPDATA 'RustBrowser'))){if($profile){$profile=[IO.Path]::GetFullPath($profile).TrimEnd('\');if($base -eq $profile -or $base.StartsWith($profile+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Build tools must be outside browser profiles.'}}}
-$ancestor=$base
-while($ancestor){
-    if(Test-Path -LiteralPath $ancestor){
-        if((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Tool path may not traverse reparse points.'}
-        foreach($marker in @('session.json','session.lock','library.sqlite')){if(Test-Path -LiteralPath (Join-Path $ancestor $marker)){throw 'Do not use a browser profile for build tools.'}}
-    }
-    $parent=Split-Path $ancestor -Parent;if($parent -eq $ancestor){break};$ancestor=$parent
-}
+. (Join-Path $PSScriptRoot 'paths.ps1')
+$base=Assert-PackageOutput $Destination $repo
 New-Item -ItemType Directory -Path $base -Force | Out-Null
 $download=Join-Path $base 'innosetup-6.7.4.exe'
 if(-not(Test-Path -LiteralPath $download)){
@@ -22,7 +13,6 @@ if((Get-FileHash -LiteralPath $download).Hash -ine 'a549929319f9120716677c685535
 $signature=Get-AuthenticodeSignature -LiteralPath $download
 if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike '*O=Pyrsys B.V.*'){throw 'Compiler publisher signature is not valid.'}
 $directory=Join-Path $base 'inno'
-$null=. (Join-Path $PSScriptRoot 'paths.ps1')
 Assert-PlainPath $directory
 $compiler=Join-Path $directory 'ISCC.exe'
 if(-not(Test-Path -LiteralPath $compiler)){
