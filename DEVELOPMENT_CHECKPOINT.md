@@ -1,5 +1,30 @@
 # Development checkpoint
 
+## v0.15: `feat/v0.15-release-candidate-prep` (Claude Code, in progress)
+
+Branch from verified `origin/main` `b4f0c23` (PR #18; CI 42857529540 and security
+42857529076 passed). Scratch: `<workspace>/work/v15`. No PR is open yet: pushing the
+branch costs no Actions minutes (workflows run only for pull requests and main), so
+open the draft PR once, on the final head.
+
+Done (committed and pushed to the branch):
+- `37abe46` docs-only CI skip (`.github/scripts/ci_scope.py`, tests in
+  `validation/test_ci_scope.py`, 2 mutants caught). `adaf6ba` grouped monthly
+  Dependabot with `rebase-strategy: disabled`.
+- `94f4d69` fixed a parallel temp-folder collision in `tests/diagnostics.rs`.
+- `cf12a1d` toolbar engine recovery. Reproduced first: ending the toolbar's own
+  browser process left the toolbar dead (0x8007139F) and ending its renderer left it
+  silent; pages kept working; nothing noticed. Now rebuilt (about 350 ms and 110 ms),
+  notice shown, regression `native_toolbar_engine_failure_is_recovered` (4/4 runs,
+  5 mutants caught), added to ci.yml and release.yml.
+
+Findings: PR #18 head `36c8d2f` did get CI run 42857550749 (passed), created 10 s
+after the merge at 16:44:00Z and about 7 minutes after the push. Windows Sandbox is
+not enabled (no WindowsSandbox.exe); the session is not elevated.
+
+Next: release criteria, survey, interrupted install, accessibility, owner
+checklist, docs, archive of v0.10 to v0.13 checkpoint sections, full gates, draft PR.
+
 ## v0.14 — `feat/v0.14-daily-driver-reliability` (Claude Code, 2026-11-09)
 
 Branch created from verified `origin/main` `ca7ac14` (PR #17 squash merge, 0.13.0;
