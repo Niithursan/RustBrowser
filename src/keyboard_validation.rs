@@ -146,7 +146,11 @@ impl Probe {
         };
         self.cdp(
             "Input.dispatchKeyEvent",
-            event(if text.is_empty() { "rawKeyDown" } else { "keyDown" }),
+            event(if text.is_empty() {
+                "rawKeyDown"
+            } else {
+                "keyDown"
+            }),
         )?;
         self.cdp("Input.dispatchKeyEvent", event("keyUp"))
     }
@@ -216,7 +220,10 @@ impl Probe {
                 }
             }
             Step::ScaleReset if ready => {
-                self.cdp("Emulation.clearDeviceMetricsOverride", serde_json::json!({}))?;
+                self.cdp(
+                    "Emulation.clearDeviceMetricsOverride",
+                    serde_json::json!({}),
+                )?;
                 self.step = Step::Expected(false);
             }
             Step::Expected(more) if ready => {
@@ -226,7 +233,12 @@ impl Probe {
                     let strings = |key: &str| -> Vec<String> {
                         lists[key]
                             .as_array()
-                            .map(|items| items.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect()
+                            })
                             .unwrap_or_default()
                     };
                     for item in strings("expected") {
@@ -329,7 +341,9 @@ impl Probe {
                 } else if self.at.elapsed() > Duration::from_secs(2) {
                     let s = self.app.session.as_ref().ok_or("No session")?;
                     if s.tabs.active().map(|t| t.id) == self.active_tab {
-                        return Err("ArrowLeft on the selected tab did not select another tab".into());
+                        return Err(
+                            "ArrowLeft on the selected tab did not select another tab".into()
+                        );
                     }
                     self.step = Step::Done;
                 }
@@ -430,9 +444,18 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         expected.len(),
         reached.len()
     );
-    assert!(expected.len() >= 15, "Too few toolbar controls found: {expected:?}");
+    assert!(
+        expected.len() >= 15,
+        "Too few toolbar controls found: {expected:?}"
+    );
     // Enter on More must have revealed the tab and library actions.
-    for id in ["pin-active|", "move-left|", "keep-awake|", "show-settings|", "new-private|"] {
+    for id in [
+        "pin-active|",
+        "move-left|",
+        "keep-awake|",
+        "show-settings|",
+        "new-private|",
+    ] {
         assert!(
             expected.iter().any(|e| e.starts_with(id)),
             "More (Enter) did not reveal {id}: {expected:?}"
