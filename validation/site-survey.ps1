@@ -4,7 +4,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$OutputRoot,
     [string[]]$Urls,
-    [string]$UrlFile = (Join-Path $PSScriptRoot 'site-survey-sites.txt'),
+    [string]$UrlFile = '',
     [int]$TimeoutSeconds = 30,
     [int]$SettleMilliseconds = 2500,
     [switch]$KeepTabsOpen,
@@ -18,6 +18,7 @@ foreach ($marker in @('session.json', 'session.lock', 'library.sqlite')) {
     if (Test-Path -LiteralPath (Join-Path $base $marker)) { throw 'A browser profile is not a survey output directory.' }
 }
 if (-not $Urls) {
+    if (-not $UrlFile) { $UrlFile = Join-Path $PSScriptRoot 'site-survey-sites.txt' }
     $Urls = @(Get-Content -LiteralPath $UrlFile | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
 }
 if ($Urls.Count -lt 1 -or $Urls.Count -gt 64) { throw 'Survey 1 to 64 addresses.' }
