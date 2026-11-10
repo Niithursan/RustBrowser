@@ -44,8 +44,18 @@ Windows 10 is untested. Acceptance criteria remain proposed, publication separat
 - `85d5e65` covers failed-build flag restoration and exact installed identity;
   `f10f2d5` moves protected-path negative tests into synthetic LOCALAPPDATA so even
   a regression stays in owned scratch. Focused owner tests passed after this change.
-- Next: run remaining production local gates, record results, verify final packaging,
-  push once and open one review PR. Do not count the interrupted run as passed.
+- `84c81ad` records the completed soak; `eec7b45` corrects the inherited Python
+  count attribution: 13 scope + 3 TLS + 2 icon = 18 production tests.
+- All 29 production local gates passed, including 79 regular tests, ten native
+  suites, three daily runs, scripts/Python, builds, imports, packages/installer,
+  metadata, new helper tests and audit (369 crates/1,446 advisories). The owner test
+  initially queried Process.Path before loader initialization; controlled suspended
+  startup reproduced null then correct path. `9dcff76` adds a bounded readiness
+  wait and cold-start/wrong-path/exit regression. Fixed static/dynamic tests passed.
+  Prior 27 gates retained on unchanged application code; owner/audit follow-up passed.
+- Next: verify final packaging and pinned-byte identity, refresh the safe owner
+  bundle, push once and open one review PR. Verify final-head checks with gh pr checks.
+  Do not count the interrupted run as passed. No PR is open for this branch yet.
 - RC status stays unapproved. Final hosted results belong in the PR/final report to
   avoid a packaged-document push after CI. No merge/tag/publication is authorized.
 

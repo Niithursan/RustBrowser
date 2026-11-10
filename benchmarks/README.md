@@ -1,5 +1,10 @@
 # Windows performance procedure
 
+Post-v0.15 [static CRT investigation](../validation/STATIC_CRT.md) completed a fresh
+controlled 1800-second soak. [Sanitized results](rc15-static-soak.json) identify the
+pinned source/flags/hashes and unavailable samples. It is one sleeping-tab/churn
+run, not a matched static/dynamic performance comparison or human browsing session.
+
 Current [v0.14 matched results and soak](V014_RESULTS.md) compare 0.13.0 with 0.14.0.
 
 Current [v0.11 matched results](V011_RESULTS.md) and

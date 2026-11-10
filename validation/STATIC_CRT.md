@@ -102,11 +102,22 @@ This is synthetic churn, not a human interactive session or proof of leak freedo
 
 ## Acceptance bundle and remaining decisions
 
+The fresh controlled soak completed 178 churn cycles with no navigation errors,
+normal shutdown and observed child exit. See [validation](../VALIDATION.md) and
+[sanitized numbers](../benchmarks/rc15-static-soak.json) for memory/CPU, incomplete
+samples and the excluded interrupted run. Both static and default-production local
+gates passed. This supports further acceptance work, not an RC declaration.
+
 `prepare-owner-build.ps1` creates only a validation-identity Setup in its owner
 bundle, a portable copy, exact hashes, `Launch.ps1` and `OWNER_BUILD.md`. The launch
 checks binary hash and installed identity, selects the bundle's disposable profile,
 and refuses foreign profiles, reparse paths and production directories. It never
 deletes a profile. Do not launch the validation shortcuts directly.
+
+Owner-process tests also cover pre-loader startup: the image path may initially be
+unavailable. Verification waits within the same startup timeout and still rejects
+wrong paths or exited processes. Test-only suspended creation uses an owned process
+and disposable profile, with no privilege or sandbox change.
 
 The installer and portable prerequisite disclosures remain conservative, including
 Setup's existing VC Runtime check, even for the static experiment. Removing that

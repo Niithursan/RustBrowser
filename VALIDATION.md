@@ -23,6 +23,23 @@ passed portable and validation-installed GUI startup/shutdown, exact identity/ha
 refusal, foreign-profile/production-path refusal and caller environment restoration.
 These are automated GUI checks, not human owner acceptance.
 
+Default production verification also passed **29 local gates**: format, strict
+Clippy, 79 regular tests, both builds, ten native suites, three daily runs, process
+sampler/launcher fixtures, 2 experimental and 18 production Python tests (13 scope,
+3 TLS, 2 icon), dynamic imports, portable/installer/metadata checks, failed-build
+flag restoration, owner bundle and dependency audit. Audit scanned 369 crates and
+1,446 advisories with the same three unsupported-platform exceptions.
+
+The first production owner test read `Process.Path` before loader initialization.
+A controlled suspended-start reproduction returned no path before resume and the
+correct path about 520 ms later. `9dcff76` waits within the existing startup budget,
+still rejects a wrong nonempty path, and adds deterministic cold-start, wrong-path
+and exited-process checks. Fixed tests passed for static and dynamic builds. The
+27 earlier gates on unchanged application source were retained; owner/audit passed
+after the fix. Raw source records: `production-gates.json` (initial `84c81ad`,
+follow-up `9dcff76`) and its saved pre-fix failure record. Final documentation-only
+changes are packaged again; exact final-head hosted results belong in the PR.
+
 MSVC import inspection reports 16 system DLL imports and no direct/delay external
 CRT imports for the static EXE, versus 27 total/11 CRT imports for the dynamic
 control. Static size is 4,443,648 bytes versus 4,311,552 dynamic. No installed DLL

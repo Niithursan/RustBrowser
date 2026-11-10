@@ -43,6 +43,10 @@ For lengths 0 through 4096, deterministic binary inputs produced identical outpu
 from both `STANDARD.encode` calls and the new runtime-detected `Simd` engine;
 SIMD decode round-tripped every case. One test passed on this AVX2-capable x64 host.
 The browser's Cargo.toml and Cargo.lock were unchanged.
+Input byte `n` at each length was `(n * 73 + length * 13) mod 256`; aliases pinned
+exactly `base64 = 0.22.1` and `base64 = 0.23.1`. The separate project ran offline
+with Rust 1.99.1, comparing both scalar outputs plus `Simd::standard(PAD)` encode
+and decode. This records the workload without adding a crate to the browser.
 
 This is API/parity evidence, not an unsafe-code audit, fuzz campaign, benchmark,
 non-AVX2 fallback test or ARM64 validation. Disabling default features on a future

@@ -7,6 +7,8 @@
 - Prepare owner acceptance bundles with a separate installer identity, explicit
   disposable profile, executable hash verification and refusal of unsafe paths.
   Cover portable and installed startup/shutdown in CI without distributing test profiles.
+- Cover cold process initialization before its image path is available; retain
+  strict identity checks and the existing startup timeout.
 - Separate technical qualification from tag/publication authorization. Prioritize
   Windows 11 x64 and review base64 #4 separately without changing the dependency.
 - Recover the toolbar after its own WebView2 browser process or renderer ends.
