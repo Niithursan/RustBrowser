@@ -1,5 +1,14 @@
 # Continuous integration
 
+v0.14 adds one native step to the quality job
+(`native_failure_reporting_tab_retirement_and_engine_restart`, about 12 seconds
+locally) and moves the installer upgrade fixture from v0.12 to the pinned v0.13
+commit `ca7ac14` (new immutable cache key `installer-fixture-v3-…`, target
+`target-v013`). The public-site survey, the matched benchmark campaign and the
+30-minute soak are manual and are not part of any workflow: they depend on the
+network or take about an hour. Measured durations for this change are recorded
+under "v0.14 measurements" below.
+
 ## Workflows
 
 | Workflow | Triggers | Jobs |

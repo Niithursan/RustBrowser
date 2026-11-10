@@ -25,6 +25,28 @@ Environment: Windows 11 Pro 10.0.26200 x64, WebView2 157.0.4341.42, Rust 1.99.1,
 | Address focus selects text; drafts survive background title updates | Native daily fixture | Pass (existing) |
 | Loading progress is hidden from assistive technology when idle | Native daily fixture | Pass (existing) |
 
+## v0.14 additions
+
+Automated, in `native_failure_reporting_tab_retirement_and_engine_restart`:
+
+- An HTTP error page (404) is exposed as polite status text: the assertive alert
+  region stays empty and the status line has no error styling.
+- The engine-restart notice appears in the polite `role="status"` notice region with
+  its Dismiss button visible, and does not raise the assertive alert.
+- Unit tests cover the new shortcuts (Ctrl+Shift+T, Ctrl+1–9, Ctrl+PageUp/PageDown,
+  Ctrl+F4, Alt+Home), that plain digits, Home and F4 still reach the page, and that
+  AltGr+digit is not intercepted.
+
+Nothing in the "manual verification still required" list below was tested in
+v0.14: no screen reader, real contrast theme, Windows text-size setting, display
+scale other than 100%, second monitor, IME or non-US physical layout was used. No
+WCAG conformance or screen-reader compatibility is claimed.
+
+Known new limitation: Ctrl+1–9 are browser shortcuts in every layout. On layouts
+where digits need Shift (for example French AZERTY) the unshifted digit keys still
+report the same virtual keys, so the shortcuts should work, but this was not tried
+on such a keyboard.
+
 ## Emulated, not physically verified
 
 - **Windows high contrast:** the `forced-colors: active` styles (system-colour focus
