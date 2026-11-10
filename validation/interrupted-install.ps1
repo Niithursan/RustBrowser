@@ -234,4 +234,3 @@ if (-not $profileSemantics) { $problems += 'profile semantics changed' }
 if (-not $report.real_profile_unchanged) { $problems += 'the real profile or production registration changed' }
 if ($problems) { throw ("Interrupted installation problems:`n" + ($problems -join "`n")) }
 'Interrupted installation: every case was repaired by re-running Setup; no leftovers; profiles unchanged.'
-
