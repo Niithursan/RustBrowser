@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.14.0 (unreleased)
+
+- Fixed a WebView2 browser-process crash (access violation) when a tab or the window
+  was closed while some pages were visible, reproduced with the Microsoft sign-in
+  page: 6 of 8 tab closes and 8 of 8 window exits before, 0 of 12 and 0 of 8 after.
+  Closed tabs' views are now hidden at once and destroyed one second later; shutdown
+  hides the window and exits after the same delay.
+- Added recovery when the WebView2 browser process ends for any reason: tabs are
+  rebuilt and reloaded with their order, pins and selection. Previously every tab
+  failed with `0x8007139F` until the browser was restarted. Restarts are limited to
+  three within two minutes.
+- Helper-process failures that WebView2 repairs itself (GPU, utility, frame) no
+  longer mark a tab as failed. An unresponsive page shows a notice.
+- HTTP 4xx/5xx pages are reported as the website's answer instead of "the page could
+  not be loaded", and are no longer counted as navigation failures.
+- An unreachable or unresolvable site keeps its real reason. WebView2 follows such a
+  failure with a second navigation that aborts; that replaced the reason with
+  "connection interrupted (status 9)". This was the open v0.12 `.invalid` finding.
+- A navigation that becomes a download no longer marks the page as failed or adds a
+  false navigation failure to local diagnostics. Navigation failures are written to
+  diagnostics two seconds after they occur.
+- A page link to `mailto:` or another non-HTTP(S) address shows a notice instead of
+  marking the unchanged page as failed.
+- Added Ctrl+Shift+T (reopen closed tab, in memory only), Ctrl+1–8/Ctrl+9, Ctrl+PageUp
+  and Ctrl+PageDown, Ctrl+F4 and Alt+Home.
+- Starting a second normal window for an open profile now says the browser is already
+  running instead of reporting a startup failure.
+- Added a manual public-website survey (`validation/site-survey.ps1`), a native
+  regression for all of the above, and a new local diagnostic event, `engine_restarted`.
+- Installer upgrade tests now upgrade from the pinned v0.13 build. Repository-only
+  links in packaged documentation are absolute and checked by the package test.
+- Profile location, session format 1 and SQLite schema 3 are unchanged.
+
 ## 0.13.0 (unreleased)
 
 - Added an unsigned per-user Inno Setup installer alongside the portable ZIP:

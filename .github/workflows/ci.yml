@@ -57,6 +57,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_popup_opener_upload_audio_fullscreen_and_redirects -- --ignored --test-threads=1
       - name: Native renderer crash and reload recovery
         run: cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
+      - name: Native failure reporting, tab retirement and engine restart
+        run: cargo test --locked --bin rust-browser native_failure_reporting_tab_retirement_and_engine_restart -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
       - name: Native daily-driver compatibility, diagnostics and untrusted TLS
@@ -78,7 +80,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-          fetch-depth: 0 # exact pinned v0.12 upgrade fixture, never a mutable release download
+          fetch-depth: 0 # exact pinned v0.13 upgrade fixture, never a mutable release download
       - name: Install Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -95,8 +97,8 @@ jobs:
       - name: Cache immutable upgrade-fixture build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/rust-browser-install-baseline/target-v012
-          key: installer-fixture-v2-71ff43eb9f4269c2047ab1fcc9965b8785d320a1-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
+          path: ${{ runner.temp }}/rust-browser-install-baseline/target-v013
+          key: installer-fixture-v3-ca7ac142031569279f1e1be0beffb53473af8cf7-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
       - name: Installer lifecycle, profile preservation and artifact verification
         id: installer
         shell: powershell

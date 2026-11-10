@@ -1,9 +1,19 @@
-# Rust Browser 0.13.0
+# Rust Browser 0.14.0
 
-A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
+A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.14 is a reliability release found by browsing real websites through the
+production session. Closing a tab or the window no longer crashes the WebView2
+engine on pages that triggered it (reproduced with the Microsoft sign-in page), and
+if the engine process ends for any reason the open tabs are rebuilt and reloaded
+instead of the browser becoming unusable. Server error pages (404, 429, 500),
+unreachable sites, downloads and blocked app links now report what actually
+happened. Ctrl+Shift+T, Ctrl+1–9, Ctrl+PageUp/PageDown, Ctrl+F4 and Alt+Home were
+added. Evidence, measurements and limits: [VALIDATION.md](VALIDATION.md) and the
+[website compatibility record](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md).
 
 v0.13 adds an unsigned **per-user Windows installer**, Start Menu and optional
 desktop shortcuts, Apps & Features removal, upgrade/profile-preservation checks,
@@ -20,14 +30,14 @@ keyboard shortcuts). It adds Windows high-contrast support, announces
 navigation errors to screen readers, names list actions by their item, extends the
 controlled compatibility suite to service workers and Cache Storage, fixes false
 errors after rapid successive navigations, and makes CI faster
-([CI.md](CI.md)). Accessibility evidence and gaps: [ACCESSIBILITY.md](validation/ACCESSIBILITY.md).
+([CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md)). Accessibility evidence and gaps: [ACCESSIBILITY.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/ACCESSIBILITY.md).
 
 v0.11 adds bounded local application diagnostics, improved navigation/Stop
 feedback, AltGr-safe shortcuts, a light theme and a controlled modern-site
 regression suite. The version intentionally jumps from 0.8.0 because v0.9
 and v0.10 were research milestones. Existing profile locations and storage
 schemas remain unchanged. See [Windows installation and upgrades](INSTALL_WINDOWS.md)
-and [the daily-driver acceptance record](validation/DAILY_DRIVER.md).
+and [the daily-driver acceptance record](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md).
 
 ## Setup on Windows
 
@@ -77,12 +87,13 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
 | Stop | × button or Escape |
-| Home | Home button → local new-tab page |
+| Home | Home button or Alt+Home → local new-tab page |
 | New tab | + button or Ctrl+T |
-| Close active tab | Ctrl+W (last normal tab opens Home; last private tab closes its window) |
+| Close active tab | Ctrl+W or Ctrl+F4 (last normal tab opens Home; last private tab closes its window) |
 | Close a specific tab | Its × button |
-| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab (wraps around) |
-| Select a tab | Click its title |
+| Reopen the last closed tab | Ctrl+Shift+T (this window only; up to 16; the address is reloaded, page state is not restored) |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab or Ctrl+PageDown / Ctrl+PageUp (wraps around) |
+| Select a tab | Click its title, or Ctrl+1 to Ctrl+8 by position; Ctrl+9 selects the last tab |
 | Reorder tabs | Drag a tab, More (⋯) → Move left/right, or Ctrl+Shift+PageUp/PageDown |
 | Pin/unpin active tab | More (⋯) → Pin tab, or Ctrl+Shift+P |
 | Navigate focused tab strip | Left/Right, Home/End; Tab reaches the selected tab |
@@ -113,8 +124,11 @@ Back/forward use WebView2's actual history, rather than a separate Rust URL list
 The status line reports connecting/loading, completion, invalid input, blocked
 schemes and native WebView2 navigation errors (including a numeric error status).
 WebView2 also displays its built-in network and certificate error pages. No
-certificate validation bypass is installed. HTTP error responses such as 404 may
-render normally and count as completed navigation.
+certificate validation bypass is installed. An HTTP error response such as 404,
+429 or 500 is a completed navigation: the status line says the website answered
+with that code, and it is not counted as a connection failure. A navigation that
+turns into a download, or a page link to an app address such as `mailto:`, leaves
+the current page and its status unchanged; a blocked app link shows a notice.
 
 ## Data and boundaries
 
@@ -199,7 +213,7 @@ view. Its internal `rust-browser:new-tab` marker is never accepted as a website 
 remote sites still receive no privileged IPC. The connection indicator says **LOCAL**
 there because no website connection is established.
 
-See [benchmarks/README.md](benchmarks/README.md) for reproducible Windows measurement
+See [benchmarks/README.md](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/README.md) for reproducible Windows measurement
 instructions, measured results and their limits. Performance results describe the
 documented synthetic workload, not general website or everyday-browser performance.
 
@@ -208,12 +222,12 @@ documented synthetic workload, not general website or everyday-browser performan
 v0.11 makes no Servo changes. Experimental source-build and sandbox failures
 remain documented; they do not describe production WebView2 validation.
 
-The v0.10 investigation adds [LPAC diagnostics and scoped synthetic IPC](experiments/servo/isolation/DIAGNOSTICS_V010.md),
+The v0.10 investigation adds [LPAC diagnostics and scoped synthetic IPC](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/isolation/DIAGNOSTICS_V010.md),
 resource/failure tests, native fixture input observations and repeated numeric
-samples. The [rendering assessment](experiments/servo/SECURE_RENDERING_V010.md)
+samples. The [rendering assessment](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/SECURE_RENDERING_V010.md)
 records the WGL/Win32k blocker: no real Servo renderer has been contained.
-See the [validation record](experiments/servo/VALIDATION_V010.md) and
-[threat model](experiments/servo/isolation/THREAT_MODEL.md). Production package
+See the [validation record](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/VALIDATION_V010.md) and
+[threat model](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/isolation/THREAT_MODEL.md). Production package
 version remained 0.8.0 during that research; arbitrary Servo content remains blocked.
 
 Normal Rust Browser tabs use WebView2. v0.8 adds a standalone Windows executable
@@ -221,11 +235,11 @@ that embeds one Servo view and opens two built-in local fixtures. Its separate
 source build uses a pinned Servo checkout, toolchain, lockfile, and output directory.
 The production Cargo build and browser profile formats stay independent.
 
-Follow the [Windows source-build procedure](experiments/servo/SOURCE_BUILD.md) to
+Follow the [Windows source-build procedure](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/SOURCE_BUILD.md) to
 build the upstream example, compile the embedder, and run the fixture and shutdown
-checks. The [validation results](experiments/servo/EMBEDDER_RESULTS.md) document
+checks. The [validation results](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/EMBEDDER_RESULTS.md) document
 the actual GUI checks, measurements, and security limits. The v0.7
-[official servoshell procedure](experiments/servo/README.md) is still available.
+[official servoshell procedure](https://github.com/Niithursan/RustBrowser/blob/main/experiments/servo/README.md) is still available.
 
 Keep the embedder on its bundled fixtures. The pinned Servo revision lacks a
 supported Windows content-process sandbox. Each run creates a fresh profile and
@@ -258,8 +272,20 @@ policy within their isolated context.
 
 HTML fullscreen expands the native window while retaining the browser toolbar and
 origin indicator. Escape reaches the document's fullscreen handling and native
-controls. A renderer failure shows an actionable error; try Reload, then restart if
-the engine cannot recover. Recovery can lose unsaved forms and JavaScript state.
+controls. A renderer failure shows an actionable error on that tab; Reload recovers
+it. If the shared WebView2 browser process ends, every tab's view is rebuilt and its
+address reloaded automatically, keeping tab order, pins and the selected tab; a
+notice says so. After three such restarts within two minutes the browser stops
+restarting the engine and asks to be restarted. Recovery loses unsaved forms,
+JavaScript state, page history within the tab, popup opener links and unfinished
+downloads. GPU, utility and frame helper failures are left to WebView2, which
+restarts them itself. A failure of the toolbar's own engine process is not recovered.
+
+Closing a tab hides its view immediately and destroys it one second later, and
+closing the window hides it and exits one second later. Destroying a view that was
+visible a moment earlier crashed the WebView2 browser process on some pages.
+Starting Rust Browser while a normal window already uses the same profile shows an
+"already running" message; a second normal window is not supported.
 After a long event-loop pause the browser resumes pending/sleeping views and delays
 new sleep attempts. This guard was tested with an injected timing gap; physical
 Windows sleep/wake remains a separate validation task.
@@ -272,7 +298,7 @@ schema. Process-termination tests cover committed snapshot recovery and rollback
 an uncommitted SQLite transaction; this does not establish recovery from every OS,
 storage-device or power failure.
 
-See [validation/README.md](validation/README.md) for controlled fixtures, the
+See [validation/README.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/README.md) for controlled fixtures, the
 compatibility matrix, and repeatable 30–60 minute interactive and automated procedures.
 
 ## Private browsing
@@ -460,8 +486,8 @@ storage flush succeeded. Unsaved page state is not recovered. Release panic
 feedback omits payloads and paths; debug startup failures use a static console
 message. There is no remote crash-reporting service.
 
-See [production architecture](ARCHITECTURE.md), [acceptance results](validation/DAILY_DRIVER.md)
-and [v0.11 measurements](benchmarks/V011_RESULTS.md) for the verified scope.
+See [production architecture](https://github.com/Niithursan/RustBrowser/blob/main/ARCHITECTURE.md), [acceptance results](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md)
+and [v0.11 measurements](https://github.com/Niithursan/RustBrowser/blob/main/benchmarks/V011_RESULTS.md) for the verified scope.
 
 ## Development checks
 
@@ -479,10 +505,10 @@ GitHub Actions runs formatting, Clippy with warnings treated as errors, all regu
 and native WebView2 tests, and a parallel optimized Windows build on pull requests and
 `main` (open a draft pull request to get CI for a feature branch). Dependency security
 runs `cargo audit --deny warnings` on main, pull requests and weekly. Caching and
-measured timings: [CI.md](CI.md). Dependabot proposes Cargo and Actions updates.
+measured timings: [CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md). Dependabot proposes Cargo and Actions updates.
 
 Development uses feature branches and pull requests into `main`, with Conventional
-Commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and release steps.
+Commits. See [CONTRIBUTING.md](https://github.com/Niithursan/RustBrowser/blob/main/CONTRIBUTING.md) for the workflow and release steps.
 Toolchain version is recorded in `rust-toolchain.toml`; commit `Cargo.lock` updates.
 The private repository is [Niithursan/RustBrowser](https://github.com/Niithursan/RustBrowser).
 
