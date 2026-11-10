@@ -46,8 +46,10 @@ response can still be a successful engine navigation, as before.
 
 A tab's WebView2 view is never destroyed while visible. `Session::close_tab` and
 data clearing move the page to `Session::retired` after hiding it; `reap_retired`
-destroys it one second later (`RETIRE_DELAY`) from `about_to_wait`. At most 16
-retired views are held; closing faster destroys the oldest early. Window close
+destroys it one second later (`RETIRE_DELAY`) from `about_to_wait`. At most
+`MAX_TABS` (64) retired views are held, so closing every tab within the delay keeps
+all of them; only opening and closing more than 64 tabs within one second destroys
+the oldest early. Window close
 goes through `App::begin_shutdown`: persist, hide the window and every view, then
 drop the session after the same delay. Events for a retired tab find no tab and are
 ignored. Engine data clearing does not start while a retired view exists.

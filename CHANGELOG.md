@@ -6,7 +6,10 @@
   was closed while some pages were visible, reproduced with the Microsoft sign-in
   page: 6 of 8 tab closes and 8 of 8 window exits before, 0 of 12 and 0 of 8 after.
   Closed tabs' views are now hidden at once and destroyed one second later; shutdown
-  hides the window and exits after the same delay.
+  hides the window and exits after the same delay. Up to 64 closed views are held for
+  the delay (initially 16): closing 17 or more tabs within one second, for example by
+  holding Ctrl+W, destroyed the oldest early and crashed again (10 of 11 bursts with
+  the sign-in page; 0 of 13 after).
 - Added recovery when the WebView2 browser process ends for any reason: tabs are
   rebuilt and reloaded with their order, pins and selection. Previously every tab
   failed with `0x8007139F` until the browser was restarted. Restarts are limited to
@@ -27,7 +30,8 @@
   and Ctrl+PageDown, Ctrl+F4 and Alt+Home.
 - Starting a second normal window for an open profile now says the browser is already
   running instead of reporting a startup failure.
-- Added a manual public-website survey (`validation/site-survey.ps1`), a native
+- Added a manual public-website survey (`validation/site-survey.ps1`, with a
+  `-BurstCloseFillers` option that closes many tabs at once), a native
   regression for all of the above, and a new local diagnostic event, `engine_restarted`.
 - Installer upgrade tests now upgrade from the pinned v0.13 build. Repository-only
   links in packaged documentation are absolute and checked by the package test.

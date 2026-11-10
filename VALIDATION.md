@@ -52,6 +52,23 @@ Engine crash measurements, Microsoft sign-in page, 3 s after load:
 | Close the window with the page visible (crash dump in profile) | 8 of 8 runs | 0 of 8 runs |
 | Control: close the window on example.com, GitHub/Google sign-in, Wikipedia, YouTube | 0 of 6 runs | not repeated |
 
+Burst close (`site-survey.ps1 -BurstCloseFillers n`, 2026-11-10): after the sign-in
+page loads, it and `n` blank tabs are closed in one event-loop turn. The first fix held
+at most 16 closed views and destroyed the oldest at once beyond that, which was the
+sign-in page:
+
+| Views closed at once | 16-view cap | 64-view cap (shipped) |
+| --- | --- | --- |
+| 11 or 16 | 0 of 8 runs | not repeated |
+| 17 | 4 of 6 runs | 0 of 5 runs |
+| 18 | 6 of 6 runs | 0 of 5 runs |
+| 33 | not run | 0 of 3 runs |
+| Control: example.com + 17 blank tabs | 0 of 3 runs | not repeated |
+| Control: window exit with 19 tabs (18 sign-in pages) | 0 of 2 runs | not repeated |
+
+The native regression now fills the window to 64 tabs and closes 62 in one turn; it
+fails with the 16-view cap ("16 of 62 kept").
+
 Hiding the view for 0 or 100 ms before destroying it still crashed 8 of 8 times;
 300 ms and 1 s did not crash in 8 runs each. The shipped delay is 1 s. Disabling
 every application event handler on the view did not prevent the crash. These are

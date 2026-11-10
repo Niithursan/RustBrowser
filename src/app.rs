@@ -81,8 +81,11 @@ fn content_target(url: &str) -> Result<LoadTarget, rust_browser::engine_api::Inv
 /// view that was visible moments earlier can crash the shared WebView2 browser
 /// process (measured in VALIDATION.md); 300 ms was the shortest safe delay observed.
 const RETIRE_DELAY: Duration = Duration::from_secs(1);
-/// Closing tabs faster than they retire destroys the oldest hidden view early.
-const MAX_RETIRED: usize = 16;
+/// Hidden views kept for their delay. Closing every possible tab within the delay
+/// (holding Ctrl+W, for example) fits; only opening and closing more than this many
+/// tabs within one delay destroys the oldest hidden view early. A cap of 16 did that
+/// for a 17-tab burst and crashed the engine (measured in VALIDATION.md).
+const MAX_RETIRED: usize = MAX_TABS;
 /// Automatic engine restarts allowed within `ENGINE_RESTART_WINDOW`.
 const MAX_ENGINE_RESTARTS: usize = 3;
 /// How long a failed navigation waits for a download request before it is logged.

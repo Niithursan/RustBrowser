@@ -303,13 +303,27 @@ impl Probe {
                     .map_err(|_| "Scratch tab failed")?;
                 s.activate().map_err(|_| "Scratch activation failed")?;
                 let scratch = s.tabs.active().ok_or("No scratch tab")?.id;
-                s.command(Command::CloseTab(scratch))
-                    .map_err(|error| format!("Scratch close failed: {error}"))?;
-                if s.retired.len() != 1
-                    || s.tabs.items.iter().any(|t| t.id == scratch)
+                // Fill the window to the tab limit and close every extra tab within one
+                // event-loop turn: no view may be destroyed before its delay.
+                let mut burst = vec![scratch];
+                while s.tabs.items.len() < MAX_TABS {
+                    s.open_tab(format!("{}?burst", self.url))
+                        .map_err(|_| "Burst tab failed")?;
+                    burst.extend(s.tabs.items.last().map(|t| t.id));
+                }
+                for id in burst.iter().rev() {
+                    s.command(Command::CloseTab(*id))
+                        .map_err(|error| format!("Burst close failed: {error}"))?;
+                }
+                if s.retired.len() != burst.len()
+                    || s.tabs.items.iter().any(|t| burst.contains(&t.id))
                     || s.tabs.active().map(|t| t.id) != Some(closing)
                 {
-                    return Err("Closed tab was not retired".into());
+                    return Err(format!(
+                        "Closed tabs were not all retired: {} of {} kept",
+                        s.retired.len(),
+                        burst.len()
+                    ));
                 }
                 self.step = Instant::now();
                 self.phase = 8;
