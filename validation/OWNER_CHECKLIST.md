@@ -16,6 +16,15 @@ uses the production identity; do not run it over your real installation for this
 checklist. Do not enable Windows Sandbox, create a VM or change Windows features
 as part of these checks. Those require a separate owner decision.
 
+Use the bundle prepared by `validation/prepare-owner-build.ps1`, following its
+`OWNER_BUILD.md`. Check `owner.json` against the reviewed PR's commit and SHA-256.
+Run `.\Launch.ps1 -VerifyOnly`, then `.\Launch.ps1` for the portable copy, or
+`.\Launch.ps1 -Installed` after installing that bundle's validation-only Setup.
+Use the same launcher for every restart. It checks the executable hash, installation
+identity when applicable and explicit disposable profile. The bundle must remain at
+its prepared location because Setup's destination is fixed. Technical acceptance
+does not authorize declaring, tagging or publishing an RC.
+
 ## 1. Installer wizard (4 minutes)
 
 Only use a **validation-identity installer** whose directory and shortcuts are
@@ -34,7 +43,7 @@ untouched during this milestone.
 
 **Pass:** every page is readable and its buttons work; Windows warns about an
 unknown publisher (expected, the build is unsigned) and nothing else; the browser
-opens with the prepared test tabs; the validation desktop shortcut and Start Menu entry show the
+opens with the local new-tab page; the validation desktop shortcut and Start Menu entry show the
 Rust Browser icon.
 
 ## 2. Taskbar and window identity (1 minute)
