@@ -1,4 +1,4 @@
-# Accessibility validation (v0.12)
+# Accessibility validation
 
 This records what is verified for the trusted browser chrome (toolbar, tabs and
 library/settings panels). **It is not a WCAG conformance claim.** Website content
@@ -46,6 +46,23 @@ Known new limitation: Ctrl+1–9 are browser shortcuts in every layout. On layou
 where digits need Shift (for example French AZERTY) the unshifted digit keys still
 report the same virtual keys, so the shortcuts should work, but this was not tried
 on such a keyboard.
+
+## v0.15 additions
+
+Recorded local runs on Windows 11 x64 / WebView2 157.0.4341.42:
+
+| Check | Evidence | Scope |
+| --- | --- | --- |
+| Keyboard reachability, More disclosure and tab arrows | `native_toolbar_keyboard_reachability_and_scaled_layout`, three passing runs; 28 expected controls, 29 reached by Tab or Shift+Tab | DevTools-injected keys in the production toolbar, not physical keyboard input |
+| Responsive layout at DPR 1, 1.25, 1.5 and 2 | CSS widths 1920, 1536, 1280 and 960; 14 layout controls checked per configuration; no reported layout problems | Renderer/device-metric emulation; no Windows display-scale or monitor transition |
+| Regression strength | Four product mutations each caused a test failure: untabbable Reload, mouse-only More, ignored left arrow, oversized layout | All mutants compiled; failures were assertion failures, not build errors |
+| Windows accessible names and roles | Optional `validation/accessibility-uia.ps1`: 24 controls initially, 33 with More open, no problems | UI Automation metadata, not a spoken screen reader |
+| Windows keyboard walk | Three foreground-guarded UIA/input runs reached 29 distinct controls | Automated Windows key injection; stops if foreground is unavailable; excludes tab close buttons and the panel heading |
+
+The native regression is included in CI and release gates. The foreground-dependent
+UIA script is manual and is not a CI gate. These recorded runs do not complete the
+[owner checklist](OWNER_CHECKLIST.md). Narrator, real contrast themes, physical IME,
+non-US keyboard layouts and native mixed-DPI transitions remain unverified.
 
 ## Emulated, not physically verified
 

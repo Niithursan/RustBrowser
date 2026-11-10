@@ -1,5 +1,133 @@
 # Validation
 
+## Version 0.15.0: release candidate preparation
+
+Baseline: PR #18 squash `b4f0c2388a80853110baa9d43a8cec56a796d220`, version
+0.14.0, with passing CI 42857529540 and security 42857529076. Work continues on
+`feat/v0.15-release-candidate-prep`. No merge, tag, release publication, deployment,
+production installation or real-profile write is authorized.
+
+Recorded local environment: Windows 11 Pro x64, Rust 1.99.1/MSVC, WebView2 as
+installed, 2026-11-10. Raw evidence is in workspace `work/v15`, outside Git.
+Inherited results below were checked against the saved logs/JSON, not assumed
+from the handoff. All **26 local gates passed** on source commit `5c8822e`;
+the subsequent changes only record results and clarify the owner checklist.
+Hosted v0.15 checks have not run because no PR is open yet. Exact final-head
+hosted status belongs in the PR delivery record, separately from local results.
+
+### Final local gates (2026-11-10)
+
+| Gate | Result |
+| --- | --- |
+| Formatting and strict Clippy | Passed; `--all-targets --all-features`, warnings denied |
+| Regular Rust tests | 79 passed, zero failures; Windows-only/manual tests remain ignored in this command and are invoked separately below |
+| Windows debug and release builds | Passed, locked dependency graph; release output isolated from the already running executable |
+| Native WebView2 | All 10 standalone suites passed, each in its own process, including toolbar recovery and keyboard/layout |
+| Daily-driver fixtures | Three independent fresh-profile runs passed, not retries |
+| PowerShell fixtures | Process-tree sampler and experimental launcher safety passed; no Servo build/download/launch |
+| Python | 2 experimental fixture tests and 18 production CI-scope tests passed |
+| Portable package | Deterministic contents, hashes, metadata, offline links and unsafe-input refusal passed |
+| Installer lifecycle | Fresh install, pinned v0.14 upgrade, repair/removal/reinstall, refusal cases, shortcuts and disposable profile preservation passed |
+| Release metadata | Positive integrity/pin/repair checks and 36 malformed/downgrade/tampered/missing-input refusals passed |
+| Dependency security | `cargo audit --deny warnings` passed: 369 dependencies, 1,446 advisory records; three existing unsupported-platform exceptions unchanged |
+
+The first formatting check found the inherited keyboard test needed rustfmt;
+`5c8822e` applies formatting only. The release build initially hit a running EXE
+file lock; a separate output directory passed without stopping the user's browser.
+Inno's baseline compiler then refused a 273-character scratch output path; the
+same installer test passed under a shorter owned directory. Already-passed checks
+on the unchanged source were retained, not rerun as retries. No product assertion,
+profile path, security setting or dependency exception was weakened.
+
+Raw records: `work/v15/current-final-gates.json`, its referenced `results.json`,
+`final-gates.stdout.log`, `final-gates-resume.{stdout,stderr}.log` and
+`final-gates-short.{stdout,stderr}.log`. They stay outside Git. Packaging is checked
+again against the final documentation commit before delivery; exact-head hosted
+checks cover the final committed tree. These are automated native Windows GUI
+tests, not a human walkthrough of the owner checklist.
+
+### Reproduced defects and before/after evidence
+
+| Defect | Before | After / limits |
+| --- | --- | --- |
+| Toolbar browser process ends | Controls remained dead with `0x8007139F` while pages remained usable | Shared trusted toolbar rebuilt, notice shown; one recorded recovery 353 ms |
+| Toolbar renderer ends | Silent dead controls with no recovery | Rebuilt; one recorded recovery 109 ms; same content views retained |
+| Setup ends during copy | Six of six reproduced fresh mid-copy cases left a folder that both Setup and uninstall refused | Ownership recorded before copy; rerun Setup repaired every case in two 32-case sweeps |
+| Stale Setup/uninstaller files | Temporary files and an unregistered old uninstaller could block later install/remove | Clean reserved installer state, retain registered uninstaller, remove empty folders; zero leftovers in both final sweeps |
+| Parallel diagnostics tests | Temporary folder name collision | Per-test uniqueness; normal parallel suite retained |
+
+Toolbar native recovery passed four runs. Five product mutations compiled but
+failed the regression: missing dispatch, missing notice, no retirement, ignored
+renderer failure and startup-only process observation. Restarts are limited to
+three per two minutes, then native failure feedback; unsaved toolbar drafts can
+be lost. This is not a recovery-latency guarantee or a new privileged bridge.
+
+Installer sweeps each contain 16 fresh and 16 v0.14 upgrade timing cases,
+including completed-process controls. They record 24 and 26 cases respectively
+with killed owned processes. In both sweeps all 32 repairs succeeded, exact
+candidate bytes and synthetic profile hashes/semantics were preserved, and no
+uninstall refusal or leftover remained. A read-only real-profile metadata
+fingerprint stayed unchanged (306 files, no production registration); this is
+distinct from the synthetic profile's byte/semantic assertions. No real profile
+was used for installation. Power loss, full disk and arbitrary kill timing remain
+unverified. See `validation/interrupted-install.ps1` and the installation guide.
+
+### Compatibility and accessibility evidence
+
+- Full public-site survey: **41 addresses**, zero engine exits, renderer exits,
+  crash dumps and timeouts. Three intended failures were diagnosed: DNS, expired
+  certificate and self-signed certificate. OpenStreetMap's HTTP 429 also occurs
+  on v0.14; site-side cause remains unknown. No bypass or user-agent workaround.
+- Two independent nine-site burst runs with 20 filler tabs closed in one turn:
+  zero exits, dumps and timeouts. No account credentials or real permission grants.
+- Survey downloads now stay in its disposable profile; one download initiation
+  was observed. Per-visit permission prompts are recorded. The separate geolocation
+  demo's non-user-initiated request was denied without a prompt by existing policy.
+- Native keyboard/layout regression: **three** passing runs; Tab/Shift+Tab, More
+  via Enter and tab arrows. DPR 1/1.25/1.5/2 with CSS widths 1920/1536/1280/960;
+  14 layout controls checked per configuration. Four compiled product mutants
+  failed their assertions. This uses DevTools input/device emulation, not native DPI.
+- Optional Windows UIA/input check: **three** passing foreground-guarded walks,
+  24 initial/33 expanded controls named/typed, 29 distinct controls reached.
+  Tab close buttons and panel heading are explicit exclusions. Not a screen reader,
+  physical keyboard/IME or real Windows display-scale test.
+
+Details: [compatibility](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md)
+and [accessibility](https://github.com/Niithursan/RustBrowser/blob/main/validation/ACCESSIBILITY.md).
+
+### CI and release status
+
+Whole-PR, no-renames classification protects packaged documents and runs full
+Windows checks for code, ambiguity or errors. Eighteen Python scope tests and two
+caught mutations support it; the hosted docs-only skip path is **not exercised**
+by this code-changing milestone and no saving is claimed. Dependabot version
+updates are grouped/monthly with no automatic rebase; owner review of #2 to #4
+is separate. `CI.md` records estimated costs and the delayed but passing run for
+PR #18 head `36c8d2f`; the delay's cause is unestablished.
+
+The pinned installer upgrade fixture is v0.14 with a new immutable cache key; its
+first hosted build is cold. The public survey, interruption sweeps, UIA walk and
+soak are manual procedures, not new recurring Actions jobs. Open one draft PR on
+the final pushed head; do not dispatch/rerun to collect extra samples. Exact final
+commit, run IDs and hosted results belong in that PR's delivery record so a
+post-CI documentation push does not trigger another full packaged-doc run.
+
+### Pending owner decisions and unverified scope
+
+The [release criteria](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_CRITERIA.md)
+are proposals, not approvals. Portable EXE imports both VCRUNTIME140 DLLs; Setup
+checks them, but the portable loader may fail before application code on a missing-
+runtime machine. Static CRT is proposed and **not implemented without approval**.
+Windows Sandbox is unavailable and was not enabled; no VM was created. Signing,
+updater, new dependencies, second-launch hand-off and unrestricted Servo are absent.
+
+The [owner checklist](https://github.com/Niithursan/RustBrowser/blob/main/validation/OWNER_CHECKLIST.md)
+requires isolated profiles and validation identities. Clean-machine/missing-runtime,
+standard-user, human wizard, Narrator, real contrast themes, physical IME/mixed DPI,
+real accounts and camera/microphone acceptance remain unverified. No v0.15 30-minute
+soak was repeated here; v0.14 measurements are historical, not a new candidate pass.
+Profile path, session format 1 and SQLite schema 3 are unchanged. No RC is declared.
+
 ## Version 0.14.0
 
 Baseline: verified PR #17 squash `ca7ac142031569279f1e1be0beffb53473af8cf7`, version

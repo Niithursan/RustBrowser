@@ -36,3 +36,22 @@ https://httpbin.org/status/500
 https://nonexistent-rust-browser-test.invalid/
 https://expired.badssl.com/
 https://self-signed.badssl.com/
+# Daily-use flows added in v0.15 (no account, nothing entered)
+# Search with results and a video watch page
+https://search.brave.com/search?q=rust+language
+https://www.youtube.com/watch?v=jNQXAC9IVRw
+# Maps
+https://www.google.com/maps
+# Web mail sign-in pages
+https://outlook.live.com/mail/
+https://mail.google.com/
+https://account.proton.me/login
+# Large single-page applications
+https://app.diagrams.net/
+https://www.figma.com/
+https://codepen.io/
+# A file download (saved inside the disposable profile) and a PDF document
+https://httpbin.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dsurvey.txt
+https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf
+# A page that asks for a permission when it loads (never granted)
+https://html5demos.com/geo/

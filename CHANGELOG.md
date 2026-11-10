@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.15.0 (unreleased, release candidate preparation)
+
+- Recover the toolbar after its own WebView2 browser process or renderer ends.
+  Previously pages could remain usable while tabs, address and menus stayed dead.
+  Rebuild through the existing trusted toolbar builder, show a notice and limit
+  recovery to three attempts within two minutes. No new web IPC capability.
+- Repair installer-owned partial installations by recording ownership before copy,
+  cleaning stale Setup temporaries and keeping the registered uninstaller after
+  repair. Remove empty installer folders after uninstall. Two 32-case timing sweeps
+  repaired all fresh/upgrade cases and preserved the disposable profile.
+- Contain public-survey downloads inside the disposable profile; record download
+  starts and permission prompts per visit. The 41-address survey and two nine-site
+  burst-close runs found no engine exits, renderer exits, crash dumps or timeouts.
+- Add native toolbar failure-recovery and keyboard/layout regressions. Add an
+  optional foreground-guarded Windows UI Automation check. Emulation and UIA results
+  do not establish screen-reader, physical IME or native mixed-DPI compatibility.
+- Fix parallel diagnostic tests sharing a temporary directory.
+- Classify the entire PR diff before CI. Only unpackaged Markdown-only changes
+  may skip Windows jobs; ambiguity and packaged documents require all checks.
+  Keep the stable aggregate and mandatory audit. Hosted skip behavior is not yet tested.
+- Group scheduled Dependabot version updates monthly, limit one open PR per
+  ecosystem and disable automatic rebasing. Existing dependency PRs remain owner decisions.
+- Pin the installer upgrade fixture to verified v0.14 and retain cache isolation.
+  Archive older checkpoints and add proposed release criteria and an isolated
+  owner checklist. No release candidate is declared; no CRT/signing/updater or
+  profile-format change is approved by these proposals.
+
 ## 0.14.0 (unreleased)
 
 - Fixed a WebView2 browser-process crash (access violation) when a tab or the window

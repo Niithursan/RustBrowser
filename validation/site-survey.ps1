@@ -48,6 +48,8 @@ $report.visits | ForEach-Object {
         Result = if ($_.timed_out) { 'timed out' } elseif ($_.failed) { 'failed' } else { 'loaded' }
         Milliseconds = $_.elapsed_milliseconds
         Failures = $_.reported_failures.Count
+        Downloads = $_.downloads_started
+        Prompts = ($_.permission_prompts -join ',')
         Status = $_.message
     }
 } | Format-Table -AutoSize -Wrap

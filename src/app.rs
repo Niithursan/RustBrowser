@@ -59,6 +59,8 @@ pub enum Event {
     StorageError,
     DiagnosticsUpdated(diagnostics::Report),
     EngineProcess(TabId, crate::native_activity::Failure),
+    /// The toolbar view's own WebView2 process failed.
+    ToolbarProcess(crate::native_activity::Failure),
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
     DownloadStopped(u64, i32),
@@ -92,6 +94,78 @@ const MAX_ENGINE_RESTARTS: usize = 3;
 /// Only the local diagnostic record is delayed; the tab shows the failure at once.
 const FAILURE_RECORD_DELAY: Duration = Duration::from_secs(2);
 const ENGINE_RESTART_WINDOW: Duration = Duration::from_secs(120);
+
+/// Create the trusted toolbar view: local HTML only, no permissions, downloads,
+/// navigation, new windows or developer tools, and size-limited IPC commands. Used at
+/// startup and to replace the toolbar after its own engine process failed.
+fn build_toolbar(
+    window: &Window,
+    context: &mut WebContext,
+    proxy: &EventLoopProxy<Event>,
+    private: bool,
+) -> Result<WebView, Box<dyn std::error::Error>> {
+    let ipc_proxy = proxy.clone();
+    let toolbar_url = format!(
+        "data:text/html;charset=utf-8;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(ui::HTML)
+    );
+    let allowed_url = toolbar_url.clone();
+    let toolbar = WebViewBuilder::new_with_web_context(context)
+        .with_additional_browser_args("")
+        .with_incognito(private)
+        .with_permission_handler(|_| wry::PermissionResponse::Deny)
+        .with_download_started_handler(|_, _| false)
+        .with_url(&toolbar_url)
+        .with_devtools(false)
+        .with_navigation_handler(move |url| url == allowed_url)
+        .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
+        .with_ipc_handler(move |request| {
+            if request.body().len() <= 16384
+                && let Ok(command) = serde_json::from_str::<Command>(request.body())
+            {
+                let _ = ipc_proxy.send_event(Event::Command(command));
+            }
+        })
+        .build_as_child(window)?;
+    if private {
+        native_security::verify_private(&toolbar)?;
+    }
+    engine::accelerators(&toolbar, proxy.clone())?;
+    crate::native_activity::watch_toolbar(&toolbar, proxy.clone())?;
+    Ok(toolbar)
+}
+
+/// The toolbar keeps failing (or cannot be rebuilt): the window can no longer be
+/// controlled, so say so once in a native dialog. Tabs are already saved.
+fn toolbar_unrecoverable(window: &Window) {
+    #[cfg(not(test))]
+    {
+        let owner = match window.window_handle().map(|handle| handle.as_raw()) {
+            Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
+            _ => 0,
+        };
+        // SAFETY: a static message owned by this process's own live window.
+        unsafe {
+            use windows::{
+                Win32::{
+                    Foundation::HWND,
+                    UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW},
+                },
+                core::w,
+            };
+            let _ = MessageBoxW(
+                Some(HWND(owner as *mut _)),
+                w!(
+                    "The browser toolbar keeps stopping and was not restarted again.\n\nClose and reopen Rust Browser. Open tabs are saved."
+                ),
+                w!("Rust Browser"),
+                MB_ICONERROR | MB_OK,
+            );
+        }
+    }
+    #[cfg(test)]
+    let _ = window;
+}
 
 /// Bound automatic restarts so a persistently crashing engine cannot loop.
 fn admit_engine_restart(history: &mut Vec<Instant>, now: Instant) -> bool {
@@ -142,8 +216,10 @@ struct Session {
     retired: Vec<(Instant, Page)>,
     closed: ClosedTabs,
     toolbar: WebView,
+    /// A failed toolbar view, hidden and kept for `RETIRE_DELAY` like a closed tab.
+    retired_toolbar: Option<(Instant, WebView)>,
     content_context: WebContext,
-    _toolbar_context: WebContext,
+    toolbar_context: WebContext,
     window: Window,
     proxy: EventLoopProxy<Event>,
     settings: Settings,
@@ -165,6 +241,7 @@ struct Session {
     /// The content browser process ended; views are rebuilt on the next idle turn.
     engine_lost: bool,
     engine_restarts: Vec<Instant>,
+    toolbar_restarts: Vec<Instant>,
     /// Failed navigations not yet written to diagnostics. A navigation that becomes a
     /// download ends as "aborted" shortly before its download request arrives.
     unrecorded_failures: Vec<(Instant, TabId)>,
@@ -265,40 +342,15 @@ impl Session {
         )?;
         let content_context = WebContext::new(Some(profile.join("content")));
         let mut toolbar_context = WebContext::new(Some(profile.join("toolbar")));
-        let ipc_proxy = proxy.clone();
-        let toolbar_url = format!(
-            "data:text/html;charset=utf-8;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(ui::HTML)
-        );
-        let allowed_url = toolbar_url.clone();
-        let toolbar = WebViewBuilder::new_with_web_context(&mut toolbar_context)
-            .with_additional_browser_args("")
-            .with_incognito(private)
-            .with_permission_handler(|_| wry::PermissionResponse::Deny)
-            .with_download_started_handler(|_, _| false)
-            .with_url(&toolbar_url)
-            .with_devtools(false)
-            .with_navigation_handler(move |url| url == allowed_url)
-            .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
-            .with_ipc_handler(move |request| {
-                if request.body().len() <= 16384
-                    && let Ok(command) = serde_json::from_str::<Command>(request.body())
-                {
-                    let _ = ipc_proxy.send_event(Event::Command(command));
-                }
-            })
-            .build_as_child(&window)?;
-        if private {
-            native_security::verify_private(&toolbar)?;
-        }
-        engine::accelerators(&toolbar, proxy.clone())?;
+        let toolbar = build_toolbar(&window, &mut toolbar_context, &proxy, private)?;
         let mut session = Self {
             tabs: Tabs::default(),
             retired: Vec::new(),
             closed: ClosedTabs::default(),
             toolbar,
+            retired_toolbar: None,
             content_context,
-            _toolbar_context: toolbar_context,
+            toolbar_context,
             window,
             proxy,
             settings: snapshot.settings,
@@ -329,6 +381,7 @@ impl Session {
             focus_pending: false,
             engine_lost: false,
             engine_restarts: Vec::new(),
+            toolbar_restarts: Vec::new(),
             unrecorded_failures: Vec::new(),
             ready: false,
             clearing: None,
@@ -490,7 +543,19 @@ impl Session {
             // Engine data clearing waits until no document of a closed tab remains.
             self.start_engine_clear();
         }
-        self.retired.first().map(|(deadline, _)| *deadline)
+        if self
+            .retired_toolbar
+            .as_ref()
+            .is_some_and(|(deadline, _)| *deadline <= now)
+        {
+            self.retired_toolbar = None;
+        }
+        let pages = self.retired.first().map(|(deadline, _)| *deadline);
+        let toolbar = self.retired_toolbar.as_ref().map(|(deadline, _)| *deadline);
+        match (pages, toolbar) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// Write navigation failures that no download request claimed within the delay
@@ -552,6 +617,44 @@ impl Session {
             // WebView2 restarts these helpers itself; the page is still usable.
             Failure::Helper => {}
         }
+    }
+
+    /// The toolbar's own engine process failed. Its browser process and renderer are
+    /// separate from the content engine's, so pages keep working, but the dead view
+    /// would leave the window without an address bar, tabs or menus. Replace it.
+    fn toolbar_failed(&mut self, failure: crate::native_activity::Failure) {
+        use crate::native_activity::Failure;
+        if matches!(failure, Failure::Helper | Failure::Unresponsive) {
+            return;
+        }
+        self.diagnostics.record(DiagnosticCode::ToolbarFailed);
+        if !admit_engine_restart(&mut self.toolbar_restarts, Instant::now()) {
+            toolbar_unrecoverable(&self.window);
+            return;
+        }
+        let toolbar = match build_toolbar(
+            &self.window,
+            &mut self.toolbar_context,
+            &self.proxy,
+            self.private,
+        ) {
+            Ok(toolbar) => toolbar,
+            Err(_) => {
+                toolbar_unrecoverable(&self.window);
+                return;
+            }
+        };
+        let failed = std::mem::replace(&mut self.toolbar, toolbar);
+        // A view that cannot be hidden is already unusable; it is still only dropped.
+        let _ = failed.set_visible(false);
+        // Restarts are bounded, so at most one failed toolbar waits at a time in
+        // practice; a newer one replaces (and destroys) an older one.
+        self.retired_toolbar = Some((Instant::now() + RETIRE_DELAY, failed));
+        // The new toolbar announces itself with `Command::Ready`, which re-renders.
+        self.last_render.borrow_mut().clear();
+        self.notice =
+            "The browser toolbar stopped and was restarted. Open tabs were not affected.".into();
+        let _ = self.resize();
     }
 
     /// Replace every content view after the shared browser process ended. Tab
@@ -1753,6 +1856,14 @@ mod survey_validation;
 #[path = "reliability_validation.rs"]
 mod reliability_validation;
 
+#[cfg(test)]
+#[path = "toolbar_validation.rs"]
+mod toolbar_validation;
+
+#[cfg(test)]
+#[path = "keyboard_validation.rs"]
+mod keyboard_validation;
+
 /// Why the browser window could not be created.
 #[derive(Debug, PartialEq, Eq)]
 pub enum StartFailure {
@@ -1902,6 +2013,7 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::EngineProcess(id, failure) => session.process_failed(id, failure),
+            Event::ToolbarProcess(failure) => session.toolbar_failed(failure),
             Event::PopupRequested(ticket) => {
                 if let Err(error) = session.open_popup(ticket) {
                     session.notice = format!("Error: {error}");

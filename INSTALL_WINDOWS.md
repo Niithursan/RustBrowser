@@ -1,6 +1,6 @@
 # Windows installation, upgrades and removal
 
-Rust Browser 0.13.0 supports Windows 10 (1809 or later)/11 **x64**. Validation uses
+Rust Browser 0.15.0 supports Windows 10 (1809 or later)/11 **x64**. Validation uses
 Windows 11; Windows 10 and a clean machine remain unverified. The installer and
 application are **unsigned**. No automatic updater, service, scheduled task,
 runtime download, protocol association or default-browser change is installed.
@@ -23,10 +23,10 @@ before the browser's own error dialog.
 
 1. Obtain an explicitly approved version from this repository's GitHub Releases,
    or build reviewed source. This development task publishes nothing.
-2. Review its version and source commit. The v0.13.0 review bundle contains
-   `rust-browser-v0.13.0-windows-x64-setup.exe`, the portable `.zip`, their two
-   `.sha256` files, and `rust-browser-v0.13.0-windows-x64-release.json`.
-3. Compare `Get-FileHash .\rust-browser-v0.13.0-windows-x64-setup.exe -Algorithm SHA256`
+2. Review its version and source commit. The v0.15.0 review bundle contains
+   `rust-browser-v0.15.0-windows-x64-setup.exe`, the portable `.zip`, their two
+   `.sha256` files, and `rust-browser-v0.15.0-windows-x64-release.json`.
+3. Compare `Get-FileHash .\rust-browser-v0.15.0-windows-x64-setup.exe -Algorithm SHA256`
    with the reviewed checksum. Do likewise for the ZIP when using it. A co-hosted
    checksum detects corruption, **not independent publisher authenticity**.
    See the [update threat model](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md).
@@ -46,7 +46,7 @@ yourself, or use the portable edition. Per-user installation is not a sandbox.
 ## Portable alternative
 
 Extract the reviewed ZIP into a new ordinary versioned directory, for example
-`%LOCALAPPDATA%\Programs\RustBrowserPortable\0.13.0`, and launch `rust-browser.exe`.
+`%LOCALAPPDATA%\Programs\RustBrowserPortable\0.15.0`, and launch `rust-browser.exe`.
 Do not extract into a profile, Windows directory, installer-managed directory or
 a running version. The fixed file allowlist and `package.json` describe hashes,
 source commit, version and unsigned status. Nothing is registered.
@@ -75,7 +75,7 @@ down; wait for it before running Setup, which otherwise reports the browser as
 running. If the browser is started while a normal window is already open for the
 same profile, it shows "Rust Browser is already running" and changes nothing.
 
-For v0.12 or v0.13 portable users, close the old copy, install the new version
+For existing portable users, close the old copy, install the new version
 normally and launch it: both use the same separate profile. Do not point Setup at the portable folder.
 Verify tabs/bookmarks/settings before removing old application files. Portable
 upgrades use new sibling version directories.
@@ -85,8 +85,10 @@ upgrades use new sibling version directories.
 Close the browser, then use **Settings → Apps → Installed apps / Apps & Features
 → Rust Browser → Uninstall**, or its installed uninstaller. It removes owned
 application files, shortcuts and current-user registration. It never recursively
-deletes the application tree. User-added files remain and may make a future fresh
-install refuse that directory. Wait for cleanup to finish before reinstalling.
+deletes the application tree. Ordinary user-added files remain and may make a future fresh
+install refuse that directory. Installer state uses reserved names: `installation.ini`,
+`uninstall/unins???.*` and `is-*.tmp` in the application/uninstall folders. Do not
+store personal files under these names; Setup manages and cleans them. Wait for cleanup to finish before reinstalling.
 
 For a portable copy, remove only the extracted application directory and shortcuts
 after closing it. Both methods preserve profiles and downloaded files. Profile
@@ -99,9 +101,13 @@ Preflight failures leave current application bytes intact. Resolve the prerequis
 running-process or path/version problem, then retry. Do not alter version markers
 to force a downgrade. Preserve unknown files.
 
-Installation is **not a power-loss transaction**. Mid-copy termination, reboot,
-full disk and clean-machine rollback are unverified. If interruption leaves an
-unowned/partial directory, preserve and move only that application directory aside,
+Installation is **not a power-loss transaction**. v0.15 tested termination of owned
+Setup processes during fresh installation and upgrade: rerunning the same reviewed
+Setup repaired the tested partial installations while preserving the separate profile.
+Ownership is recorded before copying; stale Setup temporaries and orphan uninstallers
+are cleaned within the owned application directory. Power loss, full disk, reboot and
+clean-machine rollback remain unverified. If an older or unrecognized partial directory
+has no valid ownership marker, preserve and move only that application directory aside,
 then reinstall into the absent fixed location. Keep the prior reviewed package
 and a whole closed-profile backup for recovery. An older binary may reject newer
 settings: restore a compatible profile backup before downgrading, preserving newer
@@ -113,8 +119,8 @@ Use the script from reviewed source with both assets in an ordinary directory:
 
 ```powershell
 .\packaging\windows\verify-release.ps1 `
-  -MetadataPath C:\Downloads\rust-browser-v0.13.0-windows-x64-release.json `
-  -ArtifactDirectory C:\Downloads -CurrentVersion 0.12.0
+  -MetadataPath C:\Downloads\rust-browser-v0.15.0-windows-x64-release.json `
+  -ArtifactDirectory C:\Downloads -CurrentVersion 0.14.0
 ```
 
 It validates bounded metadata, stable canonical versions, fixed names, lengths and
@@ -134,7 +140,7 @@ cargo build --locked --release
 $compiler = .\packaging\windows\install-inno.ps1 -Destination C:\BuildScratch\inno
 $package = .\packaging\windows\build-installer.ps1 `
   -Executable target\release\rust-browser.exe -OutputRoot C:\BuildScratch\packages `
-  -Version 0.13.0 -SourceCommit (git rev-parse HEAD) -Compiler $compiler
+  -Version 0.15.0 -SourceCommit (git rev-parse HEAD) -Compiler $compiler
 ```
 
 Use scratch paths outside Git/profiles. The bootstrap pins official Inno 6.7.4

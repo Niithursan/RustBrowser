@@ -41,6 +41,12 @@ struct Visit {
     loading_events: u32,
     reported_failures: Vec<String>,
     popups_blocked: u32,
+    /// Downloads the page started. They are saved inside the disposable profile,
+    /// never in the user's Downloads folder, and deleted with it.
+    downloads_started: u32,
+    /// Permission prompts the page raised (capability names). None is answered;
+    /// each is denied when its tab closes or the prompt expires.
+    permission_prompts: Vec<String>,
     page: Option<serde_json::Value>,
 }
 
@@ -155,6 +161,18 @@ impl Probe {
                 self.step = Instant::now();
                 self.stage = 1;
             }
+            1 | 2 | 4
+                if s.permissions.borrow().prompt().is_some_and(|prompt| {
+                    let name = format!("{:?}", prompt.capability);
+                    !self.current.permission_prompts.contains(&name)
+                }) =>
+            {
+                if let Some(prompt) = s.permissions.borrow().prompt() {
+                    self.current
+                        .permission_prompts
+                        .push(format!("{:?}", prompt.capability));
+                }
+            }
             1 => {
                 let loading = s.tabs.active().is_some_and(|t| t.content.state.loading);
                 let timed_out =
@@ -232,6 +250,20 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(el, id, event)
     }
     fn user_event(&mut self, el: &ActiveEventLoop, event: Event) {
+        // Production download handling, with the native folder picker replaced by a
+        // folder inside the disposable profile.
+        if let Event::DownloadRequested(id, tab) = &event {
+            let folder = self.root.join("downloads");
+            if std::fs::create_dir_all(&folder).is_ok()
+                && let Some(s) = &mut self.app.session
+            {
+                self.current.downloads_started += 1;
+                s.download_requested(*tab);
+                s.downloads.borrow_mut().destination(*id, Ok(Some(folder)));
+                s.render();
+            }
+            return;
+        }
         match &event {
             Event::Page(_, PageEvent::Loading) => self.current.loading_events += 1,
             Event::Page(
