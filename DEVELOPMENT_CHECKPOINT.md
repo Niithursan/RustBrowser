@@ -2,6 +2,34 @@
 
 ## v0.13 — `feat/v0.13-windows-release-readiness`
 
+### Claude Code continuation (2026-11-09) — supersedes "Next:" below
+
+- Took over at pushed `cb7a4b1`. Five uncommitted Codex doc edits were preserved
+  and committed as `72f48a7`: absolute links for repository-only docs in packaged files.
+- CI at `cb7a4b1` passed: CI 42726540504 (quality, release/installer, aggregate)
+  and security 42726540444. Two reruns of each also passed (warm measurements).
+- Independently re-verified locally:
+  - all gates (69 tests, 7 native suites, 3 daily runs, builds, Python, package, audit)
+  - the full installer lifecycle and the 36-case metadata suite
+  - a release GUI startup/shutdown check
+  - the user's real profile was unchanged (306 files) and no validation registration
+    remained
+  Details are in VALIDATION.md.
+- The CI review bundle was verified independently: checksums, manifest, allowlist,
+  version, NotSigned, verifier accept/refuse. Its source commit is the PR merge
+  commit `973804d`; this is documented.
+- Cache correction validated and measured (CI.md):
+  - The fixture builds once (154.5 s cold, 0.35 s warm) in its own 113 MiB cache.
+  - The cold production cache save fell from 106 s to 45 s.
+  - Warm CI is 177–184 s wall and 286–320 s runner: no speedup over v0.12, because
+    of the added installer coverage.
+  - The production release cache is 330 MiB, because the harness's debug test build
+    runs in the release job; this is deliberate.
+- Known doc limitation: the older relative links in the packaged README, SECURITY and
+  VALIDATION don't resolve offline (packaging/windows/README.md).
+- Next: verify CI on the final pushed head, update the PR #17 body, and mark it ready
+  if green. Do not merge, tag or publish.
+
 - Read the v0.13 attachment, AGENTS.md and this checkpoint. Preserve prior milestones.
 - Fetched and verified PR #16 squash merge at `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`.
   Cargo version is 0.12.0. Main CI 42721919432 (quality, release, aggregate) and

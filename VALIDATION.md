@@ -37,8 +37,46 @@ The same installer source is compiled with GUID test identity/destination. Produ
 registration is not exercised against this user's actual installation. v0.12 is
 repackaged by that harness because no historical v0.12 installer exists. Separate
 pinned-source baseline target reproduced a clean local build in 37.834 seconds.
-First PR-head `694f4de` Windows aggregate and audit passed; final-head evidence and
-CI timing analysis will be recorded before marking ready.
+First PR-head `694f4de` Windows aggregate and audit passed.
+
+**Independent re-verification (Claude Code continuation, 2026-11-09).** These ran on
+the application code at `cb7a4b1` and docs-only follow-ups:
+
+- **Local gates, all passed:**
+  - fmt and strict Clippy (0 findings)
+  - 69 regular tests
+  - all seven native suites and 3/3 daily runs
+  - debug and release builds
+  - sampler, five production and two experimental Python tests
+  - portable package tests
+  - `cargo audit`
+- **Local installer lifecycle, all passed:**
+  - the pinned v0.12 fixture rebuilt cold in 43.2 s
+  - fresh install, then the 0.12 → 0.13 upgrade
+  - exact payload allowlist and CLI launch
+  - downgrade, invalid-version, running-instance, reparse-point and profile-directory refusals
+  - uninstall and reinstall, with the optional desktop shortcut
+  - hash and typed-reader profile/download preservation
+  - the 36-case metadata suite
+- **The user's real profile was untouched:** before and after, all 306 files under
+  `%LOCALAPPDATA%\RustBrowser0.1` matched by path, size and write time. The test
+  identity left no uninstall key, Start Menu folder or desktop shortcut, and no
+  production installation exists.
+- **CI review bundle (run 42726540504) checked independently:**
+  - both `.sha256` files and the release JSON match the downloaded bytes
+  - the ZIP holds exactly the seven manifest files plus `package.json`, every size
+    and SHA-256 matching
+  - no personal paths, profile paths, credentials or keys in shipped text
+  - installer metadata reports 0.13.0 and Authenticode `NotSigned`
+  - the manual verifier accepts a pinned 0.12.0 → 0.13.0 upgrade while reporting
+    `PublisherAuthenticated: False`, and refuses same-version and wrong-pin input
+  - the recorded source commit `973804d` is GitHub's merge of `cb7a4b1` into `main`;
+    see [packaging notes](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md)
+- **Release GUI startup:** a disposable profile showed the 0.13.0 title and icon and
+  rendered HTTPS. It closed cleanly with no remaining process, and `--version`
+  prints `Rust Browser 0.13.0`.
+- **CI:** cold and warm timings are in [CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md).
+  Warm CI is not faster than v0.12; it adds the installer lifecycle.
 
 Actual installed-application GUI smoke passed in a new disposable profile: 0.13.0
 title and globe icon, new-tab chrome, address entry, public HTTPS rendering/loading,

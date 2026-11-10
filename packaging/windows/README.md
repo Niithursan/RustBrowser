@@ -59,5 +59,18 @@ before reinstallation. A pre-existing empty directory is left intact; no recursi
 deletion forces a pass. Windows 10, clean-machine/standard-user prerequisite behavior,
 mid-copy kill, power loss and full-disk transactions need separate validation.
 
+**Source commit in review packages.** CI records `git rev-parse HEAD` of the checkout
+it built. For `pull_request` runs that is GitHub's synthetic merge of the PR head into
+`main`, not the PR head itself. For example, PR #17 head `cb7a4b1` produced packages
+recording `973804d` (parents `71ff43e` and `cb7a4b1`). Both assets in one bundle always
+record the same commit. Publication via `release.yml` builds the approved tag, so
+released packages record the tagged commit.
+
+**Packaged documentation links.** The shipped Markdown files link to repository-only
+documents (packaging, CI, benchmarks, Servo research, validation records) with
+absolute GitHub URLs for the v0.13 install and update-trust references. Older
+relative links in README, SECURITY and VALIDATION still do not resolve inside an
+installed or extracted copy. Read those on GitHub.
+
 See [installation/recovery](../../INSTALL_WINDOWS.md),
 [update security](UPDATE_SECURITY.md), [validation](../../VALIDATION.md) and [CI](../../CI.md).

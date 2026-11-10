@@ -32,8 +32,10 @@ protection is enabled later.
   The advisory database is never cached and is fetched on every run.
 - Pull-request runs save caches in their own pull-request scope, which `main` and other
   pull requests cannot read. After merge, `main` saves caches that new pull requests restore.
-- Release application source/dependencies are intentionally uncached; only its
-  pinned/version-checked cargo-audit 0.22.2 executable is cached. Advisories are fresh.
+- The tag/manual publication workflow (`release.yml`) builds application
+  source and dependencies **uncached**; only its pinned, version-checked cargo-audit
+  0.22.2 executable is cached, and advisories are fetched fresh. The CI review-package
+  job (`ci.yml`) does use the dependency cache; its artifacts are for review only.
 
 ## v0.13 installer coverage and measured overhead
 
@@ -61,9 +63,46 @@ first clean fixture target took **37.834 s**, on different hardware and not comp
 to hosted time. The attempted shared-target build failed by reusing the wrong
 workspace resource script; separate targets also fix that correctness issue.
 
-Final relocated-cache cold/warm timings are pending verification. These runs add
-installation coverage and are not an application-performance benchmark or a proven
-overall CI speedup. Release-workflow audit-cache savings are unmeasured: no tag,
+### Relocated cache: cold and warm (PR #17 at `cb7a4b1`)
+
+Run [42726540504](https://github.com/Niithursan/RustBrowser/actions/runs/42726540504):
+attempt 1 was cold (new production namespace and new fixture key); attempts 2 and 3 are
+reruns of the same commit. Security run [42726540444](https://github.com/Niithursan/RustBrowser/actions/runs/42726540444).
+
+| Measure | v0.12 warm (PR #16) | v0.13 cold | v0.13 warm (2 attempts) |
+| --- | ---: | ---: | ---: |
+| CI wall time | 144–202 s | 566 s | 177, 184 s |
+| CI runner time | 218–298 s | 737 s | 286, 320 s |
+| Release job | 69–103 s | 558 s | 114, 174 s |
+| Release compile | 23–45 s | 168 s | 21, 40 s |
+| v0.12 upgrade-fixture build | — | 154.5 s (miss) | 0.35, 0.38 s (hit) |
+| Installer lifecycle step (fixture included) | — | 287 s | 33, 51 s |
+| Release cache restore / save | 40–54 s (both jobs) | 9 / 45 s | 25–36 / 0 s |
+| Fixture cache save | — | 7 s | 0 s |
+| Review artifact upload | <7 s | <2 s | 2 s |
+| Security audit (wall) | 26–28 s | 27 s | 26, 31 s |
+
+- v0.13 warm CI is **not faster** than v0.12 warm. It runs a full installer lifecycle
+  every time, adding about 30–50 s of warm runner time. Wall time stays similar
+  because that work sits in the parallel release job.
+- The correction's measured effects: the fixture no longer rebuilds on warm runs
+  (154.5 s to 0.35 s); the cold production cache save fell from 106 s to 45 s; the
+  fixture is cached once (113 MiB) instead of inside the production cache.
+- The production release cache is 330 MiB (v0.12: 206 MiB). The difference is not the
+  fixture: the installer harness runs `cargo test --test installation_profile` in the
+  release job, so debug dependencies are compiled and cached there. That is deliberate,
+  because recompiling them every run would cost more than restoring them.
+- On a fixture cache hit, cargo does not even relink (0.35 s): the freshly extracted
+  pinned sources keep the commit's timestamps. This is not stale reuse, because the
+  key includes the immutable fixture commit and the toolchain, so different fixture
+  source cannot match it. The script still checks the fixture reports version 0.12.0.
+- A stale 480 MiB cache from the pre-correction run (`694f4de`) stays in the PR #17
+  scope until GitHub evicts it; it is never restored by the new namespace.
+- Lower wall time does not mean lower billing: Windows runner minutes are summed per
+  job and rounded up per job.
+
+These runs add installation coverage and are not an application-performance
+benchmark or an overall CI speedup. Release-workflow audit-cache savings are unmeasured: no tag,
 manual release dispatch or publication was invoked to obtain timing numbers.
 
 Review upload contains exactly the portable ZIP, setup EXE, their two checksums
