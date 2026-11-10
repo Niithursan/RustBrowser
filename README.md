@@ -279,7 +279,12 @@ notice says so. After three such restarts within two minutes the browser stops
 restarting the engine and asks to be restarted. Recovery loses unsaved forms,
 JavaScript state, page history within the tab, popup opener links and unfinished
 downloads. GPU, utility and frame helper failures are left to WebView2, which
-restarts them itself. A failure of the toolbar's own engine process is not recovered.
+restarts them itself.
+
+The toolbar runs in its own WebView2 engine, separate from webpages. If that engine
+or the toolbar's page process ends, the toolbar is rebuilt within about half a
+second and a notice says so; open tabs and their pages are not touched. After three
+such restarts within two minutes a message asks you to close and reopen the browser.
 
 Closing a tab hides its view immediately and destroys it one second later, and
 closing the window hides it and exits one second later. Destroying a view that was
