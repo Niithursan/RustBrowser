@@ -1,95 +1,143 @@
-# Windows installation, upgrade and removal
+# Windows installation, upgrades and removal
 
-Rust Browser 0.11.0 is an unsigned x64 portable Windows application. It uses
-the installed Microsoft Evergreen WebView2 Runtime and x64 Microsoft Visual C++
-v14 Runtime. It has no automatic
-updater, installer service, default-browser registration or administrator
-requirement. Do not run it as administrator. `asInvoker` retains the access
-of the account launching it; it is not an application sandbox.
+Rust Browser 0.13.0 supports Windows 10 (1809 or later)/11 **x64**. Validation uses
+Windows 11; Windows 10 and a clean machine remain unverified. The installer and
+application are **unsigned**. No automatic updater, service, scheduled task,
+runtime download, protocol association or default-browser change is installed.
+Do not run the application or installer elevated.
 
-## Install a reviewed portable package
+## Prerequisites
 
-1. Obtain an explicitly approved version from this repository's release
-   page, or build the reviewed source with the pinned Rust MSVC toolchain,
-   Visual Studio C++ tools and Windows SDK. No v0.11 release is published
-   by this development task.
-2. Install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
-   from Microsoft if necessary. The browser does not silently install it.
-   Microsoft Edge alone is not a substitute for the Runtime.
-   Also install the matching [latest supported x64 Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
-   if absent. Its version must be at least as recent as the MSVC tools used to
-   build the package. Inspection of this release executable's PE imports found
-   `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll` plus Windows/UCRT libraries. Neither
-   Microsoft runtime is bundled or silently installed. Prerequisite installation
-   can require privileges independently of running Rust Browser.
-3. Compare `Get-FileHash .\rust-browser-v0.11.0-windows-x64.zip -Algorithm SHA256`
-   with the approved `.sha256` file. A checksum detects changed bytes; it
-   does not authenticate the publisher. The executable is not signed or
-   certified as trusted by Windows; Windows may show reputation warnings.
-4. Extract into a new, ordinary per-user application directory, for example
-   `%LOCALAPPDATA%\Programs\RustBrowser\0.11.0`. Keep it separate from the
-   data profile. Do not extract into Windows system directories or overlay
-   a running executable. Launch `rust-browser.exe`; a shortcut is optional.
+Obtain the [Microsoft Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+and [latest supported x64 Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+from Microsoft if absent. The latter must be at least as recent as the MSVC tools
+used for the application. Edge alone is not the Runtime. Do not download loose DLLs.
 
-The package contains the executable, documentation and `package.json` with
-its source commit, architecture, version, signature status and file hashes.
-The application version is embedded in Windows Properties and shown in
-window titles. Release startup errors use a Windows message; debug builds
-use the console. Local diagnostics may contain a startup event when the
-profile was successfully opened. Missing Runtime/clean-machine startup
-still needs independent clean-machine testing. Missing imported DLLs can fail in
-the Windows loader before Rust Browser's own error message or diagnostics runs;
-follow Microsoft's prerequisite instructions instead of downloading loose DLLs.
+Setup checks WebView2 registration and presence of `VCRUNTIME140.dll` and
+`VCRUNTIME140_1.dll`; this does not prove runtime health/currentness. It downloads
+or installs neither prerequisite. Microsoft prerequisite installation can separately
+require administrator consent. Missing imported DLLs can fail in the Windows loader
+before the browser's own error dialog.
 
-## Upgrade without moving browsing data
+## Verify, install and launch
 
-Close all Rust Browser windows and wait for their WebView2 processes to
-exit. Make a backup of the closed profile before an upgrade. The default
-path remains `%LOCALAPPDATA%\RustBrowser\v0.1`, preserving existing bookmarks,
-history, cookies and session settings. `RUST_BROWSER_PROFILE`, when set,
-selects a different profile; never use a source/installation directory.
+1. Obtain an explicitly approved version from this repository's GitHub Releases,
+   or build reviewed source. This development task publishes nothing.
+2. Review its version and source commit. The v0.13.0 review bundle contains
+   `rust-browser-v0.13.0-windows-x64-setup.exe`, the portable `.zip`, their two
+   `.sha256` files, and `rust-browser-v0.13.0-windows-x64-release.json`.
+3. Compare `Get-FileHash .\rust-browser-v0.13.0-windows-x64-setup.exe -Algorithm SHA256`
+   with the reviewed checksum. Do likewise for the ZIP when using it. A co-hosted
+   checksum detects corruption, **not independent publisher authenticity**.
+   See the [update threat model](packaging/windows/UPDATE_SECURITY.md).
+4. Run the reviewed installer as your ordinary Windows account. Read its
+   unsigned/prerequisite/profile notice and license. Installation is fixed at
+   `%LOCALAPPDATA%\Programs\RustBrowser`, separate from browsing data. It creates
+   a current-user Start Menu shortcut and Apps & Features entry. The desktop
+   shortcut is optional and unchecked. The application is not auto-launched.
+5. Launch **Rust Browser** from the Start Menu, optional desktop shortcut, or
+   that directory's executable. Windows may show reputation warnings; the project
+   does not claim signed/trusted status or advise bypassing Windows protections.
 
-Extract the new application into a new versioned sibling directory and
-launch it. Verify tabs, bookmarks and preferences before removing the old
-application folder. Do not copy files into a live profile, delete lock
-files to bypass a running instance, merge SQLite files, or use a production
-profile for test workloads. One normal instance owns a profile; private
-windows use separate temporary contexts.
+Custom `/DIR` destinations, unowned nonempty directories, recognized profiles
+and reparse points/junctions are refused. Preserve and move conflicting files
+yourself, or use the portable edition. Per-user installation is not a sandbox.
 
-Version 0.11.0 intentionally follows production 0.8.0: v0.9 and v0.10 were
-research milestones. Session version 1, SQLite schema 3 and the profile
-location are unchanged. Light-theme settings are new; older applications
-may reject them. Downgrade compatibility is not guaranteed. Close the
-browser and restore an appropriate whole-profile backup before rolling
-back; preserve the newer profile separately until recovery is verified.
+## Portable alternative
 
-## Remove the application
+Extract the reviewed ZIP into a new ordinary versioned directory, for example
+`%LOCALAPPDATA%\Programs\RustBrowserPortable\0.13.0`, and launch `rust-browser.exe`.
+Do not extract into a profile, Windows directory, installer-managed directory or
+a running version. The fixed file allowlist and `package.json` describe hashes,
+source commit, version and unsigned status. Nothing is registered.
 
-Close its windows, remove only the extracted application directory and
-any shortcut you created. Browsing data remains in the separate profile.
-The application installs no service or scheduled updater. Deleting a
-profile is a separate, explicit user action; uninstall/removal instructions
-do not delete it. Downloaded files remain in their selected destinations.
+## Upgrade without moving data
 
-## Packaging decision and release controls
+Close **all** browser windows and wait for WebView2 processes to exit. Back up
+the closed profile. The default remains `%LOCALAPPDATA%\RustBrowser\v0.1`;
+`RUST_BROWSER_PROFILE` selects an alternative. Keep application/profile folders
+separate. Session format **1** and SQLite schema **3** are unchanged.
 
-| Option | Assessment for this milestone |
-| --- | --- |
-| Portable ZIP | Selected for the verified subset. Fixed file allowlist, x64/version checks, manifest hashes, stable entry ordering/timestamps, no registry changes or elevation. Manual upgrade/removal preserves the separate profile. |
-| Per-user MSI | Feasible future option with explicit ownership, repair/uninstall and downgrade policies. Installer identity, upgrade transactions and clean-machine tests are not implemented. MSI can support per-user installation. |
-| MSIX | Requires a deployment/signing/identity plan and storage-virtualization compatibility validation. No signing identity is configured and no MSIX is produced. |
+Bookmarks/folders, history, tabs/pins/active session, settings, permissions,
+cookies and site storage stay in the profile. Downloads stay in their selected
+destinations. Do not delete live locks, merge SQLite files or copy a running
+profile. One normal instance owns each profile; private contexts stay isolated.
 
-The workflow can build reviewed tag packages as Actions artifacts. Publishing
-a GitHub Release requires an explicit manual workflow invocation with its
-publish option; pushing a tag alone does not publish a release. No tag,
-release, installer or deployment is created by this milestone. A future
-updater needs reviewed authentication, signing, consent and rollback.
+Run the reviewed newer installer over an installer-managed copy. Setup refuses
+a newer installed binary/version marker and invalid metadata. A non-exclusive
+v0.13 running marker and a non-writing mapped-file probe protect running copies,
+including legacy v0.12 executables. No processes are terminated or scheduled for
+replacement on reboot. The marker is Windows-session scoped, not an atomic updater.
 
-The build is reproducible from pinned Rust/dependencies and documented SDK
-prerequisites. Byte-identical executables across different machines/SDKs
-are not established. Identical packaging inputs use fixed ZIP entry times
-and ordering; the packaging tests compare local archive hashes.
+For v0.12 portable users, close the old copy, install v0.13 normally and launch
+it: both use the same separate profile. Do not point Setup at the portable folder.
+Verify tabs/bookmarks/settings before removing old application files. Portable
+upgrades use new sibling version directories.
 
-Primary references: [WebView2 distribution](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution),
-[Windows Installer per-user context](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context),
-and [MSIX signing requirements](https://learn.microsoft.com/en-us/windows/msix/package/signing-package-overview).
+## Uninstall and reinstall
+
+Close the browser, then use **Settings → Apps → Installed apps / Apps & Features
+→ Rust Browser → Uninstall**, or its installed uninstaller. It removes owned
+application files, shortcuts and current-user registration. It never recursively
+deletes the application tree. User-added files remain and may make a future fresh
+install refuse that directory. Wait for cleanup to finish before reinstalling.
+
+For a portable copy, remove only the extracted application directory and shortcuts
+after closing it. Both methods preserve profiles and downloaded files. Profile
+deletion is a separate explicit action; uninstall offers no data-wipe option.
+Reinstallation uses the same preserved profile.
+
+## Failed upgrade and rollback
+
+Preflight failures leave current application bytes intact. Resolve the prerequisite,
+running-process or path/version problem, then retry. Do not alter version markers
+to force a downgrade. Preserve unknown files.
+
+Installation is **not a power-loss transaction**. Mid-copy termination, reboot,
+full disk and clean-machine rollback are unverified. If interruption leaves an
+unowned/partial directory, preserve and move only that application directory aside,
+then reinstall into the absent fixed location. Keep the prior reviewed package
+and a whole closed-profile backup for recovery. An older binary may reject newer
+settings: restore a compatible profile backup before downgrading, preserving newer
+data separately. Never test destructive recovery against a real profile.
+
+## Manual artifact verification
+
+Use the script from reviewed source with both assets in an ordinary directory:
+
+```powershell
+.\packaging\windows\verify-release.ps1 `
+  -MetadataPath C:\Downloads\rust-browser-v0.13.0-windows-x64-release.json `
+  -ArtifactDirectory C:\Downloads -CurrentVersion 0.12.0
+```
+
+It validates bounded metadata, stable canonical versions, fixed names, lengths and
+SHA-256 hashes. Older/same versions are refused; intentional same-version repair
+requires `-AllowSameVersion`. `-ExpectedMetadataSha256` checks a pin obtained
+independently, but cannot establish its provenance. Output always says
+`PublisherAuthenticated=False`. It downloads, extracts, executes and installs
+nothing, and writes no browser data. Manual review/consent still precedes launch.
+No in-app update check is added.
+
+## Package reviewed source
+
+With pinned Rust 1.99.1/MSVC, Visual Studio C++ tools and Windows SDK installed:
+
+```powershell
+cargo build --locked --release
+$compiler = .\packaging\windows\install-inno.ps1 -Destination C:\BuildScratch\inno
+$package = .\packaging\windows\build-installer.ps1 `
+  -Executable target\release\rust-browser.exe -OutputRoot C:\BuildScratch\packages `
+  -Version 0.13.0 -SourceCommit (git rev-parse HEAD) -Compiler $compiler
+```
+
+Use scratch paths outside Git/profiles. The bootstrap pins official Inno 6.7.4
+hashes and checks valid Pyrsys installer/compiler signatures before execution.
+This **does not sign Rust Browser**. Compiler installation is isolated per-user,
+without shortcuts/associations; it is not bundled with the browser.
+
+See [design/tests](packaging/windows/README.md), [validation](VALIDATION.md) and
+[CI](CI.md). Equal portable inputs produce equal ZIP bytes. Byte-identical
+application/installer builds across machines/SDKs/paths/timestamps are not established.
+PR CI uploads review artifacts. Tags package only; GitHub Release publication
+continues to require an explicitly approved manual action.

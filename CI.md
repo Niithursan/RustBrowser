@@ -4,9 +4,9 @@
 
 | Workflow | Triggers | Jobs |
 | --- | --- | --- |
-| `CI` (`ci.yml`) | pull requests, pushes to `main`, manual dispatch | **Windows quality and build** (fmt, strict Clippy, all regular tests, launcher/sampler/Python fixture tests, every native WebView2 suite in its own process, three independent daily-driver runs, debug build); **Windows release build and package** (release build, portable package checks, artifact upload) in parallel; **CI result**, which fails unless both jobs succeed |
+| `CI` (`ci.yml`) | pull requests, pushes to `main`, manual dispatch | **Windows quality and build** (fmt, strict Clippy, all regular tests, launcher/sampler/Python fixture tests, every native WebView2 suite, three daily-driver runs, debug build); parallel **Windows release build and package** (release, portable/installer/profile/metadata checks, review artifacts); **CI result** requires both jobs |
 | `Dependency security` (`security.yml`) | pull requests, pushes to `main`, weekly schedule, manual dispatch | `cargo audit --deny warnings` with pinned cargo-audit 0.22.2 |
-| `Windows release` (`release.yml`) | version tags, manual dispatch | Clean, uncached build and packaging. Publication requires explicit approval and is unchanged. |
+| `Windows release` (`release.yml`) | version tags, manual dispatch | Clean/uncached application build, all script/native/audit gates, validated ZIP/setup/metadata. Only pinned audit tool cached. Existing-tag/manual publication approval and permissions unchanged. |
 
 Feature-branch pushes no longer start a second full CI run next to the pull-request
 run. Open a draft pull request to get CI for a branch. Superseded pull-request runs
@@ -32,7 +32,45 @@ protection is enabled later.
   The advisory database is never cached and is fetched on every run.
 - Pull-request runs save caches in their own pull-request scope, which `main` and other
   pull requests cannot read. After merge, `main` saves caches that new pull requests restore.
-- Release publication (`release.yml`) is intentionally uncached.
+- Release application source/dependencies are intentionally uncached; only its
+  pinned/version-checked cargo-audit 0.22.2 executable is cached. Advisories are fresh.
+
+## v0.13 installer coverage and measured overhead
+
+Existing production dependency caches, parallel quality/release jobs, no duplicate
+feature pushes, strict lint/native/audit gates and stable aggregate are retained.
+The installer job builds pinned v0.12 source as an upgrade fixture, then tests
+fresh/upgrade/removal/reinstall and data preservation under a GUID test identity.
+That fixture has its own target/cache keyed by immutable commit, runner OS/arch
+and Rust version. No downloaded historical binary is trusted as the fixture.
+
+Initial PR #17 run [42724868424](https://github.com/Niithursan/RustBrowser/actions/runs/42724868424)
+at `694f4de` passed. Quality: **220 s**; release/package: **462 s**; aggregate:
+**2 s** (684 s summed runner time, about 466 s job wall span). The first immutable
+baseline build took **123.519 s**; installer/fixture tests including compiler setup
+and integration-test compilation took **225 s** total. Audit
+[42724868239](https://github.com/Niithursan/RustBrowser/actions/runs/42724868239)
+passed in **25 s**, restoring its pinned tool.
+
+This exposed cache duplication: the old fixture target was nested in production
+`target`, so the ~119 MB fixture cache was also included in the ~503 MB production
+cache. Production post-cache cleanup/save took **106 s**. The fixture is now outside
+the production target in runner temp, with an independent cache; a new production
+namespace avoids restoring that contaminated tree. No checks were removed. A local
+first clean fixture target took **37.834 s**, on different hardware and not comparable
+to hosted time. The attempted shared-target build failed by reusing the wrong
+workspace resource script; separate targets also fix that correctness issue.
+
+Final relocated-cache cold/warm timings are pending verification. These runs add
+installation coverage and are not an application-performance benchmark or a proven
+overall CI speedup. Release-workflow audit-cache savings are unmeasured: no tag,
+manual release dispatch or publication was invoked to obtain timing numbers.
+
+Review upload contains exactly the portable ZIP, setup EXE, their two checksums
+and unsigned release JSON. It excludes validation installers, test profiles, keys,
+logs and compiler payloads. The publication job re-verifies that exact set, hashes,
+metadata and source commit. Download transport/checksums do not establish independent
+publisher authenticity; see [update security](packaging/windows/UPDATE_SECURITY.md).
 
 ## Measurements (2026-11-09, GitHub-hosted `windows-latest` / `ubuntu-latest`)
 

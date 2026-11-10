@@ -1,5 +1,56 @@
 # Validation
 
+## Version 0.13.0
+
+Baseline: verified PR #16 squash `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`,
+version 0.12.0. Main Windows CI 42721919432 and security 42721919854 passed before
+branching. Work is on `feat/v0.13-windows-release-readiness`, [PR #17](https://github.com/Niithursan/RustBrowser/pull/17).
+No merge, tag, release publication, deployment or real profile modification.
+
+Local Windows 11 Pro x64, Rust 1.99.1/MSVC, SDK 10.0.22621.0, WebView2
+157.0.4341.42, 2026-11-09 Toronto. Passed:
+
+- Formatting, strict Clippy, **69 regular tests**. The new running-marker and rich
+  profile tests are included; opt-in installer/diagnostic child helpers run through
+  their parents/harnesses, separate from nine opt-in main native/benchmark tests.
+- Seven separate preserved native WebView2 suites and **three** independent daily
+  TLS/modern/accessibility/navigation runs; every invocation passed.
+- Windows debug/release builds. Fresh audit: 369 crates, 1,430 advisory records,
+  no denied warnings under the unchanged reviewed exceptions. No crate added/updated;
+  existing Windows API feature gates and root Cargo.lock version changed.
+- Sampler/launcher PowerShell regressions, two experimental Python tests and five
+  production Python tests (including icon generation/frame bounds).
+- Portable deterministic ZIP, metadata/hash/allowlist, version/x64 and unsafe-output tests.
+- Actual Inno 6.7.4 controlled lifecycle: fixed validation identity/directory, v0.12
+  binary → v0.13 upgrade, full installed contents, HKCU registration, Start Menu and
+  opt-in desktop shortcut, exact executable/CLI launch, uninstall and reinstall.
+  Hashes and typed readers preserve tabs/active/pins/settings, folders/bookmarks/history,
+  permissions, opaque site data and downloaded bytes. Unowned app files survive removal.
+- Invalid/future/downgrade metadata, profile destination, reparse path and running
+  install/uninstall refusals. An actual running v0.12 binary without the new mutex
+  is refused by the non-writing mapped-file probe; only its owned test process is stopped.
+- Manual verifier: valid integrity/pin/explicit same-version repair plus **36**
+  malformed/newline/type/path/duplicate/tampered/missing/downgrade refusal cases.
+  It never executes an artifact or reports publisher authentication.
+
+The same installer source is compiled with GUID test identity/destination. Production
+registration is not exercised against this user's actual installation. v0.12 is
+repackaged by that harness because no historical v0.12 installer exists. Separate
+pinned-source baseline target reproduced a clean local build in 37.834 seconds.
+First PR-head `694f4de` Windows aggregate and audit passed; final-head evidence and
+CI timing analysis will be recorded before marking ready.
+
+Actual installed-application GUI smoke passed in a new disposable profile: 0.13.0
+title and globe icon, new-tab chrome, address entry, public HTTPS rendering/loading,
+Ctrl+T and Ctrl+Tab, normal Alt+F4 close and restart preserving two tabs/active URL.
+The shipping executable hash was `3e787b4102a1e2ec1aa6786b04cd01c0e95ac2eccb0e9a45f9ecdc7153399989`.
+No complete installer wizard interaction or clean-machine install claim is made.
+Unverified: Windows 10, missing/obsolete runtime host, actual standard-user clean VM,
+mid-copy kill/full disk/power-loss transaction, signed artifacts/update infrastructure,
+physical mixed DPI/IME/screen reader and real-profile upgrade. Existing v0.12 browsing
+limitations remain. See [installer design](packaging/windows/README.md),
+[install/recovery](INSTALL_WINDOWS.md) and [update security](packaging/windows/UPDATE_SECURITY.md).
+
 ## Version 0.12.0
 
 Baseline: PR #14 squash `fef457a` (0.11.0). Work is on

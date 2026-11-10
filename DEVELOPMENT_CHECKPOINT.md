@@ -42,10 +42,32 @@
   add immutable old-fixture cache, controlled installer tests and five-file review bundle.
   Release application builds remain uncached; pinned audit tool cache/version verification
   and full script/native coverage added. Publication gate and permissions unchanged.
-- Next: finish documentation/threat model, full native/build/audit/package checks, actual
-  Windows GUI if accessible, push/open draft PR, measure/verify exact-head Actions.
-- No clean-machine, physical GUI, interrupted mid-copy/power-loss, Windows 10 or v0.13
-  hosted CI timing result is claimed yet. No release workflow/publication invoked.
+- Commits `11de04f` installer/validation and `694f4de` CI are pushed; draft PR #17:
+  https://github.com/Niithursan/RustBrowser/pull/17. First Windows aggregate 42724868424
+  and dependency security 42724868239 passed (quality 220 s, release 462 s, audit 25 s).
+- Full local native/build/audit/script/portable checks passed at 0.13.0: seven native
+  suites plus three independent daily runs, Windows debug/release, current 369-crate /
+  1430-advisory audit, launcher/sampler, 2 experimental and 5 production Python tests.
+- Additional actual running legacy-v0.12 test reproduced/refuses mapped executable
+  replacement using a non-writing CreateFile probe. All lifecycle/full contents/optional
+  desktop/unowned-file checks pass. Strict verifier now passes 36 refusals, including
+  newline/type cases. Its fractional-number test was corrected because JSON serialized
+  an integral double as an integer (not an invalid input).
+- Actual installed executable GUI: title/icon/new-tab, address and HTTPS rendering,
+  Ctrl+T/Ctrl+Tab, normal close/restart with two tabs/active URL retained. Normal
+  diagnostics show two clean shutdowns and no failures. Installed test identity removed
+  by CLI; its disposable profile remains. No production profile/registration used.
+- First CI measurements exposed duplicate fixture target in the ~503 MB production
+  cache (fixture itself ~119 MB; production cache save 106 s). Relocated fixture target
+  to output root / runner temp and new isolated production namespace. Must verify this
+  change, final installer guards, updated docs and exact final PR-head CI. No speedup
+  claim before measurements. Release app builds remain clean; audit-only cache unmeasured.
+- README, installation/recovery, changelog/security/validation, installer design/threat
+  model and CI docs updated. Next: commit/push latest fixes/docs, review diff/CI,
+  record relocated cold/warm evidence and final-head status, then mark PR ready only
+  if required checks pass. Do not merge/tag/publish/deploy.
+- Still unverified: clean machine/Windows 10, missing/old runtimes, physical installer
+  wizard interaction, mid-copy/power-loss/full-disk recovery and signed distribution.
 
 ## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
 
