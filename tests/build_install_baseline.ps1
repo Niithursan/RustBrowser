@@ -11,7 +11,7 @@ $commit='71ff43eb9f4269c2047ab1fcc9965b8785d320a1'
 git archive --format=zip ("--output=$archive") $commit
 if($LASTEXITCODE -ne 0){throw 'Fetch the verified v0.12 commit before building the upgrade fixture.'}
 Expand-Archive -LiteralPath $archive -DestinationPath $source
-$target=Join-Path $repo 'target/installer-baseline-v012'
+$target=Join-Path $base 'target-v012'
 Assert-PlainPath $target
 $current=Join-Path $target 'release/rust-browser.exe'
 $old=Join-Path $run 'baseline/rust-browser.exe'
