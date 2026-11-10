@@ -48,8 +48,8 @@ No complete installer wizard interaction or clean-machine install claim is made.
 Unverified: Windows 10, missing/obsolete runtime host, actual standard-user clean VM,
 mid-copy kill/full disk/power-loss transaction, signed artifacts/update infrastructure,
 physical mixed DPI/IME/screen reader and real-profile upgrade. Existing v0.12 browsing
-limitations remain. See [installer design](packaging/windows/README.md),
-[install/recovery](INSTALL_WINDOWS.md) and [update security](packaging/windows/UPDATE_SECURITY.md).
+limitations remain. See [installer design](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md),
+[install/recovery](INSTALL_WINDOWS.md) and [update security](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md).
 
 ## Version 0.12.0
 

@@ -10,7 +10,7 @@ desktop shortcuts, Apps & Features removal, upgrade/profile-preservation checks,
 application icons and a manual artifact verifier. Portable ZIPs remain supported.
 No automatic updater, runtime installation or default-browser/protocol registration
 is added. Follow [installation and recovery](INSTALL_WINDOWS.md) and
-[update authentication limits](packaging/windows/UPDATE_SECURITY.md). `--version`
+[update authentication limits](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md). `--version`
 prints the version without opening a profile. This work publishes no release.
 
 v0.12 redesigns the toolbar: the address line shows a plain connection word and

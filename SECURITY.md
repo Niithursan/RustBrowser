@@ -14,7 +14,7 @@ The manual verifier checks bounded schema/versions/names/lengths/hashes and writ
 no user data. Co-hosted checksums and unsigned metadata provide no independent
 authenticity. No signing root/certificate is configured, so automatic update checks,
 downloads and execution remain absent. A verified signed compiler does not sign
-its generated Rust Browser packages. See [threat model and signing prerequisites](packaging/windows/UPDATE_SECURITY.md)
+its generated Rust Browser packages. See [threat model and signing prerequisites](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md)
 and [user recovery instructions](INSTALL_WINDOWS.md). Mid-copy/power-loss recovery,
 clean-machine prerequisites and signed distribution remain unverified.
 

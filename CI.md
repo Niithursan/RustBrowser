@@ -24,7 +24,7 @@ protection is enabled later.
   the Cargo registry and compiled **dependencies only**; workspace crates always
   rebuild. Its key covers runner OS/architecture, the rustc version, `Cargo.lock`,
   Cargo/Rust environment variables and the job, so a toolchain or lockfile change
-  starts fresh. Each job has its own cache (about 250 MiB quality, 205 MiB release).
+  starts fresh. Each job has its own cache (v0.12: about 250 MiB quality, 205 MiB release).
 - **cargo-audit:** `actions/cache` v6.1.0, pinned to commit
   `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`, caches only the `cargo-audit` binary
   built from crates.io source on the runner. The key includes the pinned version, OS,

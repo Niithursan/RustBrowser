@@ -29,7 +29,7 @@ before the browser's own error dialog.
 3. Compare `Get-FileHash .\rust-browser-v0.13.0-windows-x64-setup.exe -Algorithm SHA256`
    with the reviewed checksum. Do likewise for the ZIP when using it. A co-hosted
    checksum detects corruption, **not independent publisher authenticity**.
-   See the [update threat model](packaging/windows/UPDATE_SECURITY.md).
+   See the [update threat model](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md).
 4. Run the reviewed installer as your ordinary Windows account. Read its
    unsigned/prerequisite/profile notice and license. Installation is fixed at
    `%LOCALAPPDATA%\Programs\RustBrowser`, separate from browsing data. It creates
@@ -136,8 +136,9 @@ hashes and checks valid Pyrsys installer/compiler signatures before execution.
 This **does not sign Rust Browser**. Compiler installation is isolated per-user,
 without shortcuts/associations; it is not bundled with the browser.
 
-See [design/tests](packaging/windows/README.md), [validation](VALIDATION.md) and
-[CI](CI.md). Equal portable inputs produce equal ZIP bytes. Byte-identical
+See [design/tests in the source repository](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md),
+[validation](VALIDATION.md) and [CI](https://github.com/Niithursan/RustBrowser/blob/main/CI.md).
+Equal portable inputs produce equal ZIP bytes. Byte-identical
 application/installer builds across machines/SDKs/paths/timestamps are not established.
 PR CI uploads review artifacts. Tags package only; GitHub Release publication
 continues to require an explicitly approved manual action.
