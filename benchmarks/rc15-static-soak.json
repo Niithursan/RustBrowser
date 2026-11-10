@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "qualification": "unapproved; owner acceptance and risk decisions remain open",
+  "source_commit": "da054bf2b390b4df6dfd609b543a3ce6ff218962",
+  "shipping_sha256": "bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58",
+  "release_probe_sha256": "66b0bd8cf48c763adc624255e83b7e902e222f011923650897c3ca58e9c877f6",
+  "started_utc": "2026-11-10T22:22:28.7443446Z",
+  "completed_utc": "2026-11-10T22:53:28.8576831Z",
+  "hardware": {
+    "cpu": "AMD Ryzen 5 5600 6-Core Processor              ",
+    "logical_processors": 12,
+    "ram_gib": 31.93,
+    "os": "Microsoft Windows 11 Pro",
+    "os_version": "10.0.26200",
+    "architecture": "64-bit"
+  },
+  "parameters": {
+    "recovery": 15,
+    "soak": 1800,
+    "churn": true,
+    "sample": 10,
+    "settle": 30
+  },
+  "automatic_suspension_seconds": 15,
+  "history_enabled": false,
+  "tabs": 20,
+  "churn_cycles": 178,
+  "navigation_errors": 0,
+  "soak_span_seconds": 1798.489,
+  "soak_samples": 1792,
+  "unavailable_soak_samples": 24,
+  "cpu_valid_seconds": 1748.682,
+  "cpu_mean_machine_percent": 0.8269,
+  "working_mib_range": [
+    930.23,
+    1117.8
+  ],
+  "private_mib_range": [
+    837.15,
+    909.52
+  ],
+  "first_five_minutes": {
+    "working_mib_median": 1010.57,
+    "private_mib_median": 868.345
+  },
+  "last_five_minutes": {
+    "working_mib_median": 976.06,
+    "private_mib_median": 883.94
+  },
+  "after_close": {
+    "samples": 16,
+    "working_mib_median": 770.96,
+    "private_mib_median": 432.805
+  },
+  "switch_responsive_ms": [
+    21.8692,
+    21.2964,
+    21.1428,
+    21.9801,
+    22.1365,
+    23.0931,
+    21.7535,
+    23.6925,
+    22.9509,
+    23.5794,
+    23.2151,
+    28.6071,
+    25.5668,
+    22.224899999999998,
+    23.732,
+    21.0886,
+    20.644699999999997,
+    22.519199999999998,
+    21.6153,
+    22.9415
+  ],
+  "first_usable_ms": 1870.1271,
+  "normal_exit_and_observed_child_exit": true,
+  "diagnostic_codes": [
+    "starting",
+    "started",
+    "clean_shutdown"
+  ],
+  "running_marker_remaining": false,
+  "surveys": {
+    "survey": {
+      "visits": 41,
+      "engine_exits": 0,
+      "renderer_exits": 0,
+      "crash_reports": 0,
+      "timeouts": 0,
+      "failed_visits": 3,
+      "download_starts": 1
+    },
+    "burst": {
+      "visits": 9,
+      "engine_exits": 0,
+      "renderer_exits": 0,
+      "crash_reports": 0,
+      "timeouts": 0,
+      "failed_visits": 0,
+      "download_starts": 0
+    }
+  },
+  "limitations": [
+    "One Windows 11 development host; normal user browser left running outside sampled tree.",
+    "Test-only release probe and controlled fixtures, not a 30-minute human or public-site session.",
+    "Background fixtures may sleep after 15 seconds; not 20 fully active tabs.",
+    "Finite run, not leak freedom or a static-versus-dynamic performance comparison.",
+    "Earlier interrupted 667.684-second run excluded; no shutdown result for that run.",
+    "Missing-runtime/clean-host, Windows 10, real IME/DPI/screen-reader/device/account checks unavailable."
+  ]
+}

@@ -94,6 +94,9 @@ stay in its disposable profile and no credentials or permissions are supplied.
 The release-only test probe runs the real session with 20 stable fixture tabs and
 at most one scratch tab, churn every ten seconds, 1800 seconds soaking, and resource
 sampling including descendants. See [benchmark procedure](../benchmarks/README.md).
+The fixture explicitly enables automatic suspension after 15 seconds and disables
+persistent history. Most background fixtures can therefore sleep; this is not a
+20-fully-active-tab load or an extended media/download/session-history test.
 Do not run builds or other validation workloads during resource measurement.
 This is synthetic churn, not a human interactive session or proof of leak freedom.
 

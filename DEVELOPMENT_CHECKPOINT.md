@@ -28,14 +28,31 @@ Windows 10 is untested. Acceptance criteria remain proposed, publication separat
   unsafe engines, Windows graph currently excludes 0.23.1. Offline scalar/SIMD parity
   probe passed 4097 lengths on AVX2; no fallback/ARM audit claim. Defer change while
   qualifying. No dependency file or PR changed; closed #2/#3 left alone.
-- Fresh survey/burst and 30-minute release-probe soak are running sequentially with
-  pinned source/flags. Qualification phase pointer: `work/rc15/qualification-phase.json`.
-  Avoid builds/GUI tests during resource sampling. Record failures and unavailable
-  observations, then finish local checks, push once and open one review PR.
+- Fresh survey completed: 41 visits, zero engine/renderer exits, dumps or timeouts;
+  three intentional DNS/TLS failures. Nine-site/20-filler burst also clean. HTTP 429
+  from OpenStreetMap remains a site response; one contained download start observed.
+- First soak stopped after 667.684 seconds / 62 cycles when the owned process and
+  exec session disappeared; cause unknown, no final shutdown result. Excluded from
+  a pass. Raw partial run retained in `work/rc15/soak` and `soak-interrupted.json`.
+- Fresh full soak passed in `work/rc15/soak2`, 17:22 to 17:53 Toronto on 2026-11-10.
+  Pointer `work/rc15/fresh-soak-status.json`: 1800 s configured, 1798.489 s sample
+  span, 1792 samples/24 incomplete, 178 cycles, zero navigation errors, final switch
+  responses 20.645 to 28.607 ms, clean root/observed-child exit. Journal only
+  starting/started/clean_shutdown; running marker absent. Sanitized numerical
+  evidence in `benchmarks/rc15-static-soak.json`. Suspension 15 s/history off;
+  finite run, not a dynamic comparison, leak proof or human/media/device test.
+- `85d5e65` covers failed-build flag restoration and exact installed identity;
+  `f10f2d5` moves protected-path negative tests into synthetic LOCALAPPDATA so even
+  a regression stays in owned scratch. Focused owner tests passed after this change.
+- Next: run remaining production local gates, record results, verify final packaging,
+  push once and open one review PR. Do not count the interrupted run as passed.
 - RC status stays unapproved. Final hosted results belong in the PR/final report to
   avoid a packaged-document push after CI. No merge/tag/publication is authorized.
 
 ## v0.15: `feat/v0.15-release-candidate-prep`
+
+Historical working notes from before PR #19 delivery. That PR is now merged at
+`13ff603`; the active post-merge investigation is recorded above.
 
 Branch from verified `origin/main` `b4f0c23` (PR #18; CI 42857529540 and security
 42857529076 passed). Scratch: `<workspace>/work/v15`. No PR is open yet: pushing the

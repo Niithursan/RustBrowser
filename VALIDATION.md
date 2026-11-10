@@ -29,8 +29,44 @@ control. Static size is 4,443,648 bytes versus 4,311,552 dynamic. No installed D
 was removed/hidden, and a missing-runtime host remains untested. Setup retains its
 existing VC Runtime check; static production adoption has not been approved.
 
-A fresh public survey and exact-source 30-minute release-probe soak are in progress.
-Their final results will be added before delivery. Raw evidence stays outside Git
+A fresh public survey completed: 41 visits, zero engine/renderer exits, crash dumps
+or timeouts; three deliberate DNS/TLS failures diagnosed. A nine-site burst with
+20 filler tabs also passed. OpenStreetMap returned HTTP 429; no bypass was added.
+One contained download initiation was observed, not a verified completed transfer.
+
+The fresh exact-source release-probe soak completed on 2026-11-10, 17:22 to 17:53
+Toronto time. It ran the configured 1800-second soak with 20 stable tabs, at most
+one scratch tab, suspension after 15 seconds and history disabled. Result: **178
+churn cycles, zero navigation errors**, all 20 final switch responses successful,
+normal root exit and exit of observed children. Diagnostics contain only starting,
+started and clean_shutdown; no running marker remains.
+
+| Observation | Value / limit |
+| --- | --- |
+| Soak sample span | 1798.489 s, 1792 samples; configured soak is 1800 s |
+| Unavailable process readings | 24 soak samples; excluded from full-memory and CPU summaries |
+| Aggregate working set | 930.23 to 1117.80 MiB during fully observed soak samples |
+| Aggregate private bytes | 837.15 to 909.52 MiB |
+| First/last five-minute private medians | 868.345 / 883.940 MiB; finite increase, not leak freedom |
+| Observed CPU estimate | 0.8269% of 12-logical-processor capacity over 1748.682 valid seconds |
+| After closing to one tab | 770.96 MiB working-set median / 432.805 MiB private median, 16 complete readings |
+| Final switch response range | 20.645 to 28.607 ms, test callback endpoint |
+
+Hardware: Ryzen 5 5600, 12 logical processors, 31.93 GiB RAM, Windows 11 Pro
+10.0.26200 x64. Ordinary user browser activity stayed outside the sampled tree.
+Working sets can double-count shared pages; private bytes are committed memory,
+not physical RAM. CPU is an observed-process estimate, excludes unavailable
+intervals and is not a GPU or whole-host measurement. This one controlled,
+sleeping-tab run is not human browsing, sustained media/download testing, a leak
+proof or a static-versus-dynamic performance comparison.
+
+An earlier run stopped at 667.684 seconds/62 cycles when its process and exec
+session disappeared; cause not established, no final shutdown result. It is
+retained and excluded. One child-shell module conflict prevented a restart before
+any profile/measurement began; the current PowerShell host resolved it without a
+system/policy change. Only the completed fresh run is counted.
+
+Sanitized numbers: `benchmarks/rc15-static-soak.json`. Raw evidence stays outside Git
 in `work/rc15`, with source/flags/hashes in the pinned manifest. Final exact-head
 production CI results belong in the PR delivery record; no extra workflow dispatch
 or rerun is planned. The [investigation](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md)
@@ -51,8 +87,9 @@ installed, 2026-11-10. Raw evidence is in workspace `work/v15`, outside Git.
 Inherited results below were checked against the saved logs/JSON, not assumed
 from the handoff. All **26 local gates passed** on source commit `5c8822e`;
 the subsequent changes only record results and clarify the owner checklist.
-Hosted v0.15 checks have not run because no PR is open yet. Exact final-head
-hosted status belongs in the PR delivery record, separately from local results.
+Historical delivery: PR #19 at `c967735` passed CI 42896025986 and security
+42896026042 before being squash-merged to `13ff603`. Those checks belong to the
+v0.15 preparation delivery, not to this newer investigation branch.
 
 ### Final local gates (2026-11-10)
 

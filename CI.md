@@ -9,6 +9,11 @@ Static CRT gates and the 30-minute soak are local opt-in investigation workloads
 no new recurring Windows job or publication trigger is added. The additional step's
 hosted overhead is recorded in the final review PR, not assumed in advance.
 
+After PR #19, owner direction leaves closed Dependabot #2/#3 alone. The separate
+[#4 review](validation/BASE64_REVIEW.md) recommends deferring that update during
+qualification, including explicit review of its API/SIMD features. This supersedes
+the earlier merge recommendations in the historical v0.15 cost assessment below.
+
 v0.15 adds Actions cost controls without removing required coverage. A small Linux job,
 **Change scope**, runs first and skips the two Windows jobs only when every file the
 pull request changes is Markdown that no build, test or package reads. Dependabot
