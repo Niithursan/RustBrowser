@@ -32,9 +32,14 @@ Refused { & $launcher -VerifyOnly }
 Remove-Item -LiteralPath (Join-Path $dry.profile 'session.json')
 # Exact empty owned test directory, non-recursive.
 Remove-Item -LiteralPath $dry.profile
-foreach($protected in @((Join-Path $env:LOCALAPPDATA 'RustBrowser/v0.1'),(Join-Path $env:LOCALAPPDATA 'Programs/RustBrowser'))){
- Refused { & $prepare -Executable $Executable -OutputRoot $protected -SourceCommit $SourceCommit -Compiler $Compiler }
-}
+$localData=$env:LOCALAPPDATA
+try{
+ # Even a broken refusal must stay inside owned scratch, never a real profile.
+ $env:LOCALAPPDATA=Join-Path $bundle.root 'synthetic-localappdata'
+ foreach($protected in @((Join-Path $env:LOCALAPPDATA 'RustBrowser/v0.1'),(Join-Path $env:LOCALAPPDATA 'Programs/RustBrowser'))){
+  Refused { & $prepare -Executable $Executable -OutputRoot $protected -SourceCommit $SourceCommit -Compiler $Compiler }
+ }
+}finally{$env:LOCALAPPDATA=$localData}
 function Run-Owned([string]$Program,[string[]]$Arguments){
  $p=Start-Process -FilePath $Program -ArgumentList $Arguments -WindowStyle Hidden -PassThru
  $null=$p.Handle
