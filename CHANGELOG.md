@@ -8,8 +8,8 @@
   Closed tabs' views are now hidden at once and destroyed one second later; shutdown
   hides the window and exits after the same delay. Up to 64 closed views are held for
   the delay (initially 16): closing 17 or more tabs within one second, for example by
-  holding Ctrl+W, destroyed the oldest early and crashed again (10 of 11 bursts with
-  the sign-in page; 0 of 13 after).
+  holding Ctrl+W, or clearing browsing data with that many tabs open, destroyed the
+  oldest early and crashed again (10 of 12 bursts with the sign-in page; 0 of 13 after).
 - Added recovery when the WebView2 browser process ends for any reason: tabs are
   rebuilt and reloaded with their order, pins and selection. Previously every tab
   failed with `0x8007139F` until the browser was restarted. Restarts are limited to

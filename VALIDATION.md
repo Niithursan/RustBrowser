@@ -67,7 +67,8 @@ sign-in page:
 | Control: window exit with 19 tabs (18 sign-in pages) | 0 of 2 runs | not repeated |
 
 The native regression now fills the window to 64 tabs and closes 62 in one turn; it
-fails with the 16-view cap ("16 of 62 kept").
+fails with the 16-view cap ("16 of 62 kept"). Clearing browsing data retires every
+open tab at once and was subject to the same cap; that path was not measured.
 
 Hiding the view for 0 or 100 ms before destroying it still crashed 8 of 8 times;
 300 ms and 1 s did not crash in 8 runs each. The shipped delay is 1 s. Disabling

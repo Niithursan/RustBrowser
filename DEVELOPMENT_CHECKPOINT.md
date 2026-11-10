@@ -59,9 +59,13 @@ Burst-close follow-up (Claude Code, 2026-11-10):
 - New survey option `-BurstCloseFillers n` closes the visited tab and `n` blank tabs in
   one event-loop turn. It showed the retirement fix was incomplete: `MAX_RETIRED` was
   16, so a 17th close within 1 s destroyed the oldest hidden view at once. Sign-in
-  page crashed in 10/11 bursts over the cap, 0/8 at or under it; example.com 0/3;
+  page crashed in 10/12 bursts over the cap, 0/8 at or under it; example.com 0/3;
   window exit with 19 tabs 0/2. Fix: `MAX_RETIRED = MAX_TABS`; 0/13 bursts after.
 - Native regression now closes 62 tabs in one turn; mutation (cap 16) caught.
+- Clearing data retires every tab at once, so it also hit the old cap with >16 tabs
+  (inferred from the code, not measured). Ctrl+W key repeat is inferred too; the
+  measured case is the probe's one-turn burst. Commit `f2fa2fb`'s message says
+  "10 of 11"; the correct count is 10 of 12 (history not rewritten).
 - Gates passed: fmt, Clippy, 79 tests, debug and release builds
   (`work/v14/gates-burst.log`). Raw runs: `work/v14/burst-rate/`.
 

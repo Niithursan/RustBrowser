@@ -32,7 +32,7 @@ Defects found by the survey, all Rust Browser integration defects except where n
 
 | Finding | Classification | State in v0.14 |
 | --- | --- | --- |
-| WebView2 browser process ends with an access violation when a visible view showing the Microsoft sign-in page is destroyed (tab close 6/8, window exit 8/8). No application event handler is involved (each was disabled in turn). | WebView2 engine defect, triggered by destroying a visible view | Avoided: views are hidden for one second before destruction (0/12 and 0/8 after) |
+| WebView2 browser process ends with an access violation when a visible view showing the Microsoft sign-in page is destroyed (tab close 6/8, window exit 8/8). No application event handler is involved (each was disabled in turn). | WebView2 engine defect, triggered by destroying a visible view | Avoided: views are hidden for one second before destruction (0/12 and 0/8 after). A burst of 17+ closes still destroyed one early under the first 16-view cap (10/12); up to 64 are now held (0/13) |
 | After that exit every tab failed with `0x8007139F` | Integration defect: no handling of browser-process exit | Fixed: views are rebuilt and reloaded |
 | HTTP 404/429/500 shown as "page could not be loaded (status 0)" | Integration defect | Fixed |
 | Unreachable host shown with the wrong reason (status 9) | Integration defect: the engine's follow-up navigation was treated as a new failure | Fixed |
