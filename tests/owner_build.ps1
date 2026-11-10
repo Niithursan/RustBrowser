@@ -7,6 +7,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'owner_process_helpers.ps1')
 $imports=& (Join-Path $repo 'validation/check-crt.ps1') -Executable $Executable -Expected $ExpectedCrt
 $prepare=Join-Path $repo 'validation/prepare-owner-build.ps1'
 $output=& $prepare -Executable $Executable -OutputRoot $OutputRoot -SourceCommit $SourceCommit -Compiler $Compiler
@@ -51,8 +52,8 @@ function Launch-And-Close([switch]$Installed){
  $p=Get-Process -Id $launched.process_id -ErrorAction Stop
  try{
   $expected=if($Installed){Join-Path $bundle.root 'application/rust-browser.exe'}else{Join-Path $bundle.root 'portable/rust-browser.exe'}
-  if($p.Path -ine $expected){throw 'Unexpected launched executable'}
   $clock=[Diagnostics.Stopwatch]::StartNew()
+  Assert-OwnerProcessImage $p $expected $clock
   do{$p.Refresh();if($p.HasExited){throw 'Owner browser exited before showing a window'};if($p.MainWindowHandle -ne 0 -and (Test-Path -LiteralPath (Join-Path $launched.profile 'session.json'))){break};Start-Sleep -Milliseconds 100}while($clock.Elapsed.TotalSeconds -lt 20)
   if($p.MainWindowHandle -eq 0 -or -not(Test-Path -LiteralPath (Join-Path $launched.profile 'session.json'))){throw 'No owner window and persisted disposable session'}
   if(-not $p.CloseMainWindow() -or -not $p.WaitForExit(20000)){throw 'Owner browser did not close normally'}
@@ -88,4 +89,5 @@ try{
  }
 }
 if(-not(Test-Path -LiteralPath (Join-Path $dry.profile '.rust-browser-owner-profile'))){throw 'Owner profile marker missing'}
+& (Join-Path $PSScriptRoot 'owner_process.ps1') -Executable (Join-Path $bundle.root 'portable/rust-browser.exe') -OutputRoot (Join-Path $bundle.root 'process-fixture')
 "Owner bundle: hash/identity/foreign-profile/production-path refusal, dry-run, portable and installed GUI startup/shutdown, caller environment and disposable session preservation passed. Retained: $($bundle.root)"
