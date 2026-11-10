@@ -61,6 +61,12 @@ $installed=$false
 try{
  Run-Owned $bundle.installer @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-')
  $installed=$true
+ $ini=Join-Path $bundle.root 'application/installation.ini'
+ $iniOriginal=[IO.File]::ReadAllText($ini)
+ try{
+  [IO.File]::WriteAllText($ini,$iniOriginal.Replace('Identity='+$record.identity,'Identity='+$record.identity+'x'))
+  Refused { & $launcher -Installed -VerifyOnly }
+ }finally{[IO.File]::WriteAllText($ini,$iniOriginal)}
  $dryInstalled=& $launcher -Installed -VerifyOnly
  if($dryInstalled.profile -cne $dry.profile){throw 'Installed launch selected a different profile'}
  Launch-And-Close -Installed

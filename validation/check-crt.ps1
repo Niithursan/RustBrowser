@@ -11,9 +11,9 @@ if(-not $Dumpbin){
     $Dumpbin=& $vswhere -latest -products '*' -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | Select-Object -First 1
 }
 if(-not $Dumpbin){throw 'MSVC x64 dumpbin was not found.'}
-# /DEPENDENTS includes both ordinary and delay-loaded import descriptors. This
+# /IMPORTS documents both ordinary and delay-loaded import descriptors. This
 # does not inspect DLLs loaded by name at runtime or dependencies of other DLLs.
-$lines=@(& $Dumpbin /DEPENDENTS $exe)
+$lines=@(& $Dumpbin /IMPORTS $exe)
 if($LASTEXITCODE -ne 0){throw 'PE import inspection failed.'}
 $imports=@($lines | ForEach-Object {$_.Trim()} | Where-Object {$_ -match '^[A-Za-z0-9_.-]+\.dll$'} | Sort-Object -Unique)
 if(-not $imports.Count){throw 'No DLL import descriptors found; do not infer static linking from an empty report.'}

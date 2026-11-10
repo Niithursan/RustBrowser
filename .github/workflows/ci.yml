@@ -143,6 +143,7 @@ jobs:
           .\tests\release_metadata.ps1 -MetadataPath $package.metadata -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-release-metadata')
           # Owner artifacts use a validation identity plus an explicit disposable
           # profile. Production CRT remains dynamic during the isolated experiment.
+          .\tests\static_crt_build.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-crt-failure-tests')
           .\tests\owner_build.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-owner-tests') -Compiler $compiler -SourceCommit (git rev-parse HEAD) -ExpectedCrt dynamic
           "installer=$($package.installer)" >> $env:GITHUB_OUTPUT
           "installer_checksum=$($package.installer_checksum)" >> $env:GITHUB_OUTPUT
