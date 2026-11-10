@@ -27,8 +27,17 @@
     runs in the release job; this is deliberate.
 - Known doc limitation: the older relative links in the packaged README, SECURITY and
   VALIDATION don't resolve offline (packaging/windows/README.md).
-- Next: verify CI on the final pushed head, update the PR #17 body, and mark it ready
-  if green. Do not merge, tag or publish.
+- `d650e19` CI 42729555726 passed (quality, release with installer lifecycle,
+  aggregate), and so did security 42729555772. The PR #17 body was updated with
+  verified results, and the PR is marked **ready for review** (mergeable, clean).
+  This checkpoint commit follows; re-verify CI on whatever head is current.
+- Next: await the user's review. Do not merge, tag or publish without explicit approval.
+  Pending manual validation:
+  - clean machine and Windows 10
+  - missing or old runtimes
+  - interactive installer wizard use on a standard-user VM
+  - power-loss and full-disk recovery
+  - signed distribution
 
 - Read the v0.13 attachment, AGENTS.md and this checkpoint. Preserve prior milestones.
 - Fetched and verified PR #16 squash merge at `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`.
