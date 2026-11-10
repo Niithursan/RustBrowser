@@ -2,19 +2,24 @@ use rust_browser::diagnostics::{Code, MAX_BYTES, MAX_ENTRIES, Recorder};
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+// Parallel tests can read the same clock value; the counter keeps names unique.
+static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 struct Root(PathBuf);
 impl Root {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "rust-browser-diagnostics-{}-{}",
+            "rust-browser-diagnostics-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
         fs::write(path.join(".diagnostic-test-root"), b"owned synthetic data").unwrap();
