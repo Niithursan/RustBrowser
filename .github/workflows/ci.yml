@@ -84,6 +84,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_failure_reporting_tab_retirement_and_engine_restart -- --ignored --test-threads=1
       - name: Native toolbar engine failure recovery
         run: cargo test --locked --bin rust-browser native_toolbar_engine_failure_is_recovered -- --ignored --test-threads=1
+      - name: Native toolbar keyboard reachability and scaled layout
+        run: cargo test --locked --bin rust-browser native_toolbar_keyboard_reachability_and_scaled_layout -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
       - name: Native daily-driver compatibility, diagnostics and untrusted TLS

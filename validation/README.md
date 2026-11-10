@@ -54,6 +54,7 @@ cargo test --locked --bin rust-browser native_popup_opener_upload_audio_fullscre
 cargo test --locked --bin rust-browser native_renderer_crash_is_reported_and_reload_recovers -- --ignored --test-threads=1
 cargo test --locked --bin rust-browser native_failure_reporting_tab_retirement_and_engine_restart -- --ignored --test-threads=1
 cargo test --locked --bin rust-browser native_toolbar_engine_failure_is_recovered -- --ignored --test-threads=1
+cargo test --locked --bin rust-browser native_toolbar_keyboard_reachability_and_scaled_layout -- --ignored --test-threads=1
 ```
 
 The last one (v0.14) checks HTTP error pages, a refused connection and its Reload,

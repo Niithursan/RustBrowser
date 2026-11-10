@@ -1860,6 +1860,10 @@ mod reliability_validation;
 #[path = "toolbar_validation.rs"]
 mod toolbar_validation;
 
+#[cfg(test)]
+#[path = "keyboard_validation.rs"]
+mod keyboard_validation;
+
 /// Why the browser window could not be created.
 #[derive(Debug, PartialEq, Eq)]
 pub enum StartFailure {

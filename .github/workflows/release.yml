@@ -62,7 +62,7 @@ jobs:
       - name: Native production regressions
         shell: powershell
         run: |
-          foreach ($test in @('native_private_storage_and_confirmed_engine_deletion','native_application_clear','native_tab_sleep_resume_and_local_page_security','native_private_newtab_settings_are_ephemeral','native_popup_opener_upload_audio_fullscreen_and_redirects','native_renderer_crash_is_reported_and_reload_recovers','native_failure_reporting_tab_retirement_and_engine_restart','native_toolbar_engine_failure_is_recovered','native_servo_comparison_fixture')) {
+          foreach ($test in @('native_private_storage_and_confirmed_engine_deletion','native_application_clear','native_tab_sleep_resume_and_local_page_security','native_private_newtab_settings_are_ephemeral','native_popup_opener_upload_audio_fullscreen_and_redirects','native_renderer_crash_is_reported_and_reload_recovers','native_failure_reporting_tab_retirement_and_engine_restart','native_toolbar_engine_failure_is_recovered','native_toolbar_keyboard_reachability_and_scaled_layout','native_servo_comparison_fixture')) {
             cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
             if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
           }
