@@ -11,8 +11,8 @@ $repo=Split-Path $PSScriptRoot -Parent
 $version=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $Executable).Path)).ProductVersion
 $package=& (Join-Path $repo 'packaging/windows/build-installer.ps1') -Executable $Executable -OutputRoot $OutputRoot -Version $version -SourceCommit $SourceCommit -Compiler $Compiler
 $baselineVersion=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $BaselineExecutable).Path)).ProductVersion
-if($baselineVersion -cne '0.13.0'){throw 'Supply the actual verified v0.13 executable for upgrade checks.'}
-$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit 'ca7ac142031569279f1e1be0beffb53473af8cf7'
+if($baselineVersion -cne '0.14.0'){throw 'Supply the actual verified v0.14 executable for upgrade checks.'}
+$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit 'b4f0c2388a80853110baa9d43a8cec56a796d220'
 $run=Join-Path ([IO.Path]::GetFullPath($OutputRoot)) ('install-validation-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $run -ErrorAction Stop | Out-Null
 Set-Content -LiteralPath (Join-Path $run '.rust-browser-install-validation') -Value 'Owned disposable installer validation'
@@ -90,7 +90,7 @@ try {
         $null=$oldProcess.Handle
         $created=$oldProcess.StartTime.ToUniversalTime()
         Start-Sleep -Milliseconds 500
-        if($oldProcess.HasExited){throw 'Owned v0.13 process exited before the file-use check.'}
+        if($oldProcess.HasExited){throw 'Owned v0.14 process exited before the file-use check.'}
         Invoke-Owned $new (Args-For 'legacy-running-refusal') -Refuse
         Assert-Preserved
     } finally {
@@ -159,7 +159,7 @@ try {
     Wait-Uninstalled;$installed=$false;Assert-Preserved
     if(-not(Test-Path -LiteralPath $foreign) -or (Get-FileHash -LiteralPath $foreign).Hash -cne $foreignHash){throw 'Uninstall removed or changed an unowned file.'}
     if((Test-Path -LiteralPath $desktop) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $link)){throw 'Uninstall left registered integration.'}
-    'Installer: fresh/0.13 upgrade/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
+    'Installer: fresh/0.14 upgrade/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
 } finally {
     try {
         if($installed -and (Test-Path -LiteralPath (Join-Path $app 'uninstall/unins000.exe'))){
