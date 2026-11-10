@@ -33,7 +33,9 @@ This drives the production session against the addresses in
 `site-survey-sites.txt` (or `-Urls`), one new tab per address, and writes a JSON
 report: result, status text, reported failures, engine and renderer exits, and the
 number of WebView2 crash dumps left in the disposable profile. `-KeepTabsOpen`
-leaves every tab open and exits with the last one visible. It needs a network
+leaves every tab open and exits with the last one visible. `-BurstCloseFillers n`
+opens `n` blank tabs first and, after the visits, closes every visited and blank tab
+in one event-loop turn, then waits 4 s for engine exits. It needs a network
 connection, enters no credentials and grants no permission. It is not a CI gate and
 its results describe third-party sites on the day it ran. Do not add addresses that
 require an account.

@@ -17,6 +17,10 @@ struct Plan {
     /// Leave every visited tab open and exit with the last one visible.
     #[serde(default)]
     keep_tabs_open: bool,
+    /// Open this many blank tabs first; after the visits, close every visited tab and
+    /// then every blank tab within one event-loop turn (implies `keep_tabs_open`).
+    #[serde(default)]
+    burst_close_fillers: usize,
 }
 fn default_timeout() -> u64 {
     30
@@ -78,6 +82,8 @@ struct Probe {
     result: Arc<Mutex<Option<String>>>,
     failure: Option<String>,
     done: bool,
+    base: Option<TabId>,
+    fillers: Vec<TabId>,
 }
 impl Probe {
     fn poll(&mut self) -> Result<(), String> {
@@ -90,6 +96,42 @@ impl Probe {
             return Ok(());
         }
         match self.stage {
+            // Runs once: before any visit, while no filler exists yet.
+            0 if self.plan.burst_close_fillers > 0
+                && self.index == 0
+                && self.fillers.is_empty() =>
+            {
+                self.base = s.tabs.active().map(|tab| tab.id);
+                for _ in 0..self.plan.burst_close_fillers {
+                    s.command(Command::NewTab)
+                        .map_err(|error| format!("Filler tab failed: {error}"))?;
+                    self.fillers.extend(s.tabs.active().map(|tab| tab.id));
+                }
+            }
+            0 if self.plan.burst_close_fillers > 0
+                && self.index >= self.plan.urls.len()
+                && !self.fillers.is_empty() =>
+            {
+                // The last visited tab is visible. Close visited tabs, then the
+                // blank ones, without returning to the event loop in between.
+                let visited: Vec<TabId> = s
+                    .tabs
+                    .items
+                    .iter()
+                    .map(|tab| tab.id)
+                    .filter(|id| Some(*id) != self.base && !self.fillers.contains(id))
+                    .rev()
+                    .collect();
+                for id in visited.into_iter().chain(std::mem::take(&mut self.fillers)) {
+                    s.close_tab(id)
+                        .map_err(|error| format!("Burst close failed: {error}"))?;
+                }
+                self.step = Instant::now();
+                self.stage = 9;
+            }
+            // Long enough for an engine exit to be reported and for views to retire.
+            9 if self.step.elapsed() > Duration::from_secs(4) => self.stage = 0,
+            9 => {}
             0 => {
                 let Some(url) = self.plan.urls.get(self.index).cloned() else {
                     // Leave through the production shutdown path.
@@ -158,6 +200,7 @@ impl Probe {
             3 => {
                 self.visits.push(std::mem::take(&mut self.current));
                 if !self.plan.keep_tabs_open
+                    && self.plan.burst_close_fillers == 0
                     && let Some(tab) = s.tabs.active()
                 {
                     let id = tab.id;
@@ -280,6 +323,8 @@ fn native_public_site_survey() {
         result: Arc::new(Mutex::new(None)),
         failure: None,
         done: false,
+        base: None,
+        fillers: Vec::new(),
     };
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();

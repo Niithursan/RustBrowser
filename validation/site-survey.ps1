@@ -8,6 +8,7 @@ param(
     [int]$TimeoutSeconds = 30,
     [int]$SettleMilliseconds = 2500,
     [switch]$KeepTabsOpen,
+    [ValidateRange(0, 32)][int]$BurstCloseFillers = 0,
     [string]$Cargo = 'cargo'
 )
 $ErrorActionPreference = 'Stop'
@@ -22,13 +23,15 @@ if (-not $Urls) {
     $Urls = @(Get-Content -LiteralPath $UrlFile | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
 }
 if ($Urls.Count -lt 1 -or $Urls.Count -gt 64) { throw 'Survey 1 to 64 addresses.' }
+if ($BurstCloseFillers -gt 0 -and 1 + $BurstCloseFillers + $Urls.Count -gt 64) { throw 'A burst keeps every tab open: the start tab, fillers and addresses must fit in 64 tabs.' }
 foreach ($url in $Urls) { if ($url -notmatch '^https?://[^\s@]+$') { throw "Not a plain HTTP(S) address: $url" } }
 New-Item -ItemType Directory -Path $base -Force | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $plan = Join-Path $base "survey-$stamp-plan.json"
 $output = Join-Path $base "survey-$stamp.json"
 $json = @{ urls = @($Urls); output = $output; timeout_seconds = $TimeoutSeconds
-    settle_milliseconds = $SettleMilliseconds; keep_tabs_open = [bool]$KeepTabsOpen } | ConvertTo-Json
+    settle_milliseconds = $SettleMilliseconds; keep_tabs_open = [bool]$KeepTabsOpen
+    burst_close_fillers = $BurstCloseFillers } | ConvertTo-Json
 [IO.File]::WriteAllText($plan, $json, (New-Object Text.UTF8Encoding $false))
 $previous = $env:RUST_BROWSER_SURVEY_PLAN
 try {
