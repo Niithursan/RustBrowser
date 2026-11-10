@@ -244,7 +244,7 @@ all-zero base commit, an empty diff or any classification error runs everything.
 and either both Windows jobs succeeded (full run) or both were skipped (documentation
 only).
 
-Evidence: 18 Python tests in `validation/test_ci_scope.py` (run in the CI quality job)
+Evidence: 13 Python tests in `validation/test_ci_scope.py` (run in the CI quality job)
 cover the rules, the verdict, real git diffs in a temporary repository, and that the
 packaged list matches `package.ps1`, `installer.iss` and `windows_package.ps1`. Two
 mutations (dropping `--no-renames`, ignoring packaged documents) were each caught.

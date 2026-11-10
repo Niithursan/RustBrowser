@@ -101,7 +101,7 @@ v0.15 preparation delivery, not to this newer investigation branch.
 | Native WebView2 | All 10 standalone suites passed, each in its own process, including toolbar recovery and keyboard/layout |
 | Daily-driver fixtures | Three independent fresh-profile runs passed, not retries |
 | PowerShell fixtures | Process-tree sampler and experimental launcher safety passed; no Servo build/download/launch |
-| Python | 2 experimental fixture tests and 18 production CI-scope tests passed |
+| Python | 2 experimental tests and 18 production tests passed: 13 CI-scope, 3 TLS-handshake and 2 icon tests |
 | Portable package | Deterministic contents, hashes, metadata, offline links and unsafe-input refusal passed |
 | Installer lifecycle | Fresh install, pinned v0.14 upgrade, repair/removal/reinstall, refusal cases, shortcuts and disposable profile preservation passed |
 | Release metadata | Positive integrity/pin/repair checks and 36 malformed/downgrade/tampered/missing-input refusals passed |
@@ -174,7 +174,7 @@ and [accessibility](https://github.com/Niithursan/RustBrowser/blob/main/validati
 ### CI and release status
 
 Whole-PR, no-renames classification protects packaged documents and runs full
-Windows checks for code, ambiguity or errors. Eighteen Python scope tests and two
+Windows checks for code, ambiguity or errors. Thirteen Python scope tests and two
 caught mutations support it; the hosted docs-only skip path is **not exercised**
 by this code-changing milestone and no saving is claimed. Dependabot version
 updates are grouped/monthly with no automatic rebase; owner review of #2 to #4
