@@ -16,6 +16,8 @@ mod native_background;
 #[cfg(windows)]
 mod native_downloads;
 #[cfg(windows)]
+mod native_installation;
+#[cfg(windows)]
 mod native_popup;
 #[cfg(windows)]
 mod native_security;
@@ -27,6 +29,12 @@ mod servo_validation;
 mod ui;
 
 fn main() -> std::process::ExitCode {
+    if std::env::args_os().len() == 2
+        && std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version"))
+    {
+        println!("Rust Browser {}", env!("CARGO_PKG_VERSION"));
+        return std::process::ExitCode::SUCCESS;
+    }
     // Never print a panic payload: it can contain data supplied by a website.
     std::panic::set_hook(Box::new(|_| {
         eprintln!(
@@ -35,7 +43,10 @@ fn main() -> std::process::ExitCode {
     }));
     #[cfg(windows)]
     {
-        if app::run().is_ok() {
+        // Retain the marker through WebView/profile teardown. Private/alternative
+        // profiles remain allowed; the marker only makes installers wait.
+        let running = native_installation::Running::mark();
+        if running.is_ok() && app::run().is_ok() {
             return std::process::ExitCode::SUCCESS;
         }
         #[cfg(debug_assertions)]

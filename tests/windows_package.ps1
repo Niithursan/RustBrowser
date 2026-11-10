@@ -30,6 +30,9 @@ try{
     }
 }finally{$zip.Dispose()}
 function Refused([scriptblock]$Action){$failed=$false;try{& $Action | Out-Null}catch{$failed=$true};if(-not $failed){throw 'Unsafe package input was accepted.'}}
+. (Join-Path $repo 'packaging/windows/paths.ps1')
+Refused { Assert-PackageOutput ([IO.Path]::GetPathRoot($repo)) $repo }
+Refused { Assert-PackageOutput $repo $repo }
 Refused { & $packageScript -Executable $Executable -OutputRoot $repo -Version $version -SourceCommit $SourceCommit }
 Refused { & $packageScript -Executable $Executable -OutputRoot $OutputRoot -Version '999.0.0' -SourceCommit $SourceCommit }
 Refused { & $packageScript -Executable $Executable -OutputRoot $OutputRoot -Version '../escape' -SourceCommit $SourceCommit }
@@ -38,6 +41,7 @@ $fake=Join-Path $owned 'rust-browser.exe';Set-Content -LiteralPath $fake -Value 
 Refused { & $packageScript -Executable $fake -OutputRoot $OutputRoot -Version $version -SourceCommit $SourceCommit }
 $protected=Join-Path $owned 'profile';New-Item -ItemType Directory -Path $protected | Out-Null
 Set-Content -LiteralPath (Join-Path $protected 'library.sqlite') -Value 'synthetic data to preserve'
+Refused { Assert-PackageOutput (Join-Path $protected 'nested') $repo }
 $before=(Get-FileHash -LiteralPath (Join-Path $protected 'library.sqlite')).Hash
 Refused { & $packageScript -Executable $Executable -OutputRoot $protected -Version $version -SourceCommit $SourceCommit }
 Refused { & $packageScript -Executable $Executable -OutputRoot (Join-Path $protected 'nested/output') -Version $version -SourceCommit $SourceCommit }
@@ -46,5 +50,6 @@ Refused { & (Join-Path $repo 'validation/windows-daily.ps1') -OutputRoot (Join-P
 if($before -cne (Get-FileHash -LiteralPath (Join-Path $protected 'library.sqlite')).Hash -or @(Get-ChildItem -LiteralPath $protected).Count -ne 1){throw 'Refused packaging modified the synthetic profile.'}
 $link=Join-Path $owned 'junction';$target=Join-Path $owned 'target';New-Item -ItemType Directory -Path $target | Out-Null
 New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+Refused { Assert-PackageOutput (Join-Path $link 'output') $repo }
 Refused { & $packageScript -Executable $Executable -OutputRoot (Join-Path $link 'output') -Version $version -SourceCommit $SourceCommit }
 'Portable packaging: deterministic ZIP, checksums, x64/version metadata, manifest hashes, unsafe input/profile/reparse refusal passed.'

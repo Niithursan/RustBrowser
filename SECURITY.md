@@ -1,5 +1,23 @@
 # Security
 
+## v0.13 installation and manual updates
+
+The new unsigned Inno installer uses a fixed per-user target, exact payload and
+owned-file uninstall, separate from existing profiles/downloads. It requests no
+elevation and never downloads runtimes, registers protocols/defaults, auto-launches
+updates or installs a service. Profile/reparse/ownership/version/file-use checks
+fail closed; they do not defeat same-account malware, hard links or path races.
+The running marker is non-exclusive and session-scoped; normal/private multi-instance
+semantics remain. No privileged web IPC or new Servo capability is introduced.
+
+The manual verifier checks bounded schema/versions/names/lengths/hashes and writes
+no user data. Co-hosted checksums and unsigned metadata provide no independent
+authenticity. No signing root/certificate is configured, so automatic update checks,
+downloads and execution remain absent. A verified signed compiler does not sign
+its generated Rust Browser packages. See [threat model and signing prerequisites](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md)
+and [user recovery instructions](INSTALL_WINDOWS.md). Mid-copy/power-loss recovery,
+clean-machine prerequisites and signed distribution remain unverified.
+
 ## v0.11 production hardening
 
 WebView2 remains the sole production engine. No Servo sandbox integration, browsing

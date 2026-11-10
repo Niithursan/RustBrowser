@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Rust Browser globe">
+  <rect x="4" y="4" width="92" height="92" rx="11" fill="#161c27"/>
+  <g fill="none" stroke="#7ce9bf" stroke-width="4" stroke-linecap="round">
+    <circle cx="50" cy="50" r="31.5"/><ellipse cx="50" cy="50" rx="12.5" ry="31.5"/>
+    <path d="M21 39H79M21 61H79"/>
+  </g>
+</svg>

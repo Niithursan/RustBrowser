@@ -1,5 +1,111 @@
 # Development checkpoint
 
+## v0.13 — `feat/v0.13-windows-release-readiness`
+
+### Claude Code continuation (2026-11-09) — supersedes "Next:" below
+
+- Took over at pushed `cb7a4b1`. Five uncommitted Codex doc edits were preserved
+  and committed as `72f48a7`: absolute links for repository-only docs in packaged files.
+- CI at `cb7a4b1` passed: CI 42726540504 (quality, release/installer, aggregate)
+  and security 42726540444. Two reruns of each also passed (warm measurements).
+- Independently re-verified locally:
+  - all gates (69 tests, 7 native suites, 3 daily runs, builds, Python, package, audit)
+  - the full installer lifecycle and the 36-case metadata suite
+  - a release GUI startup/shutdown check
+  - the user's real profile was unchanged (306 files) and no validation registration
+    remained
+  Details are in VALIDATION.md.
+- The CI review bundle was verified independently: checksums, manifest, allowlist,
+  version, NotSigned, verifier accept/refuse. Its source commit is the PR merge
+  commit `973804d`; this is documented.
+- Cache correction validated and measured (CI.md):
+  - The fixture builds once (154.5 s cold, 0.35 s warm) in its own 113 MiB cache.
+  - The cold production cache save fell from 106 s to 45 s.
+  - Warm CI is 177–184 s wall and 286–320 s runner: no speedup over v0.12, because
+    of the added installer coverage.
+  - The production release cache is 330 MiB, because the harness's debug test build
+    runs in the release job; this is deliberate.
+- Known doc limitation: the older relative links in the packaged README, SECURITY and
+  VALIDATION don't resolve offline (packaging/windows/README.md).
+- `d650e19` CI 42729555726 passed (quality, release with installer lifecycle,
+  aggregate), and so did security 42729555772. The PR #17 body was updated with
+  verified results, and the PR is marked **ready for review** (mergeable, clean).
+  This checkpoint commit follows; re-verify CI on whatever head is current.
+- Next: await the user's review. Do not merge, tag or publish without explicit approval.
+  Pending manual validation:
+  - clean machine and Windows 10
+  - missing or old runtimes
+  - interactive installer wizard use on a standard-user VM
+  - power-loss and full-disk recovery
+  - signed distribution
+
+- Read the v0.13 attachment, AGENTS.md and this checkpoint. Preserve prior milestones.
+- Fetched and verified PR #16 squash merge at `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`.
+  Cargo version is 0.12.0. Main CI 42721919432 (quality, release, aggregate) and
+  dependency security 42721919854 passed before branch creation. Working tree was clean.
+- Branch created from that exact origin/main; local main and existing profiles unchanged.
+- Existing distribution: allowlisted deterministic portable ZIP, version/asInvoker
+  resources, approved-tag/manual publication gate. No installer or authenticated updater.
+  Profile remains `%LOCALAPPDATA%/RustBrowser/v0.1`, session format 1, SQLite schema 3.
+- Plan: per-user Inno Setup with no automatic runtime installation; test-only identity
+  and owned directories for fresh/upgrade/uninstall/reinstall, fail-closed version/path
+  checks, safe manual update integrity verification, production CI/artifacts and docs.
+  Preserve v0.12 parallel/cached/aggregate checks and all native coverage.
+- Official Inno 6.7.4 compiler downloaded into workspace scratch; verified SHA-256
+  `a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c`
+  and Valid Authenticode publisher Pyrsys B.V. Installed without elevation or shortcuts
+  in `work/v13/tools/inno`; not bundled with application or committed.
+- Signing identity and trusted update root are unavailable. Do not add automatic
+  download/execution, invent keys, change release permissions, merge, tag or publish.
+- Implemented Inno script/compiler bootstrap/build/unsigned metadata verifier, six-size
+  source-owned globe icon/PE/window/taskbar integration and non-exclusive running mutex.
+  Added `--version` without profile/engine startup; no protocol/default registration.
+- Initial same-version lifecycle and actual 0.12→0.13 controlled upgrade passed under a
+  GUID validation identity: exact executable, HKCU/Start Menu integration, profile hashes
+  and rich session/SQLite/download semantics, downgrade/future/invalid metadata, running
+  install/uninstall refusal, profile directory/reparse refusal, uninstall and reinstall.
+  No real installation/profile targeted. Additional full contents/desktop/unowned-file
+  assertions are added and still need their final run.
+- Found/handled two harness issues: Inno cleanup child outlives its original process;
+  wait for its directory, not a pre-existing empty application root. Sharing a Cargo
+  target across archived package versions reused a stale build script; the pinned
+  baseline now has its own target. Verified fresh baseline source build: 37.834 seconds.
+- Version now 0.13.0; lock root updated, no crate version/dependency added. Two existing
+  Windows feature gates enable named mutex APIs. Fmt/strict Clippy and 69 regular tests
+  passed locally; running-marker lifetime and representative profile tests included.
+  Five production Python tests passed, including two icon/resource checks. Verifier
+  passed positive pin/integrity/repair plus 31 malformed/tampered/downgrade refusals.
+- CI changes preserve caching, parallel jobs, no branch push duplicates and aggregate;
+  add immutable old-fixture cache, controlled installer tests and five-file review bundle.
+  Release application builds remain uncached; pinned audit tool cache/version verification
+  and full script/native coverage added. Publication gate and permissions unchanged.
+- Commits `11de04f` installer/validation and `694f4de` CI are pushed; draft PR #17:
+  https://github.com/Niithursan/RustBrowser/pull/17. First Windows aggregate 42724868424
+  and dependency security 42724868239 passed (quality 220 s, release 462 s, audit 25 s).
+- Full local native/build/audit/script/portable checks passed at 0.13.0: seven native
+  suites plus three independent daily runs, Windows debug/release, current 369-crate /
+  1430-advisory audit, launcher/sampler, 2 experimental and 5 production Python tests.
+- Additional actual running legacy-v0.12 test reproduced/refuses mapped executable
+  replacement using a non-writing CreateFile probe. All lifecycle/full contents/optional
+  desktop/unowned-file checks pass. Strict verifier now passes 36 refusals, including
+  newline/type cases. Its fractional-number test was corrected because JSON serialized
+  an integral double as an integer (not an invalid input).
+- Actual installed executable GUI: title/icon/new-tab, address and HTTPS rendering,
+  Ctrl+T/Ctrl+Tab, normal close/restart with two tabs/active URL retained. Normal
+  diagnostics show two clean shutdowns and no failures. Installed test identity removed
+  by CLI; its disposable profile remains. No production profile/registration used.
+- First CI measurements exposed duplicate fixture target in the ~503 MB production
+  cache (fixture itself ~119 MB; production cache save 106 s). Relocated fixture target
+  to output root / runner temp and new isolated production namespace. Must verify this
+  change, final installer guards, updated docs and exact final PR-head CI. No speedup
+  claim before measurements. Release app builds remain clean; audit-only cache unmeasured.
+- README, installation/recovery, changelog/security/validation, installer design/threat
+  model and CI docs updated. Next: commit/push latest fixes/docs, review diff/CI,
+  record relocated cold/warm evidence and final-head status, then mark PR ready only
+  if required checks pass. Do not merge/tag/publish/deploy.
+- Still unverified: clean machine/Windows 10, missing/old runtimes, physical installer
+  wizard interaction, mid-copy/power-loss/full-disk recovery and signed distribution.
+
 ## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
 
 Completed (all local gates passed at 0.12.0; see VALIDATION.md):

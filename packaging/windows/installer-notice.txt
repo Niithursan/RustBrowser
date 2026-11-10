@@ -1,0 +1,9 @@
+Rust Browser is experimental and unsigned. No publisher authenticity or Windows reputation guarantee is provided.
+
+This installer writes application files and current-user shortcuts/Apps & Features registration. It does not register protocols, change your default browser, install services, or download/install runtimes.
+
+Microsoft Evergreen WebView2 Runtime and the latest supported x64 Visual C++ v14 Runtime must already be installed. Obtain them from Microsoft; do not download loose DLL files.
+
+Close every Rust Browser window before upgrading. Back up the closed profile first. Bookmarks, history, settings, permissions, cookies and sessions remain in their separate existing profile; downloaded files remain in their chosen folders. Uninstall removes application-owned files and shortcuts, not browsing data.
+
+The fixed install directory is separate from the profile. Existing unowned directories and downgrades are refused. In-place installation is not a power-loss transaction. Preserve the previous installer/portable application and a compatible whole-profile backup for manual recovery.

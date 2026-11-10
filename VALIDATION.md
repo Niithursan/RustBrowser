@@ -1,5 +1,94 @@
 # Validation
 
+## Version 0.13.0
+
+Baseline: verified PR #16 squash `71ff43eb9f4269c2047ab1fcc9965b8785d320a1`,
+version 0.12.0. Main Windows CI 42721919432 and security 42721919854 passed before
+branching. Work is on `feat/v0.13-windows-release-readiness`, [PR #17](https://github.com/Niithursan/RustBrowser/pull/17).
+No merge, tag, release publication, deployment or real profile modification.
+
+Local Windows 11 Pro x64, Rust 1.99.1/MSVC, SDK 10.0.22621.0, WebView2
+157.0.4341.42, 2026-11-09 Toronto. Passed:
+
+- Formatting, strict Clippy, **69 regular tests**. The new running-marker and rich
+  profile tests are included; opt-in installer/diagnostic child helpers run through
+  their parents/harnesses, separate from nine opt-in main native/benchmark tests.
+- Seven separate preserved native WebView2 suites and **three** independent daily
+  TLS/modern/accessibility/navigation runs; every invocation passed.
+- Windows debug/release builds. Fresh audit: 369 crates, 1,430 advisory records,
+  no denied warnings under the unchanged reviewed exceptions. No crate added/updated;
+  existing Windows API feature gates and root Cargo.lock version changed.
+- Sampler/launcher PowerShell regressions, two experimental Python tests and five
+  production Python tests (including icon generation/frame bounds).
+- Portable deterministic ZIP, metadata/hash/allowlist, version/x64 and unsafe-output tests.
+- Actual Inno 6.7.4 controlled lifecycle: fixed validation identity/directory, v0.12
+  binary → v0.13 upgrade, full installed contents, HKCU registration, Start Menu and
+  opt-in desktop shortcut, exact executable/CLI launch, uninstall and reinstall.
+  Hashes and typed readers preserve tabs/active/pins/settings, folders/bookmarks/history,
+  permissions, opaque site data and downloaded bytes. Unowned app files survive removal.
+- Invalid/future/downgrade metadata, profile destination, reparse path and running
+  install/uninstall refusals. An actual running v0.12 binary without the new mutex
+  is refused by the non-writing mapped-file probe; only its owned test process is stopped.
+- Manual verifier: valid integrity/pin/explicit same-version repair plus **36**
+  malformed/newline/type/path/duplicate/tampered/missing/downgrade refusal cases.
+  It never executes an artifact or reports publisher authentication.
+
+The same installer source is compiled with GUID test identity/destination. Production
+registration is not exercised against this user's actual installation. v0.12 is
+repackaged by that harness because no historical v0.12 installer exists. Separate
+pinned-source baseline target reproduced a clean local build in 37.834 seconds.
+First PR-head `694f4de` Windows aggregate and audit passed.
+
+**Independent re-verification (Claude Code continuation, 2026-11-09).** These ran on
+the application code at `cb7a4b1` and docs-only follow-ups:
+
+- **Local gates, all passed:**
+  - fmt and strict Clippy (0 findings)
+  - 69 regular tests
+  - all seven native suites and 3/3 daily runs
+  - debug and release builds
+  - sampler, five production and two experimental Python tests
+  - portable package tests
+  - `cargo audit`
+- **Local installer lifecycle, all passed:**
+  - the pinned v0.12 fixture rebuilt cold in 43.2 s
+  - fresh install, then the 0.12 → 0.13 upgrade
+  - exact payload allowlist and CLI launch
+  - downgrade, invalid-version, running-instance, reparse-point and profile-directory refusals
+  - uninstall and reinstall, with the optional desktop shortcut
+  - hash and typed-reader profile/download preservation
+  - the 36-case metadata suite
+- **The user's real profile was untouched:** before and after, all 306 files under
+  `%LOCALAPPDATA%\RustBrowser0.1` matched by path, size and write time. The test
+  identity left no uninstall key, Start Menu folder or desktop shortcut, and no
+  production installation exists.
+- **CI review bundle (run 42726540504) checked independently:**
+  - both `.sha256` files and the release JSON match the downloaded bytes
+  - the ZIP holds exactly the seven manifest files plus `package.json`, every size
+    and SHA-256 matching
+  - no personal paths, profile paths, credentials or keys in shipped text
+  - installer metadata reports 0.13.0 and Authenticode `NotSigned`
+  - the manual verifier accepts a pinned 0.12.0 → 0.13.0 upgrade while reporting
+    `PublisherAuthenticated: False`, and refuses same-version and wrong-pin input
+  - the recorded source commit `973804d` is GitHub's merge of `cb7a4b1` into `main`;
+    see [packaging notes](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md)
+- **Release GUI startup:** a disposable profile showed the 0.13.0 title and icon and
+  rendered HTTPS. It closed cleanly with no remaining process, and `--version`
+  prints `Rust Browser 0.13.0`.
+- **CI:** cold and warm timings are in [CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md).
+  Warm CI is not faster than v0.12; it adds the installer lifecycle.
+
+Actual installed-application GUI smoke passed in a new disposable profile: 0.13.0
+title and globe icon, new-tab chrome, address entry, public HTTPS rendering/loading,
+Ctrl+T and Ctrl+Tab, normal Alt+F4 close and restart preserving two tabs/active URL.
+The shipping executable hash was `3e787b4102a1e2ec1aa6786b04cd01c0e95ac2eccb0e9a45f9ecdc7153399989`.
+No complete installer wizard interaction or clean-machine install claim is made.
+Unverified: Windows 10, missing/obsolete runtime host, actual standard-user clean VM,
+mid-copy kill/full disk/power-loss transaction, signed artifacts/update infrastructure,
+physical mixed DPI/IME/screen reader and real-profile upgrade. Existing v0.12 browsing
+limitations remain. See [installer design](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/README.md),
+[install/recovery](INSTALL_WINDOWS.md) and [update security](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md).
+
 ## Version 0.12.0
 
 Baseline: PR #14 squash `fef457a` (0.11.0). Work is on

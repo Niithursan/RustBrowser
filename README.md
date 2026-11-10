@@ -1,9 +1,17 @@
-# Rust Browser 0.12.0
+# Rust Browser 0.13.0
 
 A Windows browser starter with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.13 adds an unsigned **per-user Windows installer**, Start Menu and optional
+desktop shortcuts, Apps & Features removal, upgrade/profile-preservation checks,
+application icons and a manual artifact verifier. Portable ZIPs remain supported.
+No automatic updater, runtime installation or default-browser/protocol registration
+is added. Follow [installation and recovery](INSTALL_WINDOWS.md) and
+[update authentication limits](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md). `--version`
+prints the version without opening a profile. This work publishes no release.
 
 v0.12 redesigns the toolbar: the address line shows a plain connection word and
 the site's host emphasised, tabs are text with a coloured rule under the active

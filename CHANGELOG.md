@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.12.0 (unreleased; awaiting review)
+## 0.13.0 (unreleased)
+
+- Added an unsigned per-user Inno Setup installer alongside the portable ZIP:
+  Start Menu, optional desktop shortcut, HKCU Apps & Features and owned-file removal.
+  No elevation request, runtime download, default-browser/protocol registration or updater.
+- Preserved the existing profile path, session format 1 and SQLite schema 3. Installer
+  refuses unowned/profile/reparse destinations, invalid versions, downgrades and running
+  installed executables, including v0.12. Synthetic upgrade/uninstall/reinstall checks
+  preserve sessions, pins, settings, library, permissions, opaque site data and downloads.
+- Added source-owned multi-size globe branding in PE/window/taskbar/installer resources,
+  a non-exclusive process-lifetime installer marker, and profile-free `--version` output.
+- Added bounded unsigned release metadata and a non-executing manual integrity verifier.
+  Signed update infrastructure remains blocked; matching hashes do not authenticate a publisher.
+- Extended cached/parallel PR CI with actual pinned-v0.12 upgrade fixtures, installer tests,
+  tamper/version/path failure checks and review bundles. Retained aggregate/audit/native
+  gates, no duplicate feature pushes and manual publication approval/permissions.
+- Documented install/upgrade/removal/recovery and signing limits. Clean-machine/Windows 10,
+  mid-copy/power-loss recovery and cross-machine binary reproducibility remain unverified.
+
+## 0.12.0 (unreleased)
 
 - CI: pull requests, `main` and manual runs only (no duplicate feature-branch push
   runs); SHA-pinned dependency caching; parallel release build and packaging job;

@@ -78,19 +78,57 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0 # exact pinned v0.12 upgrade fixture, never a mutable release download
       - name: Install Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Old installer-fixture builds were nested in target and duplicated
+          # in this cache. Start a separate production namespace after moving them.
+          shared-key: v013-production-only
       - run: cargo build --locked --release
       - name: Portable package metadata, integrity and output safety
         shell: powershell
         run: |
           $commit = git rev-parse HEAD
           .\tests\windows_package.ps1 -Executable target/release/rust-browser.exe -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-packaging-tests') -SourceCommit $commit
+      - name: Cache immutable upgrade-fixture build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/rust-browser-install-baseline/target-v012
+          key: installer-fixture-v2-71ff43eb9f4269c2047ab1fcc9965b8785d320a1-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
+      - name: Installer lifecycle, profile preservation and artifact verification
+        id: installer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $compiler = .\packaging\windows\install-inno.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'rust-browser-inno')
+          $baseline = .\tests\build_install_baseline.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-install-baseline')
+          "Baseline build seconds: $($baseline.build_seconds)"
+          $output = .\tests\windows_installer.ps1 -Executable target/release/rust-browser.exe -BaselineExecutable $baseline.executable -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-installer-tests') -Compiler $compiler -SourceCommit (git rev-parse HEAD)
+          $package = $output | Where-Object { $_ -isnot [string] -and $_.metadata } | Select-Object -Last 1
+          $output | Where-Object { $_ -is [string] }
+          if (-not $package) { throw 'Installer tests returned no validated package' }
+          .\tests\release_metadata.ps1 -MetadataPath $package.metadata -OutputRoot (Join-Path $env:RUNNER_TEMP 'rust-browser-release-metadata')
+          "installer=$($package.installer)" >> $env:GITHUB_OUTPUT
+          "installer_checksum=$($package.installer_checksum)" >> $env:GITHUB_OUTPUT
+          "archive=$($package.archive)" >> $env:GITHUB_OUTPUT
+          "checksum=$($package.checksum)" >> $env:GITHUB_OUTPUT
+          "metadata=$($package.metadata)" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rust-browser-windows-x64
           path: target/release/rust-browser.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-browser-windows-review-packages
+          path: |
+            ${{ steps.installer.outputs.installer }}
+            ${{ steps.installer.outputs.installer_checksum }}
+            ${{ steps.installer.outputs.archive }}
+            ${{ steps.installer.outputs.checksum }}
+            ${{ steps.installer.outputs.metadata }}
           if-no-files-found: error
 
   # Single stable check name for branch protection if it is enabled later.

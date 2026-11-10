@@ -43,6 +43,7 @@ fn resource_compiler() -> io::Result<PathBuf> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=packaging/windows/app.manifest");
+    println!("cargo:rerun-if-changed=packaging/windows/rust-browser.ico");
     println!("cargo:rerun-if-env-changed=WindowsSdkVerBinPath");
     if env::var("CARGO_CFG_TARGET_OS")? != "windows" {
         return Ok(());
@@ -72,10 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resource = output.join("application.rc");
     let result = output.join("application.res");
     let manifest = manifest.to_string_lossy().replace('\\', "\\\\");
+    let icon = env::current_dir()?.join("packaging/windows/rust-browser.ico");
+    let icon = icon.to_string_lossy().replace('\\', "\\\\");
     fs::write(
         &resource,
         format!(
             r#"1 24 "{manifest}"
+1 ICON "{icon}"
 1 VERSIONINFO
 FILEVERSION {},{},{},0
 PRODUCTVERSION {},{},{},0
