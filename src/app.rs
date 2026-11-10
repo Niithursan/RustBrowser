@@ -56,7 +56,7 @@ pub enum Event {
     Fullscreen(TabId, bool),
     StorageError,
     DiagnosticsUpdated(diagnostics::Report),
-    RendererFailed,
+    EngineProcess(TabId, crate::native_activity::Failure),
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
     DownloadStopped(u64, i32),
@@ -73,6 +73,40 @@ fn content_target(url: &str) -> Result<LoadTarget, rust_browser::engine_api::Inv
     } else {
         LoadTarget::web(url)
     }
+}
+
+/// A closed tab's view stays hidden this long before it is destroyed. Destroying a
+/// view that was visible moments earlier can crash the shared WebView2 browser
+/// process (measured in VALIDATION.md); 300 ms was the shortest safe delay observed.
+const RETIRE_DELAY: Duration = Duration::from_secs(1);
+/// Closing tabs faster than they retire destroys the oldest hidden view early.
+const MAX_RETIRED: usize = 16;
+/// Automatic engine restarts allowed within `ENGINE_RESTART_WINDOW`.
+const MAX_ENGINE_RESTARTS: usize = 3;
+const ENGINE_RESTART_WINDOW: Duration = Duration::from_secs(120);
+
+/// Bound automatic restarts so a persistently crashing engine cannot loop.
+fn admit_engine_restart(history: &mut Vec<Instant>, now: Instant) -> bool {
+    history.retain(|at| now.duration_since(*at) < ENGINE_RESTART_WINDOW);
+    if history.len() >= MAX_ENGINE_RESTARTS {
+        return false;
+    }
+    history.push(now);
+    true
+}
+
+fn http_status_message(code: u16) -> String {
+    let meaning = match code {
+        400 => "the request was not understood",
+        401 | 407 => "authentication is required",
+        403 => "access is not allowed",
+        404 | 410 => "the page was not found",
+        408 | 504 => "the website took too long",
+        429 => "too many requests were sent; wait before retrying",
+        500..=599 => "the website has a problem; retry later",
+        _ => "the request was refused",
+    };
+    format!("The website answered with HTTP {code}: {meaning}.")
 }
 
 struct Page {
@@ -96,6 +130,8 @@ struct Clearing {
 // Drop views before contexts and the parent window. Store flushes and releases its lock last.
 struct Session {
     tabs: Tabs<Page>,
+    /// Hidden views of closed tabs awaiting destruction, oldest first.
+    retired: Vec<(Instant, Page)>,
     toolbar: WebView,
     content_context: WebContext,
     _toolbar_context: WebContext,
@@ -117,6 +153,9 @@ struct Session {
     popups: native_popup::Shared,
     fullscreen: Option<TabId>,
     focus_pending: bool,
+    /// The content browser process ended; views are rebuilt on the next idle turn.
+    engine_lost: bool,
+    engine_restarts: Vec<Instant>,
     profile: PathBuf,
     private: bool,
     ready: bool,
@@ -243,6 +282,7 @@ impl Session {
         engine::accelerators(&toolbar, proxy.clone())?;
         let mut session = Self {
             tabs: Tabs::default(),
+            retired: Vec::new(),
             toolbar,
             content_context,
             _toolbar_context: toolbar_context,
@@ -274,6 +314,8 @@ impl Session {
             popups: Rc::new(RefCell::new(native_popup::Manager::default())),
             fullscreen: None,
             focus_pending: false,
+            engine_lost: false,
+            engine_restarts: Vec::new(),
             ready: false,
             clearing: None,
             next_clear: 0,
@@ -322,9 +364,14 @@ impl Session {
         if session.library_action(Action::Refresh).is_err() {
             session.notice="Library database is unavailable. Browsing remains available; check profile access or use the browser version that created this library.".into();
         }
-        // Reset WebView2's legacy remembered permission states before any website
-        // loads. All new decisions are scoped in our library with SavesInProfile=false.
-        if let Some(tab) = session.tabs.active() {
+        session.reset_engine_permissions()?;
+        Ok(session)
+    }
+
+    /// Reset WebView2's legacy remembered permission states before any website
+    /// loads. All new decisions are scoped in our library with SavesInProfile=false.
+    fn reset_engine_permissions(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(tab) = self.tabs.active() {
             native_security::clear(
                 &tab.content.engine.view,
                 &ClearRequest {
@@ -334,10 +381,10 @@ impl Session {
                 },
                 true,
                 0,
-                session.proxy.clone(),
+                self.proxy.clone(),
             )?;
         }
-        Ok(session)
+        Ok(())
     }
 
     fn open_tab(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
@@ -368,20 +415,7 @@ impl Session {
         >,
     ) -> Result<Page, Box<dyn std::error::Error>> {
         let id = self.tabs.next_id();
-        let engine = Engine::new(
-            &self.window,
-            &mut self.content_context,
-            self.proxy.clone(),
-            id,
-            self.downloads.clone(),
-            self.permissions.clone(),
-            engine::Options {
-                private: self.private,
-                environment: environment.clone(),
-            },
-        )?;
-        engine::accelerators(&engine.view, self.proxy.clone())?;
-        native_popup::install(&engine.view, self.popups.clone(), self.proxy.clone(), id)?;
+        let engine = self.build_engine(id, environment.clone())?;
         if self.ready && environment.is_none() {
             engine.load(&content_target(url)?)?;
         }
@@ -397,6 +431,141 @@ impl Session {
             lifecycle: Lifecycle::default(),
             opener: None,
         })
+    }
+
+    fn build_engine(
+        &mut self,
+        id: TabId,
+        environment: Option<
+            webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
+        >,
+    ) -> Result<Engine, Box<dyn std::error::Error>> {
+        let engine = Engine::new(
+            &self.window,
+            &mut self.content_context,
+            self.proxy.clone(),
+            id,
+            self.downloads.clone(),
+            self.permissions.clone(),
+            engine::Options {
+                private: self.private,
+                environment,
+            },
+        )?;
+        engine::accelerators(&engine.view, self.proxy.clone())?;
+        native_popup::install(&engine.view, self.popups.clone(), self.proxy.clone(), id)?;
+        Ok(engine)
+    }
+
+    /// Hide a closed tab's view now and destroy it after `RETIRE_DELAY`.
+    fn retire(&mut self, page: Page) {
+        // A view that cannot be hidden is already unusable; it is still only dropped.
+        let _ = page.engine.set_visible(false);
+        if self.retired.len() >= MAX_RETIRED {
+            self.retired.remove(0);
+        }
+        self.retired.push((Instant::now() + RETIRE_DELAY, page));
+    }
+
+    /// Destroy retired views whose delay has passed. Returns the next deadline.
+    fn reap_retired(&mut self) -> Option<Instant> {
+        let now = Instant::now();
+        let before = self.retired.len();
+        self.retired.retain(|(deadline, _)| *deadline > now);
+        if self.retired.len() != before {
+            // Engine data clearing waits until no document of a closed tab remains.
+            self.start_engine_clear();
+        }
+        self.retired.first().map(|(deadline, _)| *deadline)
+    }
+
+    fn process_failed(&mut self, id: TabId, failure: crate::native_activity::Failure) {
+        use crate::native_activity::Failure;
+        match failure {
+            // Every view of the profile reports this once; recover a single time.
+            Failure::Browser => self.engine_lost = true,
+            Failure::Renderer => {
+                self.diagnostics.record(DiagnosticCode::RendererFailed);
+                self.page_event(
+                    id,
+                    PageEvent::Error(
+                        "This page's WebView2 process failed. Use Reload to recover it; unsaved page changes may be lost."
+                            .into(),
+                    ),
+                );
+            }
+            Failure::Unresponsive => {
+                if self.tabs.items.iter().any(|tab| tab.id == id) {
+                    self.notice =
+                        "A page is not responding. Wait for it, or use Reload or close its tab."
+                            .into();
+                }
+            }
+            // WebView2 restarts these helpers itself; the page is still usable.
+            Failure::Helper => {}
+        }
+    }
+
+    /// Replace every content view after the shared browser process ended. Tab
+    /// identity, order, pins and addresses are kept; documents are reloaded.
+    fn recover_engine(&mut self) {
+        self.engine_lost = false;
+        self.diagnostics.record(DiagnosticCode::EngineRestarted);
+        if !admit_engine_restart(&mut self.engine_restarts, Instant::now()) {
+            self.notice = "The browser engine keeps stopping and was not restarted again. Restart Rust Browser; open tabs are saved.".into();
+            return;
+        }
+        // Deferrals and operations of the ended process can no longer complete.
+        self.permissions.borrow_mut().cancel_all();
+        self.popups.borrow_mut().clear();
+        self.retired.clear();
+        self.fullscreen = None;
+        self.window.set_fullscreen(None);
+        let mut failed = false;
+        for index in 0..self.tabs.items.len() {
+            let id = self.tabs.items[index].id;
+            match self.build_engine(id, None) {
+                Ok(engine) => {
+                    let ready = self.ready;
+                    let tab = &mut self.tabs.items[index];
+                    let loaded = !ready
+                        || content_target(&tab.url)
+                            .map_err(Box::<dyn std::error::Error>::from)
+                            .and_then(|target| engine.load(&target))
+                            .is_ok();
+                    failed |= !loaded;
+                    tab.content = Page {
+                        engine,
+                        state: State {
+                            url: tab.url.clone(),
+                            loading: loaded,
+                            failed: !loaded,
+                            message: if loaded {
+                                "Connecting…"
+                            } else {
+                                "Error: This tab could not be reloaded."
+                            }
+                            .into(),
+                            ..State::default()
+                        },
+                        lifecycle: Lifecycle::default(),
+                        opener: None,
+                    };
+                }
+                Err(_) => failed = true,
+            }
+        }
+        // Startup security initialization was lost with the old process.
+        if !self.ready && self.reset_engine_permissions().is_err() {
+            failed = true;
+        }
+        failed |= self.activate().is_err();
+        self.notice = if failed {
+            "The browser engine stopped and could not be fully restarted. Restart Rust Browser; open tabs are saved."
+        } else {
+            "The browser engine stopped unexpectedly and was restarted. Open pages were reloaded; unsaved page work and unfinished downloads may be lost."
+        }
+        .into();
     }
 
     fn effective_panel(&self) -> Option<Panel> {
@@ -647,7 +816,9 @@ impl Session {
         if self.tabs.items.len() == 1 && self.tabs.active().is_some_and(|tab| tab.id == id) {
             self.open_tab(navigation::HOME.into())?;
         }
-        self.tabs.close(id);
+        if let Some(tab) = self.tabs.close(id) {
+            self.retire(tab.content);
+        }
         if let Some(opener) = return_to {
             self.tabs.select(opener);
         }
@@ -1064,6 +1235,7 @@ impl Session {
             }
             PageEvent::Completed {
                 error,
+                http_status,
                 navigation_id,
                 url,
                 title,
@@ -1072,6 +1244,7 @@ impl Session {
                     self.diagnostics.record(DiagnosticCode::NavigationFailed);
                 }
                 if error.is_none()
+                    && http_status.is_none()
                     && self.settings.history_enabled
                     && !self.private
                     && self.clearing.is_none()
@@ -1092,10 +1265,13 @@ impl Session {
                 }
                 tab.content.state.loading = false;
                 tab.content.state.failed = error.is_some();
-                tab.content.state.message =
-                    error.map(|e| format!("Error: {e}")).unwrap_or_else(|| {
+                tab.content.state.message = match (error, http_status) {
+                    (Some(error), _) => format!("Error: {error}"),
+                    (None, Some(code)) => http_status_message(code),
+                    (None, None) => {
                         "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
-                    });
+                    }
+                };
             }
             PageEvent::Error(error) => {
                 self.diagnostics.record(DiagnosticCode::NavigationFailed);
@@ -1314,7 +1490,9 @@ impl Session {
             results: Vec::new(),
         });
         // Keep monotonically increasing tab IDs so late events cannot target a new tab.
-        self.tabs.items.clear();
+        for tab in std::mem::take(&mut self.tabs.items) {
+            self.retire(tab.content);
+        }
         self.tabs.push("about:blank".into(), neutral)?;
         self.panel = Some(Panel::Settings);
         self.activate()?;
@@ -1364,7 +1542,8 @@ impl Session {
         let Some(clear) = &mut self.clearing else {
             return;
         };
-        if clear.started_native {
+        // Documents of the closed tabs must be gone before their data is cleared.
+        if clear.started_native || !self.retired.is_empty() {
             return;
         }
         let Some(tab) = self.tabs.active() else {
@@ -1413,6 +1592,40 @@ impl Session {
 }
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn engine_restarts_are_bounded_within_the_window_and_allowed_again_after_it() {
+        let start = Instant::now();
+        let mut history = Vec::new();
+        for attempt in 0..MAX_ENGINE_RESTARTS {
+            assert!(admit_engine_restart(
+                &mut history,
+                start + Duration::from_secs(attempt as u64)
+            ));
+        }
+        assert!(!admit_engine_restart(
+            &mut history,
+            start + Duration::from_secs(10)
+        ));
+        assert!(admit_engine_restart(
+            &mut history,
+            start + ENGINE_RESTART_WINDOW + Duration::from_secs(5)
+        ));
+    }
+    #[test]
+    fn server_error_statuses_have_specific_non_connection_messages() {
+        assert!(http_status_message(404).contains("HTTP 404: the page was not found"));
+        assert!(http_status_message(429).contains("too many requests"));
+        assert!(http_status_message(503).contains("retry later"));
+        for code in [400, 401, 403, 404, 418, 500, 503] {
+            let message = http_status_message(code);
+            assert!(!message.starts_with("Error:") && !message.contains("connection"));
+        }
+    }
+}
+
+#[cfg(test)]
 #[path = "app_validation.rs"]
 mod validation;
 
@@ -1432,11 +1645,40 @@ mod compat_validation;
 #[path = "daily_validation.rs"]
 mod daily_validation;
 
+#[cfg(test)]
+#[path = "survey_validation.rs"]
+mod survey_validation;
+
+#[cfg(test)]
+#[path = "reliability_validation.rs"]
+mod reliability_validation;
+
 struct App {
     session: Option<Session>,
     proxy: EventLoopProxy<Event>,
     failure: Option<String>,
     modifiers: ModifiersState,
+    /// Set once the window is closing: when the hidden views may be destroyed.
+    closing: Option<Instant>,
+}
+impl App {
+    /// Hide everything now and destroy the views after `RETIRE_DELAY`, for the same
+    /// reason closed tabs are retired: destroying a visible view can crash the
+    /// WebView2 browser process while it is writing profile data.
+    fn begin_shutdown(&mut self) {
+        if self.closing.is_some() {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.persist();
+            session.window.set_visible(false);
+            for tab in &session.tabs.items {
+                let _ = tab.content.engine.set_visible(false);
+            }
+            let _ = session.toolbar.set_visible(false);
+        }
+        self.closing = Some(Instant::now() + RETIRE_DELAY);
+    }
 }
 impl ApplicationHandler<Event> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1497,11 +1739,8 @@ impl ApplicationHandler<Event> for App {
                     session.render();
                     return;
                 }
-                if let Some(session) = &self.session {
-                    session.persist();
-                }
-                self.session = None;
-                event_loop.exit();
+                self.begin_shutdown();
+                event_loop.set_control_flow(ControlFlow::Poll);
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(session) = &mut self.session
@@ -1523,6 +1762,9 @@ impl ApplicationHandler<Event> for App {
         }
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        if self.closing.is_some() {
+            return;
+        }
         if self
             .session
             .as_ref()
@@ -1530,8 +1772,8 @@ impl ApplicationHandler<Event> for App {
             && (matches!(&event, Event::Command(Command::CloseActive))
                 || matches!(&event,Event::PageClose(id) if self.session.as_ref().is_some_and(|s|s.tabs.active().is_some_and(|t|t.id==*id && t.content.opener.is_some()))))
         {
-            self.session = None;
-            event_loop.exit();
+            self.begin_shutdown();
+            event_loop.set_control_flow(ControlFlow::Poll);
             return;
         }
         let Some(session) = &mut self.session else {
@@ -1544,7 +1786,7 @@ impl ApplicationHandler<Event> for App {
                     session.notice = "The previous normal window did not finish cleanly. Only committed session data can be restored; unsaved page work may be lost.".into();
                 }
             }
-            Event::RendererFailed => session.diagnostics.record(DiagnosticCode::RendererFailed),
+            Event::EngineProcess(id, failure) => session.process_failed(id, failure),
             Event::PopupRequested(ticket) => {
                 if let Err(error) = session.open_popup(ticket) {
                     session.notice = format!("Error: {error}");
@@ -1675,7 +1917,21 @@ impl ApplicationHandler<Event> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(deadline) = self.closing {
+            if Instant::now() >= deadline {
+                self.session = None;
+                event_loop.exit();
+            } else {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            }
+            return;
+        }
         if let Some(session) = &mut self.session {
+            if session.engine_lost {
+                session.recover_engine();
+                session.render();
+            }
+            let retiring = session.reap_retired();
             session.popups.borrow_mut().expire();
             if session.background_tick() {
                 session.render();
@@ -1697,22 +1953,22 @@ impl ApplicationHandler<Event> for App {
             if session.downloads.borrow_mut().poll(&session.proxy) {
                 session.render();
             }
-            if session.downloads.borrow().active_count() > 0
+            let periodic = if session.downloads.borrow().active_count() > 0
                 || session.permissions.borrow().prompt().is_some()
                 || session.clearing.is_some()
             {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(
-                    Instant::now() + Duration::from_millis(250),
-                ));
+                Some(Instant::now() + Duration::from_millis(250))
+            } else if session.settings.automatic_suspension && session.tabs.items.len() > 1 {
+                Some(session.next_background)
             } else {
-                event_loop.set_control_flow(
-                    if session.settings.automatic_suspension && session.tabs.items.len() > 1 {
-                        ControlFlow::WaitUntil(session.next_background)
-                    } else {
-                        ControlFlow::Wait
-                    },
-                );
-            }
+                None
+            };
+            // Wake for whichever comes first; idle sessions still wait without polling.
+            event_loop.set_control_flow(match (periodic, retiring) {
+                (Some(a), Some(b)) => ControlFlow::WaitUntil(a.min(b)),
+                (Some(at), None) | (None, Some(at)) => ControlFlow::WaitUntil(at),
+                (None, None) => ControlFlow::Wait,
+            });
         }
     }
 }
@@ -1724,6 +1980,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         proxy: event_loop.create_proxy(),
         failure: None,
         modifiers: ModifiersState::default(),
+        closing: None,
     };
     event_loop.run_app(&mut app)?;
     if let Some(error) = app.failure {

@@ -50,6 +50,7 @@ fn engine_events_are_owned_and_can_report_navigation_failure_without_native_type
     }
     let event = send_owned(PageEvent::Completed {
         error: Some("Fixture failed".into()),
+        http_status: None,
         navigation_id: 7,
         url: "https://example.com/".into(),
         title: "Fixture".into(),

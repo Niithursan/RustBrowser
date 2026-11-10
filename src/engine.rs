@@ -45,6 +45,11 @@ struct NavigationProgress {
     superseded: std::cell::RefCell<Vec<String>>,
     /// Navigation IDs whose late start was rejected (covers their redirects).
     rejected: std::cell::RefCell<Vec<u64>>,
+    /// Target of the last reported connection failure. WebView2 follows such a
+    /// failure with an engine-initiated navigation to the same address.
+    failed_target: std::cell::RefCell<Option<String>>,
+    /// That follow-up navigation: no loading feedback, and its abort is not news.
+    follow_up: std::cell::Cell<Option<u64>>,
 }
 
 /// State captured before a host navigation so a rejected request can restore it.
@@ -71,6 +76,9 @@ impl NavigationProgress {
     fn supersede(&self) -> Superseded {
         // Navigate can synchronously abort the old document before the next
         // NavigationStarting callback. Its completion is already obsolete.
+        // A host command also ends any pairing with an earlier failure.
+        self.failed_target.borrow_mut().take();
+        self.follow_up.set(None);
         Superseded {
             current: self.current.get(),
             finished: self.finished.replace(true),
@@ -102,6 +110,19 @@ impl NavigationProgress {
     }
     fn start_document(&self, id: u64, uri: &str) -> bool {
         if self.rejected.borrow().contains(&id) {
+            return false;
+        }
+        // Only the very next start can be the engine's follow-up to a failure.
+        let failed = self.failed_target.borrow_mut().take();
+        if self.follow_up.get() == Some(id) {
+            // A redirect: this is a real load after all, so report it.
+            self.follow_up.set(None);
+        } else if !self.awaiting_web_start.get()
+            && self.current.get() != Some(id)
+            && failed.is_some_and(|target| target == normalized(uri))
+        {
+            self.begin(id);
+            self.follow_up.set(Some(id));
             return false;
         }
         if self.awaiting_web_start.get() {
@@ -139,6 +160,19 @@ impl NavigationProgress {
     }
     fn finish(&self, id: u64) -> bool {
         self.current.get() == Some(id) && !self.finished.replace(true)
+    }
+    /// Remember a reported connection failure so its follow-up can be recognized.
+    fn failed(&self, uri: &str) {
+        *self.failed_target.borrow_mut() = Some(normalized(uri));
+    }
+    /// True when `id` is the engine's follow-up to an already reported failure
+    /// and it merely aborted. Any other outcome of that navigation is reported.
+    fn follow_up_aborted(&self, id: u64, status: Option<COREWEBVIEW2_WEB_ERROR_STATUS>) -> bool {
+        if self.follow_up.get() != Some(id) {
+            return false;
+        }
+        self.follow_up.set(None);
+        status == Some(COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED)
     }
     fn cancelled(&self, id: u64, status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
         status == COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
@@ -178,6 +212,13 @@ fn navigation_error(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> &'static str {
         }
         _ => "The page could not be loaded. Check the address and connection, then retry",
     }
+}
+
+/// The response code of a navigation that failed only because the server
+/// answered with an error status.
+fn http_error(status: COREWEBVIEW2_WEB_ERROR_STATUS, http: i32) -> Option<u16> {
+    (status == COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN && (400..=599).contains(&http))
+        .then_some(http as u16)
 }
 
 impl Engine {
@@ -311,11 +352,27 @@ impl Engine {
                         }
                         let mut success = BOOL::default();
                         args.IsSuccess(&mut success)?;
-                        let error = if success.as_bool() {
+                        let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+                        let mut http = 0;
+                        if !success.as_bool() {
+                            args.WebErrorStatus(&mut status)?;
+                            if let Ok(extended) =
+                                args.cast::<ICoreWebView2NavigationCompletedEventArgs2>()
+                            {
+                                extended.HttpStatusCode(&mut http)?;
+                            }
+                        }
+                        if completion
+                            .follow_up_aborted(navigation_id, (!success.as_bool()).then_some(status))
+                        {
+                            return Ok(());
+                        }
+                        // WebView2 reports 4xx/5xx responses as unsuccessful with an
+                        // unknown web error. The server answered: not a connection failure.
+                        let http_status = http_error(status, http);
+                        let error = if success.as_bool() || http_status.is_some() {
                             None
                         } else {
-                            let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
-                            args.WebErrorStatus(&mut status)?;
                             if completion.cancelled(navigation_id, status) {
                                 let _ = completed_proxy
                                     .send_event(Event::Page(id, PageEvent::Cancelled));
@@ -337,10 +394,14 @@ impl Engine {
                             sender.DocumentTitle(&mut value)?;
                             title = webview2_com::take_pwstr(value);
                         }
+                        if error.is_some() {
+                            completion.failed(&url);
+                        }
                         let _ = completed_proxy.send_event(Event::Page(
                             id,
                             PageEvent::Completed {
                                 error,
+                                http_status,
                                 navigation_id,
                                 url,
                                 title,
@@ -586,6 +647,79 @@ mod tests {
         assert!(!progress.finish(2));
         progress.begin(3);
         assert!(progress.finish(3));
+    }
+    #[test]
+    fn engine_follow_up_to_a_failure_is_silent_and_its_abort_is_not_reported() {
+        // Regression: an unresolved host reported status 13, then WebView2 started
+        // a second navigation to the same address that aborted with status 9 and
+        // replaced the real reason.
+        let aborted = Some(COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED);
+        let progress = NavigationProgress::default();
+        let first = progress.supersede();
+        progress.expect(&first, "https://missing.invalid/");
+        assert!(progress.start_document(5, "https://missing.invalid/"));
+        assert!(progress.finish(5));
+        assert!(!progress.follow_up_aborted(
+            5,
+            Some(COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED)
+        ));
+        progress.failed("https://missing.invalid/");
+        assert!(!progress.start_document(6, "https://missing.invalid/"));
+        assert!(progress.finish(6));
+        assert!(progress.follow_up_aborted(6, aborted));
+        // The pairing is consumed: a later retry of the same address is ordinary.
+        assert!(progress.start_document(7, "https://missing.invalid/"));
+        assert!(progress.finish(7));
+        assert!(!progress.follow_up_aborted(7, aborted));
+    }
+    #[test]
+    fn follow_up_that_loads_or_fails_differently_is_still_reported() {
+        let aborted = Some(COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED);
+        let progress = NavigationProgress::default();
+        progress.failed("https://flaky.test/");
+        assert!(!progress.start_document(2, "https://flaky.test/"));
+        assert!(progress.finish(2));
+        assert!(
+            !progress.follow_up_aborted(2, None),
+            "a successful follow-up must be shown"
+        );
+        progress.failed("https://flaky.test/");
+        assert!(!progress.start_document(3, "https://flaky.test/"));
+        assert!(!progress.follow_up_aborted(3, Some(COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT)));
+        // A redirect of the follow-up is a real load and regains loading feedback.
+        progress.failed("https://flaky.test/");
+        assert!(!progress.start_document(4, "https://flaky.test/"));
+        assert!(progress.start_document(4, "https://flaky.test/elsewhere"));
+        assert!(!progress.follow_up_aborted(4, aborted));
+    }
+    #[test]
+    fn only_the_next_engine_start_for_the_failed_address_is_a_follow_up() {
+        let progress = NavigationProgress::default();
+        progress.failed("https://a.test/");
+        // A different address consumes the pairing.
+        assert!(progress.start_document(2, "https://b.test/"));
+        assert!(progress.start_document(3, "https://a.test/"));
+        // A host command (Reload, new address) ends it as well.
+        progress.failed("https://a.test/");
+        let previous = progress.supersede();
+        progress.expect(&previous, "https://a.test/");
+        assert!(progress.start_document(4, "https://a.test/"));
+        progress.failed("https://a.test/");
+        let _ = progress.supersede();
+        assert!(progress.start_document(5, "https://a.test/"));
+    }
+    #[test]
+    fn server_error_responses_are_not_connection_failures() {
+        let unknown = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+        assert_eq!(http_error(unknown, 404), Some(404));
+        assert_eq!(http_error(unknown, 503), Some(503));
+        assert_eq!(http_error(unknown, 0), None);
+        assert_eq!(http_error(unknown, 200), None);
+        // A real transport or certificate failure keeps its own diagnosis.
+        assert_eq!(
+            http_error(COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED, 404),
+            None
+        );
     }
     #[test]
     fn certificate_and_network_failures_have_distinct_recovery_advice() {

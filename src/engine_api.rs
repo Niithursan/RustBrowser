@@ -92,6 +92,9 @@ pub enum PageEvent {
     Changed,
     Completed {
         error: Option<String>,
+        /// A 4xx/5xx response that still produced a document. The connection worked,
+        /// so this is not a navigation failure.
+        http_status: Option<u16>,
         navigation_id: u64,
         url: String,
         title: String,

@@ -28,6 +28,7 @@ pub enum Code {
     StartupFailed,
     NavigationFailed,
     RendererFailed,
+    EngineRestarted,
     SessionSaveFailed,
     LibraryFailed,
     EngineClearFailed,
