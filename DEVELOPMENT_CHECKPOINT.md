@@ -1,5 +1,39 @@
 # Development checkpoint
 
+## v0.14 — `feat/v0.14-daily-driver-reliability` (Claude Code, 2026-11-09)
+
+Branch created from verified `origin/main` `ca7ac14` (PR #17 squash merge, 0.13.0;
+main CI 42730890112 and security 42730890455 passed). Scratch: `<workspace>/work/v14`.
+
+Done and committed (all local gates passed at each commit):
+- `c03eeab` engine reliability. Found with the new manual survey probe
+  (`validation/site-survey.ps1`, `src/survey_validation.rs`):
+  - Closing a tab or the window destroyed a visible WebView2 view at once. With the
+    Microsoft sign-in page this crashes the WebView2 **browser** process (0xC0000005):
+    6/8 tab closes, 8/8 window exits (crash dump in the profile). No app hook causes
+    it (bisected). Fix: hide now, destroy after 1 s (`RETIRE_DELAY`); shutdown does
+    the same. After: 0/12 closes, 0/8 exits. 300 ms was the shortest safe delay.
+  - Engine-exit recovery (`Session::recover_engine`), `ProcessFailed` kinds classified.
+  - HTTP 4xx/5xx reported as the site's answer; engine follow-up navigation after a
+    connection failure no longer overwrites the reason with status 9.
+- `130579c` downloads/blocked app links no longer mark the page failed.
+- `486fb1a` Ctrl+Shift+T, Ctrl+1..9, Ctrl+PageUp/PageDown, Ctrl+F4, Alt+Home;
+  "already running" startup message.
+- `e3180e3` version 0.14.0.
+- New native regression: `native_failure_reporting_tab_retirement_and_engine_restart`
+  (mutation-checked: 7 mutants all caught). 79 regular tests.
+
+In progress when this was written:
+- Matched campaign `work/v14/run-campaign.ps1` (frozen hashes in `binaries.json`,
+  progress in `progress.json`): 16 alternating screening cases, then an 1800 s churn
+  soak in `work/v14/soak`. Do not build or run native tests while it runs. If it was
+  interrupted, inspect process state, then rerun the script: completed pairs are kept;
+  a partial soak directory must be moved aside and the soak restarted.
+
+Remaining: installer lifecycle with a 0.13 baseline, CI step for the new native
+test, packaged documentation links, documentation, three daily runs, release
+build/package tests, audit, push, draft PR, final-head CI. Do not merge, tag or publish.
+
 ## v0.13 — `feat/v0.13-windows-release-readiness`
 
 ### Claude Code continuation (2026-11-09) — supersedes "Next:" below
