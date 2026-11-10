@@ -169,3 +169,12 @@ Observations:
   dependency security took 24 s.
 - The weekly scheduled audit may find its cache evicted (seven days without use)
   and rebuild cargo-audit. That is slower but still correct.
+
+## v0.14 measurements (2026-11-09/10, GitHub-hosted runners)
+
+Pull request #18. Wall time is run creation to last update; job times are start to
+completion. One sample each; hosted-runner variance is large.
+
+| Run | Head | Caches | CI wall | Quality job | Release job | Security |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| 42758473146 / 42758473338 | `0a204aa` | Cold: `Cargo.lock` changed (version) and the upgrade fixture has a new key, so the pinned v0.13 build was compiled | 334 s | 229 s | 326 s | 25 s |
