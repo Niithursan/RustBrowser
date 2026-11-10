@@ -15,7 +15,7 @@ use rust_browser::{
     security::{self, Decision},
     settings::Settings,
     storage::{self, Snapshot, Store},
-    tabs::{MAX_TABS, TabId, Tabs},
+    tabs::{ClosedTabs, MAX_TABS, TabId, Tabs},
 };
 use std::{
     cell::RefCell,
@@ -137,6 +137,7 @@ struct Session {
     tabs: Tabs<Page>,
     /// Hidden views of closed tabs awaiting destruction, oldest first.
     retired: Vec<(Instant, Page)>,
+    closed: ClosedTabs,
     toolbar: WebView,
     content_context: WebContext,
     _toolbar_context: WebContext,
@@ -291,6 +292,7 @@ impl Session {
         let mut session = Self {
             tabs: Tabs::default(),
             retired: Vec::new(),
+            closed: ClosedTabs::default(),
             toolbar,
             content_context,
             _toolbar_context: toolbar_context,
@@ -860,6 +862,9 @@ impl Session {
             self.open_tab(navigation::HOME.into())?;
         }
         if let Some(tab) = self.tabs.close(id) {
+            if tab.url != navigation::HOME && navigation::address(&tab.url).is_ok() {
+                self.closed.push(tab.url);
+            }
             self.retire(tab.content);
         }
         if let Some(opener) = return_to {
@@ -1132,6 +1137,27 @@ impl Session {
             Command::CycleTab(backwards) => {
                 self.panel = None;
                 self.tabs.cycle(backwards);
+                self.activate()?;
+            }
+            Command::SelectIndex(index) => {
+                self.panel = None;
+                let last = self.tabs.items.len().saturating_sub(1);
+                if let Some(tab) = self.tabs.items.get(index.min(last)) {
+                    let id = tab.id;
+                    self.tabs.select(id);
+                    self.activate()?;
+                }
+            }
+            Command::ReopenClosedTab => {
+                let Some(url) = self.closed.pop() else {
+                    self.notice = "No recently closed tab to reopen in this window.".into();
+                    return Ok(());
+                };
+                self.panel = None;
+                if let Err(error) = self.open_tab(url.clone()) {
+                    self.closed.push(url);
+                    return Err(error);
+                }
                 self.activate()?;
             }
             Command::CloseTab(id) => self.close_tab(id)?,
@@ -1533,6 +1559,8 @@ impl Session {
             started_native: false,
             results: Vec::new(),
         });
+        // Cleared data must not be reachable again through "reopen closed tab".
+        self.closed.clear();
         // Keep monotonically increasing tab IDs so late events cannot target a new tab.
         for tab in std::mem::take(&mut self.tabs.items) {
             self.retire(tab.content);
@@ -1639,6 +1667,31 @@ impl Session {
 mod tests {
     use super::*;
     #[test]
+    fn a_profile_held_by_another_window_is_distinguished_from_startup_faults() {
+        // Store::open reports the held session lock as WouldBlock.
+        let root = std::env::temp_dir().join(format!(
+            "rust-browser-start-failure-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (first, _, _) = Store::open(&root, || {}).unwrap();
+        let second: Box<dyn std::error::Error> = match Store::open(&root, || {}) {
+            Ok(_) => panic!("a second store opened a locked profile"),
+            Err(error) => error.into(),
+        };
+        assert_eq!(start_failure(second.as_ref()), StartFailure::ProfileInUse);
+        drop(first);
+        let missing: Box<dyn std::error::Error> =
+            std::io::Error::from(std::io::ErrorKind::NotFound).into();
+        assert_eq!(start_failure(missing.as_ref()), StartFailure::Other);
+        let text: Box<dyn std::error::Error> = "WebView2 is unavailable".into();
+        assert_eq!(start_failure(text.as_ref()), StartFailure::Other);
+        let _ = std::fs::remove_dir_all(root);
+    }
+    #[test]
     fn engine_restarts_are_bounded_within_the_window_and_allowed_again_after_it() {
         let start = Instant::now();
         let mut history = Vec::new();
@@ -1697,10 +1750,24 @@ mod survey_validation;
 #[path = "reliability_validation.rs"]
 mod reliability_validation;
 
+/// Why the browser window could not be created.
+#[derive(Debug, PartialEq, Eq)]
+pub enum StartFailure {
+    /// Another normal window already holds this profile. Not a fault.
+    ProfileInUse,
+    Other,
+}
+fn start_failure(error: &(dyn std::error::Error + 'static)) -> StartFailure {
+    match error.downcast_ref::<std::io::Error>() {
+        Some(error) if error.kind() == std::io::ErrorKind::WouldBlock => StartFailure::ProfileInUse,
+        _ => StartFailure::Other,
+    }
+}
+
 struct App {
     session: Option<Session>,
     proxy: EventLoopProxy<Event>,
-    failure: Option<String>,
+    failure: Option<StartFailure>,
     modifiers: ModifiersState,
     /// Set once the window is closing: when the hidden views may be destroyed.
     closing: Option<Instant>,
@@ -1736,9 +1803,7 @@ impl ApplicationHandler<Event> for App {
                 self.session = Some(session);
             }
             Err(error) => {
-                self.failure = Some(format!(
-                    "Could not start browser: {error}. Check WebView2 Runtime and profile access."
-                ));
+                self.failure = Some(start_failure(error.as_ref()));
                 event_loop.exit();
             }
         }
@@ -1755,6 +1820,8 @@ impl ApplicationHandler<Event> for App {
                     Key::Character(value) if value.len() == 1 => {
                         value.as_bytes()[0].to_ascii_uppercase() as u32
                     }
+                    Key::Named(NamedKey::F4) => 0x73,
+                    Key::Named(NamedKey::Home) => 0x24,
                     Key::Named(NamedKey::F5) => 0x74,
                     Key::Named(NamedKey::PageUp) => 0x21,
                     Key::Named(NamedKey::PageDown) => 0x22,
@@ -2023,8 +2090,10 @@ impl ApplicationHandler<Event> for App {
     }
 }
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoop::<Event>::with_user_event().build()?;
+pub fn run() -> Result<(), StartFailure> {
+    let event_loop = EventLoop::<Event>::with_user_event()
+        .build()
+        .map_err(|_| StartFailure::Other)?;
     let mut app = App {
         session: None,
         proxy: event_loop.create_proxy(),
@@ -2032,9 +2101,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         modifiers: ModifiersState::default(),
         closing: None,
     };
-    event_loop.run_app(&mut app)?;
-    if let Some(error) = app.failure {
-        return Err(error.into());
-    }
-    Ok(())
+    event_loop
+        .run_app(&mut app)
+        .map_err(|_| StartFailure::Other)?;
+    app.failure.map_or(Ok(()), Err)
 }

@@ -362,6 +362,36 @@ impl Probe {
                     .map_err(|error| format!("New tab after restart failed: {error}"))?;
                 s.command(Command::CloseActive)
                     .map_err(|error| format!("Close after restart failed: {error}"))?;
+                // Reopen the scratch tab closed earlier (new-tab pages are not kept),
+                // then select by position: first, and "last" for any larger index.
+                s.command(Command::ReopenClosedTab)
+                    .map_err(|error| format!("Reopen failed: {error}"))?;
+                if s.tabs.items.len() != 3
+                    || !s
+                        .tabs
+                        .active()
+                        .is_some_and(|t| t.url.ends_with("/?scratch"))
+                {
+                    return Err("Closed tab was not reopened at its address".into());
+                }
+                let reopened = s.tabs.active().ok_or("No reopened tab")?.id;
+                s.command(Command::SelectIndex(0))
+                    .map_err(|_| "Select first failed")?;
+                if s.tabs.active().map(|t| t.id) != Some(self.first) {
+                    return Err("Ctrl+1 did not select the first tab".into());
+                }
+                s.command(Command::SelectIndex(usize::MAX))
+                    .map_err(|_| "Select last failed")?;
+                if s.tabs.active().map(|t| t.id) != Some(reopened) {
+                    return Err("Ctrl+9 did not select the last tab".into());
+                }
+                s.command(Command::CloseActive)
+                    .map_err(|error| format!("Close reopened failed: {error}"))?;
+                s.command(Command::ReopenClosedTab)
+                    .map_err(|_| "Second reopen failed")?;
+                s.command(Command::CloseActive)
+                    .map_err(|_| "Second close failed")?;
+                self.failures.clear();
                 if !self.failures.is_empty() {
                     return Err(format!(
                         "Engine restart reported navigation failures: {:?}",
