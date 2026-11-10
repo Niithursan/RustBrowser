@@ -77,6 +77,10 @@ Filename: "{app}\installation.ini"; Section: "Installation"; Key: "Version"; Str
 [UninstallDelete]
 ; Exact installer-owned marker only. Never delete the app tree or any profile.
 Type: files; Name: "{app}\installation.ini"
+; Setup's own temporary files ("is-*.tmp") left by a Setup that was interrupted
+; while replacing the executable or writing the uninstaller. Not recursive.
+Type: files; Name: "{app}\is-*.tmp"
+Type: files; Name: "{app}\uninstall\is-*.tmp"
 
 [Icons]
 Name: "{userprograms}\{#ProductName}\Rust Browser"; Filename: "{app}\rust-browser.exe"; WorkingDir: "{app}"; AppUserModelID: "Niithursan.RustBrowser"
@@ -239,6 +243,93 @@ begin
   if not FileExists(ExpandConstant('{sys}\vcruntime140.dll')) or
      not FileExists(ExpandConstant('{sys}\vcruntime140_1.dll')) then
     Result := 'Microsoft x64 Visual C++ v14 Runtime is required. Install the latest supported version from Microsoft, then retry. No runtime was downloaded or installed.';
+end;
+
+// Remove files left by an interrupted Setup from one directory, not recursively.
+// Left in place they keep the directory non-empty after uninstall, so the next
+// installation is refused as unowned.
+procedure RemoveStaleSetupFiles(Directory, Pattern: String);
+var
+  Found: TFindRec;
+begin
+  if FindFirst(Directory + '\' + Pattern, Found) then begin
+    try
+      repeat
+        if (Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+          DeleteFile(Directory + '\' + Found.Name);
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+end;
+
+// After an interrupted installation Setup cannot append to the unfinished
+// uninstall log, so it writes a second one (unins001 beside unins000) and
+// registers that. Uninstall then removes only the registered one, the leftover
+// keeps the directory non-empty, and the next installation is refused as unowned.
+// Once installation has succeeded, keep only the uninstaller Apps & Features runs.
+procedure RemoveUnregisteredUninstallers(Directory: String);
+var
+  Registered, Keep, Extension: String;
+  Found: TFindRec;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#Identity}_is1',
+    'UninstallString', Registered) then exit;
+  Keep := ChangeFileExt(ExtractFileName(RemoveQuotes(Registered)), '');
+  if (Length(Keep) <> 8) or (CompareText(Copy(Keep, 1, 5), 'unins') <> 0) then exit;
+  if FindFirst(Directory + '\unins???.*', Found) then begin
+    try
+      repeat
+        Extension := LowerCase(ExtractFileExt(Found.Name));
+        if ((Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0) and
+           ((Extension = '.dat') or (Extension = '.exe') or (Extension = '.msg')) and
+           (CompareText(ChangeFileExt(Found.Name, ''), Keep) <> 0) then
+          DeleteFile(Directory + '\' + Found.Name);
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+end;
+
+// Claim the directory before the first file is copied. PrepareToInstall has just
+// verified it is empty or already owned by this identity, so this only marks a
+// directory Setup already checked. Without it, a Setup that was killed or lost
+// power during the copy left payload files but no marker; every later Setup then
+// refused the directory as unowned and the uninstaller refused it too. The [INI]
+// entries below rewrite the same values once installation completes.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Marker: String;
+begin
+  if CurStep = ssInstall then begin
+    Marker := ExpandConstant('{app}\installation.ini');
+    if not ForceDirectories(ExpandConstant('{app}')) or
+       not SetIniString('Installation', 'Identity', '{#Identity}', Marker) or
+       not SetIniString('Installation', 'Version', '{#AppVersion}', Marker) then
+      RaiseException('Could not record installation ownership. Nothing was copied.');
+    // Ownership was verified by PrepareToInstall; only this identity's directory.
+    // "is-*.tmp" are Setup's own temporary copies of a file being replaced or of
+    // the uninstaller being written.
+    RemoveStaleSetupFiles(ExpandConstant('{app}'), 'is-*.tmp');
+    RemoveStaleSetupFiles(ExpandConstant('{app}\uninstall'), 'is-*.tmp');
+  end;
+  if CurStep = ssPostInstall then
+    RemoveUnregisteredUninstallers(ExpandConstant('{app}\uninstall'));
+end;
+
+// The uninstaller removes only folders Setup recorded creating. After an
+// interrupted installation, or because the ownership marker is written before
+// Inno Setup creates the folder, some were not recorded. Remove them when empty,
+// so a later installation does not find an unowned non-empty folder.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usPostUninstall) or (CurUninstallStep = usDone) then begin
+    RemoveDir(ExpandConstant('{app}\uninstall'));
+    RemoveDir(ExpandConstant('{app}'));
+  end;
 end;
 
 function InitializeUninstall: Boolean;
