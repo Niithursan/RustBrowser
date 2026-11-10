@@ -17,8 +17,31 @@ concurrency:
 env:
   CARGO_TERM_COLOR: never
 jobs:
+  # Cheap Linux check that decides whether the Windows jobs are needed. Only a
+  # change made entirely of unpackaged Markdown skips them; see .github/scripts/ci_scope.py.
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the merge base of the whole pull request
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          # Whole pull request (base...head), or the commits a push to main added.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/ci_scope.py scope
+
   windows:
     name: Windows quality and build
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -74,6 +97,8 @@ jobs:
   # Independent of the quality job, so it runs in parallel on its own runner.
   release:
     name: Windows release build and package
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -133,19 +158,23 @@ jobs:
             ${{ steps.installer.outputs.metadata }}
           if-no-files-found: error
 
-  # Single stable check name for branch protection if it is enabled later.
+  # Single stable check name for branch protection if it is enabled later. It
+  # succeeds only if the scope check passed and every job it required passed; a
+  # documentation-only change reports success with both Windows jobs skipped.
   result:
     name: CI result
-    needs: [windows, release]
+    needs: [scope, windows, release]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every CI job to succeed
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require every needed CI job to succeed
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          echo "Job results: $RESULTS"
-          for result in $RESULTS; do
-            if [ "$result" != success ]; then exit 1; fi
-          done
+          SCOPE: ${{ needs.scope.result }}
+          FULL: ${{ needs.scope.outputs.full }}
+          WINDOWS: ${{ needs.windows.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: python3 .github/scripts/ci_scope.py result "$SCOPE" "$FULL" "$WINDOWS" "$RELEASE"
