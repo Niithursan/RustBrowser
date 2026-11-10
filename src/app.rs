@@ -52,6 +52,8 @@ pub enum Event {
     Page(TabId, PageEvent),
     PopupRequested(u64),
     PopupBlocked,
+    /// A page asked for a non-HTTP(S) top-level address; its document is unchanged.
+    NavigationBlocked(TabId),
     PageClose(TabId),
     Fullscreen(TabId, bool),
     StorageError,
@@ -83,6 +85,9 @@ const RETIRE_DELAY: Duration = Duration::from_secs(1);
 const MAX_RETIRED: usize = 16;
 /// Automatic engine restarts allowed within `ENGINE_RESTART_WINDOW`.
 const MAX_ENGINE_RESTARTS: usize = 3;
+/// How long a failed navigation waits for a download request before it is logged.
+/// Only the local diagnostic record is delayed; the tab shows the failure at once.
+const FAILURE_RECORD_DELAY: Duration = Duration::from_secs(2);
 const ENGINE_RESTART_WINDOW: Duration = Duration::from_secs(120);
 
 /// Bound automatic restarts so a persistently crashing engine cannot loop.
@@ -156,6 +161,9 @@ struct Session {
     /// The content browser process ended; views are rebuilt on the next idle turn.
     engine_lost: bool,
     engine_restarts: Vec<Instant>,
+    /// Failed navigations not yet written to diagnostics. A navigation that becomes a
+    /// download ends as "aborted" shortly before its download request arrives.
+    unrecorded_failures: Vec<(Instant, TabId)>,
     profile: PathBuf,
     private: bool,
     ready: bool,
@@ -316,6 +324,7 @@ impl Session {
             focus_pending: false,
             engine_lost: false,
             engine_restarts: Vec::new(),
+            unrecorded_failures: Vec::new(),
             ready: false,
             clearing: None,
             next_clear: 0,
@@ -477,6 +486,40 @@ impl Session {
             self.start_engine_clear();
         }
         self.retired.first().map(|(deadline, _)| *deadline)
+    }
+
+    /// Write navigation failures that no download request claimed within the delay
+    /// (all of them when `flush` is set). Returns the next deadline.
+    fn record_navigation_failures(&mut self, flush: bool) -> Option<Instant> {
+        let now = Instant::now();
+        let before = self.unrecorded_failures.len();
+        self.unrecorded_failures
+            .retain(|(deadline, _)| !flush && *deadline > now);
+        for _ in self.unrecorded_failures.len()..before {
+            self.diagnostics.record(DiagnosticCode::NavigationFailed);
+        }
+        self.unrecorded_failures
+            .first()
+            .map(|(deadline, _)| *deadline)
+    }
+
+    /// A navigation turned into a download. WebView2 has just reported that
+    /// navigation as aborted, but the tab still shows its previous, intact document.
+    fn download_requested(&mut self, tab_id: TabId) {
+        self.notice.clear();
+        // Only the newest failure of this tab is the download's own abort.
+        if let Some(index) = self
+            .unrecorded_failures
+            .iter()
+            .rposition(|(_, id)| *id == tab_id)
+        {
+            self.unrecorded_failures.remove(index);
+        }
+        if let Some(tab) = self.tabs.get_mut(tab_id) {
+            tab.content.state.loading = false;
+            tab.content.state.failed = false;
+            tab.content.state.message = "Download handed to manager.".into();
+        }
     }
 
     fn process_failed(&mut self, id: TabId, failure: crate::native_activity::Failure) {
@@ -1240,8 +1283,9 @@ impl Session {
                 url,
                 title,
             } => {
-                if error.is_some() {
-                    self.diagnostics.record(DiagnosticCode::NavigationFailed);
+                if error.is_some() && self.unrecorded_failures.len() < MAX_TABS {
+                    self.unrecorded_failures
+                        .push((Instant::now() + FAILURE_RECORD_DELAY, id));
                 }
                 if error.is_none()
                     && http_status.is_none()
@@ -1669,7 +1713,8 @@ impl App {
         if self.closing.is_some() {
             return;
         }
-        if let Some(session) = &self.session {
+        if let Some(session) = &mut self.session {
+            session.record_navigation_failures(true);
             session.persist();
             session.window.set_visible(false);
             for tab in &session.tabs.items {
@@ -1854,12 +1899,13 @@ impl ApplicationHandler<Event> for App {
             Event::DownloadTick => {
                 session.downloads.borrow_mut().poll(&session.proxy);
             }
-            Event::DownloadRequested(id, tab_id) => {
-                session.notice.clear();
-                if let Some(tab) = session.tabs.get_mut(tab_id) {
-                    tab.content.state.loading = false;
-                    tab.content.state.message = "Download handed to manager.".into();
+            Event::NavigationBlocked(id) => {
+                if session.tabs.items.iter().any(|tab| tab.id == id) {
+                    session.notice = "A link to an app or unsupported address was blocked. Only http:// and https:// addresses open here; the page is unchanged.".into();
                 }
+            }
+            Event::DownloadRequested(id, tab_id) => {
+                session.download_requested(tab_id);
                 let owner=match session.window.window_handle().map(|handle|handle.as_raw()){
                     Ok(RawWindowHandle::Win32(handle))=>handle.hwnd.get(),
                     _=>{session.downloads.borrow_mut().destination(id,Err("Could not identify the browser window for destination selection.".into()));return;}
@@ -1931,7 +1977,11 @@ impl ApplicationHandler<Event> for App {
                 session.recover_engine();
                 session.render();
             }
-            let retiring = session.reap_retired();
+            let recording = session.record_navigation_failures(false);
+            let retiring = match (session.reap_retired(), recording) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
             session.popups.borrow_mut().expire();
             if session.background_tick() {
                 session.render();

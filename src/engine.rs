@@ -250,10 +250,8 @@ impl Engine {
             .with_navigation_handler(move |url| {
                 let allowed = url == "about:blank" || navigation::allowed(&url);
                 if !allowed {
-                    let _ = nav_proxy.send_event(Event::Page(
-                        id,
-                        PageEvent::Error("Blocked a non-HTTP(S) navigation.".into()),
-                    ));
+                    // The current document is untouched: this is not a page failure.
+                    let _ = nav_proxy.send_event(Event::NavigationBlocked(id));
                 }
                 allowed
             })

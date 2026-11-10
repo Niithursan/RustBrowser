@@ -29,6 +29,17 @@ struct Probe {
     message: String,
 }
 
+fn recorded(session: &Session, code: DiagnosticCode) -> u32 {
+    session
+        .diagnostics
+        .snapshot()
+        .entries
+        .iter()
+        .filter(|entry| entry.code == code)
+        .map(|entry| entry.count)
+        .sum()
+}
+
 fn view_identity(session: &Session) -> Vec<usize> {
     session
         .tabs
@@ -218,6 +229,64 @@ impl Probe {
                 self.phase = 7;
             }
             7 if settled(s, "Compatibility fixture") => {
+                // A blocked app link leaves the document, and so the tab state, intact.
+                s.tabs
+                    .active()
+                    .ok_or("No tab for blocked link")?
+                    .content
+                    .engine
+                    .view
+                    .evaluate_script("location.href='mailto:someone@example.test'")
+                    .map_err(|_| "Blocked-link script failed")?;
+                self.phase = 14;
+            }
+            14 if s.notice.contains("was blocked") => {
+                let state = &s.tabs.active().ok_or("No tab")?.content.state;
+                if state.failed || state.loading || !self.failures.is_empty() {
+                    return Err(format!(
+                        "Blocked link changed the page state: {} {:?}",
+                        state.message, self.failures
+                    ));
+                }
+                // A navigation that becomes a download is not a failed navigation.
+                s.command(Command::Navigate(format!("{}download", self.url)))
+                    .map_err(|_| "Download navigation failed")?;
+                self.phase = 15;
+            }
+            15 if s
+                .downloads
+                .borrow()
+                .records()
+                .iter()
+                .any(|record| record.status == "Completed") =>
+            {
+                self.step = Instant::now();
+                self.phase = 17;
+            }
+            // Past the delay after which an unclaimed failure would be recorded.
+            17 if self.step.elapsed() > FAILURE_RECORD_DELAY + Duration::from_millis(500) => {
+                let tab = s.tabs.active().ok_or("No download source tab")?;
+                let state = &tab.content.state;
+                if state.failed
+                    || state.loading
+                    || state.message != "Download handed to manager."
+                    || !tab.url.ends_with("/?second")
+                    // Only the refused connection and its Reload were failures.
+                    || !s.unrecorded_failures.is_empty()
+                    || recorded(s, DiagnosticCode::NavigationFailed) != 2
+                {
+                    return Err(format!(
+                        "Download navigation was treated as a failure: recorded={} failed={} message={} url_kept={}",
+                        recorded(s, DiagnosticCode::NavigationFailed),
+                        state.failed,
+                        state.message,
+                        tab.url.ends_with("/?second")
+                    ));
+                }
+                self.failures.clear();
+                self.phase = 16;
+            }
+            16 => {
                 // Closing hides the view at once and destroys it only after the delay.
                 let closing = self.second;
                 s.open_tab(format!("{}?scratch", self.url))
@@ -326,6 +395,17 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(el, id, event)
     }
     fn user_event(&mut self, el: &ActiveEventLoop, event: Event) {
+        // Production state handling, with the native folder picker replaced.
+        if let Event::DownloadRequested(id, tab) = &event {
+            let folder = self.root.join("downloads");
+            std::fs::create_dir_all(&folder).unwrap();
+            if let Some(s) = &mut self.app.session {
+                s.download_requested(*tab);
+                s.downloads.borrow_mut().destination(*id, Ok(Some(folder)));
+                s.render();
+            }
+            return;
+        }
         match &event {
             Event::Page(_, PageEvent::Loading) => self.loading_events += 1,
             Event::Page(
