@@ -347,6 +347,7 @@ fn windows_performance_probe() {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root,
         profile,

@@ -140,14 +140,16 @@ impl Store {
         profile: &Path,
         on_error: impl Fn() + Send + 'static,
     ) -> io::Result<(Self, Snapshot, bool)> {
-        fs::create_dir_all(profile)?;
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(profile.join("session.lock"))?;
-        lock.try_lock().map_err(|_| io::Error::new(io::ErrorKind::WouldBlock, "This profile is already open. Close the other browser or use RUST_BROWSER_PROFILE."))?;
+        let lock = lock(profile)?;
+        Self::open_locked(profile, lock, on_error)
+    }
+
+    /// Open with a profile lock already taken by `lock` (before the event loop).
+    pub fn open_locked(
+        profile: &Path,
+        lock: File,
+        on_error: impl Fn() + Send + 'static,
+    ) -> io::Result<(Self, Snapshot, bool)> {
         let path = profile.join("session.json");
         let temporary = path.with_extension("json.tmp");
         let missing = !path.try_exists()?;
@@ -295,6 +297,26 @@ impl Drop for Store {
             let _ = worker.join();
         }
     }
+}
+
+/// Take the profile's exclusive lock. `WouldBlock` means a normal window of this
+/// profile is running. The operating system releases the lock when its holder
+/// exits for any reason, so a crash cannot leave a stale lock behind.
+pub fn lock(profile: &Path) -> io::Result<File> {
+    fs::create_dir_all(profile)?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(profile.join("session.lock"))?;
+    lock.try_lock().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "This profile is already open. Close the other browser or use RUST_BROWSER_PROFILE.",
+        )
+    })?;
+    Ok(lock)
 }
 
 pub fn profile_dir() -> io::Result<PathBuf> {

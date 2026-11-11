@@ -28,13 +28,53 @@ mod servo_validation;
 #[cfg(windows)]
 mod ui;
 
-fn main() -> std::process::ExitCode {
-    if std::env::args_os().len() == 2
-        && std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version"))
+/// Tell the user something in a dialog (release) or on stderr (debug and tests).
+#[cfg(windows)]
+fn tell(title: &str, message: &str, error: bool) {
+    #[cfg(debug_assertions)]
     {
-        println!("Rust Browser {}", env!("CARGO_PKG_VERSION"));
-        return std::process::ExitCode::SUCCESS;
+        let _ = (title, error);
+        eprintln!("{message}");
     }
+    #[cfg(not(debug_assertions))]
+    {
+        use windows::{
+            Win32::UI::WindowsAndMessaging::{
+                MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MessageBoxW,
+            },
+            core::HSTRING,
+        };
+        // SAFETY: main thread, owned strings, no window handle.
+        unsafe {
+            MessageBoxW(
+                None,
+                &HSTRING::from(message),
+                &HSTRING::from(title),
+                if error {
+                    MB_ICONERROR
+                } else {
+                    MB_ICONINFORMATION
+                } | MB_OK,
+            );
+        }
+    }
+}
+
+/// The raw command line exactly as Windows passed it, before any splitting.
+#[cfg(windows)]
+fn raw_command_line() -> Vec<u16> {
+    // SAFETY: GetCommandLineW returns a process-owned, NUL-terminated string that
+    // stays valid for the life of the process; it is only read here.
+    unsafe {
+        let line = windows::Win32::System::Environment::GetCommandLineW();
+        if line.is_null() {
+            return Vec::new();
+        }
+        line.as_wide().to_vec()
+    }
+}
+
+fn main() -> std::process::ExitCode {
     // Never print a panic payload: it can contain data supplied by a website.
     std::panic::set_hook(Box::new(|_| {
         eprintln!(
@@ -42,12 +82,28 @@ fn main() -> std::process::ExitCode {
         );
     }));
     #[cfg(windows)]
+    let (private, links) = match rust_browser::launch::parse(&raw_command_line()) {
+        Ok(rust_browser::launch::Launch::Version) => {
+            println!("Rust Browser {}", env!("CARGO_PKG_VERSION"));
+            return std::process::ExitCode::SUCCESS;
+        }
+        Ok(rust_browser::launch::Launch::Open { private, links, .. }) => (private, links),
+        Err(error) => {
+            tell(
+                "Rust Browser",
+                &format!("Rust Browser did not start. {error}\n\nNothing was opened or changed."),
+                true,
+            );
+            return std::process::ExitCode::from(2);
+        }
+    };
+    #[cfg(windows)]
     {
         // Retain the marker through WebView/profile teardown. Private/alternative
         // profiles remain allowed; the marker only makes installers wait.
         let running = native_installation::Running::mark();
         let failure = match running {
-            Ok(_) => match app::run() {
+            Ok(_) => match app::run(private, links) {
                 Ok(()) => return std::process::ExitCode::SUCCESS,
                 Err(failure) => failure,
             },

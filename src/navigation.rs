@@ -41,6 +41,31 @@ pub fn resolve(input: &str, engine: crate::settings::SearchEngine) -> Result<Str
     Ok(destination)
 }
 
+/// Longest address accepted anywhere (address bar, session, command line, hand-off).
+pub const MAX_ADDRESS: usize = 8192;
+
+/// A link handed over by another application (command line or a second launch).
+/// Stricter than the address bar: the scheme must be written out as http:// or
+/// https://, nothing becomes a search, and no host is guessed. The address-bar
+/// checks (no credentials, valid host) still apply.
+pub fn external(input: &str) -> Result<String, String> {
+    if input.len() > MAX_ADDRESS {
+        return Err("The link is too long.".into());
+    }
+    if input.is_empty() || input.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("The link is empty or contains spaces or control characters.".into());
+    }
+    let lower = input.get(..8).unwrap_or(input).to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("Only http:// or https:// links can be opened from other apps.".into());
+    }
+    let url = address(input)?;
+    if url.len() > MAX_ADDRESS {
+        return Err("The link is too long.".into());
+    }
+    Ok(url)
+}
+
 /// Only HTTP(S) can enter the remote content view. Never execute address-bar JS.
 pub fn address(input: &str) -> Result<String, String> {
     let input = input.trim();

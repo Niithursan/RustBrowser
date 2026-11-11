@@ -471,6 +471,7 @@ fn native_toolbar_engine_failure_is_recovered() {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         url: server.url.clone(),

@@ -511,6 +511,7 @@ fn exercise(private: bool) {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         url: server.url.clone(),

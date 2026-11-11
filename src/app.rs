@@ -293,24 +293,39 @@ impl Drop for Session {
 }
 
 impl Session {
+    /// The first window of a process, from the parsed command line.
     fn create(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
+        start: Start,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::create_at(
+        Self::create_full(
             event_loop,
             proxy,
-            storage::profile_dir()?,
-            std::env::args().any(|arg| arg == "--private"),
-            std::env::args().skip(1).find(|arg| arg != "--private"),
+            start.profile,
+            start.private,
+            start.links,
+            start.lock,
         )
     }
+    /// Fixtures: a session on an explicit profile without a pre-taken lock.
+    #[cfg(test)]
     fn create_at(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         normal_profile: PathBuf,
         private: bool,
-        launch_url: Option<String>,
+        launch: impl IntoIterator<Item = String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::create_full(event_loop, proxy, normal_profile, private, launch, None)
+    }
+    fn create_full(
+        event_loop: &ActiveEventLoop,
+        proxy: EventLoopProxy<Event>,
+        normal_profile: PathBuf,
+        private: bool,
+        launch: impl IntoIterator<Item = String>,
+        lock: Option<std::fs::File>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Sweep only dead, recognized leases; live private windows retain their locks.
         let sweep_profile = normal_profile.clone();
@@ -332,9 +347,13 @@ impl Session {
         let (store, snapshot, recovered) = if private {
             (None, Snapshot::default(), false)
         } else {
-            let (store, snapshot, recovered) = Store::open(&profile, move || {
+            let on_error = move || {
                 let _ = error_proxy.send_event(Event::StorageError);
-            })?;
+            };
+            let (store, snapshot, recovered) = match lock {
+                Some(lock) => Store::open_locked(&profile, lock, on_error)?,
+                None => Store::open(&profile, on_error)?,
+            };
             (Some(store), snapshot, recovered)
         };
         let diagnostic_proxy = proxy.clone();
@@ -450,9 +469,10 @@ impl Session {
             let id = tab.id;
             session.tabs.select(id);
         }
-        // An explicit launch address opens an additional tab rather than discarding restoration.
-        if let Some(input) = launch_url {
-            match navigation::resolve(&input, session.settings.search_engine) {
+        // Links from the command line open additional tabs rather than discarding
+        // restoration. They were validated by the parser and are checked again here.
+        for input in launch {
+            match navigation::external(&input) {
                 Ok(url) => {
                     if let Err(error) = session.open_tab(url) {
                         session.notice = error.to_string();
@@ -1980,8 +2000,19 @@ fn start_failure(error: &(dyn std::error::Error + 'static)) -> StartFailure {
     }
 }
 
+/// What the first window of this process starts with.
+struct Start {
+    profile: PathBuf,
+    private: bool,
+    links: Vec<String>,
+    /// The normal profile's lock, taken before the event loop existed.
+    lock: Option<std::fs::File>,
+}
+
 struct App {
     session: Option<Session>,
+    /// Consumed by the first `resumed`.
+    start: Option<Start>,
     proxy: EventLoopProxy<Event>,
     failure: Option<StartFailure>,
     modifiers: ModifiersState,
@@ -2013,7 +2044,11 @@ impl ApplicationHandler<Event> for App {
         if self.session.is_some() {
             return;
         }
-        match Session::create(event_loop, self.proxy.clone()) {
+        let Some(start) = self.start.take() else {
+            event_loop.exit();
+            return;
+        };
+        match Session::create(event_loop, self.proxy.clone(), start) {
             Ok(session) => {
                 session.render();
                 self.session = Some(session);
@@ -2340,12 +2375,27 @@ impl ApplicationHandler<Event> for App {
     }
 }
 
-pub fn run() -> Result<(), StartFailure> {
+/// Run the browser. A normal launch takes the profile lock before any window or
+/// event loop exists: when another normal window holds it this returns
+/// `ProfileInUse` at once, so the caller can hand its links over instead.
+pub fn run(private: bool, links: Vec<String>) -> Result<(), StartFailure> {
+    let profile = storage::profile_dir().map_err(|_| StartFailure::Other)?;
+    let lock = if private {
+        None
+    } else {
+        Some(storage::lock(&profile).map_err(|error| start_failure(&error))?)
+    };
     let event_loop = EventLoop::<Event>::with_user_event()
         .build()
         .map_err(|_| StartFailure::Other)?;
     let mut app = App {
         session: None,
+        start: Some(Start {
+            profile,
+            private,
+            links,
+            lock,
+        }),
         proxy: event_loop.create_proxy(),
         failure: None,
         modifiers: ModifiersState::default(),

@@ -247,6 +247,7 @@ fn native_application_clear_preserves_bookmarks_and_prevents_session_rewrites() 
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         profile: root.clone(),
         phase: 0,
