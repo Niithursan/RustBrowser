@@ -122,6 +122,9 @@ and disposable profile, with no privilege or sandbox change.
 The installer and portable prerequisite disclosures remain conservative, including
 Setup's existing VC Runtime check, even for the static experiment. Removing that
 check or adopting static linking needs a separate reviewed change after a clean-
-machine/runtime test. Human owner checks, risk dispositions, qualification status
-and publication authorization remain open. Results are recorded in VALIDATION.md
+machine/runtime test. The owner reported items 1 to 8 passed for the exact refreshed
+PR #21 bundle o-d8ee96f5/source 062c93d and the recorded static EXE hash only.
+See VALIDATION.md for the exact provenance. Acceptance for later bytes, risk
+dispositions, qualification status and publication authorization remain open.
+Static CRT stays opt-in. Results are recorded in VALIDATION.md
 and the review PR; this document does not itself approve an RC.

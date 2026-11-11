@@ -13,8 +13,39 @@ Focused native toolbar/content tests pass in development. Eight compiled mutants
 were rejected by their intended semantic assertions, including the old stale-event,
 repeated-alert and ignored-hang behaviors. Native find requires a real query to
 verify completion/matches; blank-dialog visibility is checked separately in the GUI.
-The full pre-push gates and final exact-head hosted results are still pending at
-this checkpoint; earlier commits' CI is not evidence for the new head.
+All **31 local gates passed** on initial qualified head
+`ed90da2a06711a9adeebb40c36350e28e69c33bd` before the first push:
+
+- Formatting, strict Clippy, **81 regular tests**, debug and release builds.
+- All **12 native suites** in separate processes, including normal/private page
+  tools and extended toolbar recovery; **three independent daily-driver runs**.
+- Process sampler and experimental launcher PowerShell fixtures; **18 production
+  Python tests** (13 scope, 3 TLS, 2 icon) and **2 experimental Python tests**.
+- Dynamic import inspection, portable package, v0.14 installer lifecycle/profile
+  preservation, release metadata verifier, failed-static-build flag restoration,
+  and owner-bundle identity/hash/path/startup/shutdown safety tests.
+- `cargo audit --deny warnings`: **368 dependencies, 1,446 advisories**, with
+  the unchanged three unsupported-platform exceptions.
+
+The initial production EXE SHA-256 is
+`1036cb448c83ca7144966f0faba02d9698a2cfa741e7dcba6f8d09b34ea94597`.
+Raw local evidence: `<workspace>/work/v16/production-gates.json`, first-qualified.json
+and gates-first.out/err. These artifacts are outside Git. The final evidence-only
+head must run the same complete local gates before the second push; its exact
+source/hash/hosted results belong in [PR #22](https://github.com/Niithursan/RustBrowser/pull/22)
+and the delivery report after verification, without a third documentation push.
+An earlier head's CI is never substituted for the final head.
+
+Real Windows GUI checks on the 0.16 debug build confirmed disposable-session
+restoration, correct page preview from More and Ctrl+P, Escape cancellation after
+the reproduced focus fix, keyboard zoom and More reset, and normal window exit.
+The broader development find/zoom checks and API limitations are in V016.md.
+No actual paper/PDF output, new human/device acceptance, Windows 10 or clean-host
+test is claimed. Neither this local result nor hosted success approves an RC.
+
+The hosted docs-only skip remains unverified: this PR contains code and packaged
+Markdown. The whole-PR classifier must run the Windows jobs even when its final
+commit only updates evidence. No additional push is made just to test skipping.
 
 ### Owner report for the exact PR #21 build
 

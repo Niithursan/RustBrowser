@@ -10,7 +10,7 @@ them; no further dependency change is authorized. Git uses the GitHub noreply
 address. Main, real profiles/installations, Windows settings, tags and releases
 are untouched. Static CRT remains opt-in. RC and acceptance criteria are unapproved.
 
-Implemented, not yet delivered:
+Implemented and pushed once for draft PR #22:
 - Monotonic toolbar source IDs, stale-failure rejection, a once-per-window terminal
   alert, and five-second health grace for reported Unresponsive. Real hang detection
   was not observed in 30 seconds; the bounded recovery test injects the report into
@@ -32,12 +32,23 @@ Implemented, not yet delivered:
   direct-upload mode is not enabled. #4's deferred status in older notes is historical.
   Whole-PR classification means this code PR cannot verify the docs-only hosted skip.
 
-Next: review the diff,
-commit focused changes and run every local gate. Use isolated `work/v16/target`;
-do not overwrite target/release or use the real profile. Push twice at most: once
-for one draft PR after all local gates, once for the final head after all gates
-again. No reruns/dispatches unless a hosted failure was reproduced and fixed locally.
-Verify final head/run IDs with gh pr checks before marking ready. No PR exists yet.
+Initial qualified head ed90da2a06711a9adeebb40c36350e28e69c33bd passed all 31
+local gates: fmt, strict Clippy, 81 regular tests, debug/release, 12 separate native
+suites, three daily runs, fixtures/Python, imports, portable/installer/metadata,
+owner and audit. Audit: 368 dependencies / 1,446 advisories, same exceptions.
+First artifact SHA-256 1036cb448c83ca7144966f0faba02d9698a2cfa741e7dcba6f8d09b34ea94597.
+Raw pointer `work/v16/production-gates.json`, first-qualified.json and gates-first logs.
+The full runner uses `work/v16/dynamic`; earlier focused work uses `work/v16/target`.
+Both are isolated; do not overwrite target/release or use the real profile.
+
+Draft https://github.com/Niithursan/RustBrowser/pull/22 is open. Initial head CI
+42941163150 was running and security 42941163324 passed when this final evidence
+update was prepared. These are initial-head results, not a final CI claim.
+Next: commit this evidence-only update, repeat every local gate, then make the
+second/final push. Verify the final head/run IDs with gh pr checks before marking
+ready. Record final status in the PR/delivery, not another packaged-doc commit.
+No reruns/dispatches unless a hosted failure was reproduced and fixed locally.
+No merge/tag/publication or RC declaration is authorized.
 See validation/V016.md for baseline, reproduction, API research and evidence limits.
 
 Focused local commits before full qualification: 71038eb (toolbar recovery),

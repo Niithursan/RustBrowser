@@ -10,8 +10,12 @@ WebView2 stays production and Servo remains experimental/fixture-only.
 
 v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
 42931608910 passed. It adds content-only native find, zoom and print, and toolbar
-recovery follow-ups. Focused native tests and eight compiled mutation checks pass;
-full local and exact-head hosted qualification remain pending at this checkpoint.
+recovery follow-ups. All 31 local gates passed on initial qualified head ed90da2:
+81 regular tests, 12 separate native suites, three daily runs, both builds, Python
+and PowerShell fixtures, imports, portable/installer/metadata/owner safety tests and
+audit. Nine compiled mutation runs across three native workloads rejected eight
+defect types. The final evidence-only head repeats every local gate before the
+second push; exact final-head hosted results are recorded in PR #22 and delivery.
 Details: [v0.16 record](V016.md). No RC is declared.
 
 The owner's 2026-11-10 report passes checklist items 1 to 8 for **one build**:
