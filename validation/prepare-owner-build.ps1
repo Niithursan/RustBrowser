@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Path $run -ErrorAction Stop | Out-Null
 Copy-Item -LiteralPath $package.payload -Destination (Join-Path $run 'portable') -Recurse
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'owner-launch.ps1') -Destination (Join-Path $run 'Launch.ps1')
 Copy-Item -LiteralPath (Join-Path $repo 'packaging/windows/paths.ps1') -Destination (Join-Path $run 'paths.ps1')
-& $compilerPath '/Q' ("/DAppVersion=$version") ("/DPayloadRoot=$($package.payload)") ("/DIconFile="+(Join-Path $repo 'packaging/windows/rust-browser.ico')) ("/DValidationId=$identity") ("/DValidationRoot=$app") ("/O$run") (Join-Path $repo 'packaging/windows/installer.iss')
+& $compilerPath '/Q' ("/DAppVersion=$version") ("/DPayloadRoot=$($package.payload)") ("/DIconFile="+(Join-Path $repo 'packaging/windows/rust-browser.ico')) ("/DValidationId=$identity") ("/DValidationRoot=$app") ("/DValidationProfile="+(Join-Path $run 'profile')) ("/O$run") (Join-Path $repo 'packaging/windows/installer.iss')
 if($LASTEXITCODE -ne 0){throw 'Validation-only installer compilation failed; do not use partial output.'}
 $setup=Join-Path $run "rust-browser-v$version-windows-x64-setup.exe"
 $record=[ordered]@{schema=1;version=$version;source_commit=$SourceCommit.ToLowerInvariant();sha256=$imports.sha256;identity=('RustBrowser.Validation.'+$identity);repository=$repo;installer_sha256=(Get-FileHash -LiteralPath $setup).Hash.ToLowerInvariant();crt_imports=$imports.crt_imports;qualified=$false;publication_authorized=$false}

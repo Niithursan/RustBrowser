@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.17.0 (unreleased)
+
+- Rust Browser can be chosen as the Windows default browser. Setup registers it for
+  your user (http and https only, no elevation); a new Privacy & security button
+  opens Windows Default apps on its page, because Windows asks the user to choose.
+  The portable ZIP registers nothing. Uninstall removes only what Setup added.
+- Links from other apps open in Rust Browser. The command line is parsed strictly:
+  the registered form takes everything after `--single-argument` as one link, only
+  explicit http and https links are accepted, and unknown options, invalid text and
+  unsafe links are refused with a message. Fixed: an argument that was not valid
+  Unicode crashed startup, and unknown options such as `--disable-web-security`
+  were silently ignored.
+- Starting Rust Browser while it runs now hands the link (or a new-tab request) to
+  the running window instead of showing "already running". The channel is private
+  to the user and Windows session, protected against impersonation and squatting,
+  size and rate limited, and can only ask to open links. See SECURITY.md.
+- The address field has Cut, Copy, Paste and Select all on right-click or the menu
+  key. Paste inserts plain text only, on one line, at most 8,192 characters.
+- Multiple normal windows are not included; a design and session-format proposal
+  awaits approval (MULTI_WINDOW_PROPOSAL.md).
+- Installer upgrade tests now start from a real 0.16 installation. Profile path,
+  session format 1 and SQLite schema 3 are unchanged.
+
 ## 0.16.0 (unreleased)
 
 - Add WebView2 find and print preview to the keyboard and More menu. Transfer

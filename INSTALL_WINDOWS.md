@@ -51,6 +51,26 @@ Do not extract into a profile, Windows directory, installer-managed directory or
 a running version. The fixed file allowlist and `package.json` describe hashes,
 source commit, version and unsigned status. Nothing is registered.
 
+## Default browser
+
+Setup (0.17 and later) registers Rust Browser for your Windows user as a browser
+that can handle `http` and `https` links. It does not make itself the default:
+Windows 11 asks you to choose. In Rust Browser open More (⋯) → Privacy & security →
+**Make default browser**, which opens Windows Settings at Default apps on Rust
+Browser's page, then set it for HTTP and HTTPS there. You can also open
+Settings → Apps → Default apps and search for Rust Browser. The Settings deep link
+needs Windows 11 21H2 or 22H2 with the April 2023 update, or later; older builds
+open the general Default apps page.
+
+The registration covers only `http` and `https`; local `.htm` and `.html` files
+are not opened by Rust Browser. The portable ZIP registers nothing, so Windows does
+not offer it as a browser.
+
+Uninstall removes exactly what Setup registered: the `RustBrowserHTML` link type,
+the `RustBrowser` browser entry and the `Rust Browser` value under
+`HKCU\Software\RegisteredApplications`. If Rust Browser was your default, Windows
+asks which browser to use next time you open a link.
+
 ## Upgrade without moving data
 
 Close **all** browser windows and wait for WebView2 processes to exit. Back up
