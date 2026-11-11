@@ -60,7 +60,8 @@ pub enum Event {
     DiagnosticsUpdated(diagnostics::Report),
     EngineProcess(TabId, crate::native_activity::Failure),
     /// The toolbar view's own WebView2 process failed.
-    ToolbarProcess(crate::native_activity::Failure),
+    ToolbarProcess(u64, crate::native_activity::Failure),
+    ToolbarResponsive(u64, u64),
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
     DownloadStopped(u64, i32),
@@ -94,6 +95,15 @@ const MAX_ENGINE_RESTARTS: usize = 3;
 /// Only the local diagnostic record is delayed; the tab shows the failure at once.
 const FAILURE_RECORD_DELAY: Duration = Duration::from_secs(2);
 const ENGINE_RESTART_WINDOW: Duration = Duration::from_secs(120);
+/// Give a reported unresponsive renderer time to answer before spending a restart.
+const TOOLBAR_RESPONSE_GRACE: Duration = Duration::from_secs(5);
+
+/// Monotonic process-local identity, including across private windows and retries.
+/// A COM pointer can be reused after retirement and cannot safely identify an event.
+fn next_toolbar_source() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Create the trusted toolbar view: local HTML only, no permissions, downloads,
 /// navigation, new windows or developer tools, and size-limited IPC commands. Used at
@@ -103,6 +113,7 @@ fn build_toolbar(
     context: &mut WebContext,
     proxy: &EventLoopProxy<Event>,
     private: bool,
+    source: u64,
 ) -> Result<WebView, Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
     let toolbar_url = format!(
@@ -131,7 +142,7 @@ fn build_toolbar(
         native_security::verify_private(&toolbar)?;
     }
     engine::accelerators(&toolbar, proxy.clone())?;
-    crate::native_activity::watch_toolbar(&toolbar, proxy.clone())?;
+    crate::native_activity::watch_toolbar(&toolbar, proxy.clone(), source)?;
     Ok(toolbar)
 }
 
@@ -216,6 +227,12 @@ struct Session {
     retired: Vec<(Instant, Page)>,
     closed: ClosedTabs,
     toolbar: WebView,
+    toolbar_source: u64,
+    toolbar_alert_shown: bool,
+    toolbar_probe: Option<(Instant, u64)>,
+    toolbar_checks: u64,
+    #[cfg(test)]
+    toolbar_alerts: usize,
     /// A failed toolbar view, hidden and kept for `RETIRE_DELAY` like a closed tab.
     retired_toolbar: Option<(Instant, WebView)>,
     content_context: WebContext,
@@ -342,12 +359,25 @@ impl Session {
         )?;
         let content_context = WebContext::new(Some(profile.join("content")));
         let mut toolbar_context = WebContext::new(Some(profile.join("toolbar")));
-        let toolbar = build_toolbar(&window, &mut toolbar_context, &proxy, private)?;
+        let toolbar_source = next_toolbar_source();
+        let toolbar = build_toolbar(
+            &window,
+            &mut toolbar_context,
+            &proxy,
+            private,
+            toolbar_source,
+        )?;
         let mut session = Self {
             tabs: Tabs::default(),
             retired: Vec::new(),
             closed: ClosedTabs::default(),
             toolbar,
+            toolbar_source,
+            toolbar_alert_shown: false,
+            toolbar_probe: None,
+            toolbar_checks: 0,
+            #[cfg(test)]
+            toolbar_alerts: 0,
             retired_toolbar: None,
             content_context,
             toolbar_context,
@@ -619,32 +649,65 @@ impl Session {
         }
     }
 
-    /// The toolbar's own engine process failed. Its browser process and renderer are
-    /// separate from the content engine's, so pages keep working, but the dead view
-    /// would leave the window without an address bar, tabs or menus. Replace it.
-    fn toolbar_failed(&mut self, failure: crate::native_activity::Failure) {
-        use crate::native_activity::Failure;
-        if matches!(failure, Failure::Helper | Failure::Unresponsive) {
+    /// Admit the terminal alert once for this window, including across replacements.
+    fn toolbar_alert(&mut self) {
+        if self.toolbar_alert_shown {
             return;
         }
+        self.toolbar_alert_shown = true;
+        #[cfg(test)]
+        {
+            self.toolbar_alerts += 1;
+        }
+        toolbar_unrecoverable(&self.window);
+    }
+
+    /// Recover only the current toolbar, preserving the separate content engine.
+    fn toolbar_failed(&mut self, source: u64, failure: crate::native_activity::Failure) {
+        use crate::native_activity::Failure;
+        if source != self.toolbar_source || failure == Failure::Helper {
+            return;
+        }
+        if failure == Failure::Unresponsive {
+            if self.toolbar_probe.is_none() && !self.toolbar_alert_shown {
+                self.toolbar_checks += 1;
+                let ticket = self.toolbar_checks;
+                self.toolbar_probe = Some((Instant::now() + TOOLBAR_RESPONSE_GRACE, ticket));
+                let proxy = self.proxy.clone();
+                // Probe only our fixed local toolbar. A queued successful response cancels
+                // recovery; repeated hang reports cannot postpone the deadline.
+                let _ = self
+                    .toolbar
+                    .evaluate_script_with_callback("true", move |value| {
+                        if value == "true" {
+                            let _ = proxy.send_event(Event::ToolbarResponsive(source, ticket));
+                        }
+                    });
+            }
+            return;
+        }
+        self.toolbar_probe = None;
         self.diagnostics.record(DiagnosticCode::ToolbarFailed);
         if !admit_engine_restart(&mut self.toolbar_restarts, Instant::now()) {
-            toolbar_unrecoverable(&self.window);
+            self.toolbar_alert();
             return;
         }
+        let next_source = next_toolbar_source();
         let toolbar = match build_toolbar(
             &self.window,
             &mut self.toolbar_context,
             &self.proxy,
             self.private,
+            next_source,
         ) {
             Ok(toolbar) => toolbar,
             Err(_) => {
-                toolbar_unrecoverable(&self.window);
+                self.toolbar_alert();
                 return;
             }
         };
         let failed = std::mem::replace(&mut self.toolbar, toolbar);
+        self.toolbar_source = next_source;
         // A view that cannot be hidden is already unusable; it is still only dropped.
         let _ = failed.set_visible(false);
         // Restarts are bounded, so at most one failed toolbar waits at a time in
@@ -2013,7 +2076,13 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::EngineProcess(id, failure) => session.process_failed(id, failure),
-            Event::ToolbarProcess(failure) => session.toolbar_failed(failure),
+            Event::ToolbarProcess(source, failure) => session.toolbar_failed(source, failure),
+            Event::ToolbarResponsive(source, ticket) => {
+                if source == session.toolbar_source
+                    && session.toolbar_probe.is_some_and(|(_, active)| active == ticket) {
+                    session.toolbar_probe = None;
+                }
+            }
             Event::PopupRequested(ticket) => {
                 if let Err(error) = session.open_popup(ticket) {
                     session.notice = format!("Error: {error}");
@@ -2155,11 +2224,27 @@ impl ApplicationHandler<Event> for App {
             return;
         }
         if let Some(session) = &mut self.session {
+            if session
+                .toolbar_probe
+                .is_some_and(|(at, _)| Instant::now() >= at)
+            {
+                session.toolbar_failed(
+                    session.toolbar_source,
+                    crate::native_activity::Failure::Renderer,
+                );
+                session.render();
+            }
             if session.engine_lost {
                 session.recover_engine();
                 session.render();
             }
-            let recording = session.record_navigation_failures(false);
+            let recording = match (
+                session.record_navigation_failures(false),
+                session.toolbar_probe,
+            ) {
+                (Some(a), Some((b, _))) => Some(a.min(b)),
+                (a, b) => a.or(b.map(|(at, _)| at)),
+            };
             let retiring = match (session.reap_retired(), recording) {
                 (Some(a), Some(b)) => Some(a.min(b)),
                 (a, b) => a.or(b),
