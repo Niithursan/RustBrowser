@@ -258,12 +258,57 @@ fn the_endpoint_allows_only_this_user() {
         let sddl = text.to_string().unwrap();
         let _ = LocalFree(Some(HLOCAL(text.0.cast())));
         let _ = LocalFree(Some(HLOCAL(descriptor.0)));
-        // Protected DACL with exactly one allow entry, for this user.
+        // Protected DACL with exactly one allow entry, for this user. Windows writes
+        // some well-known accounts as aliases (the built-in Administrator, used on
+        // hosted CI runners, becomes "LA"), so compare with this user's expected
+        // DACL passed through the same conversion rather than with the SID text.
+        assert_eq!(
+            sddl,
+            normalized(&format!("D:P(A;;FA;;;{})", me.user)),
+            "{sddl}"
+        );
         assert!(sddl.starts_with("D:P"), "{sddl}");
         assert_eq!(sddl.matches("(A;").count(), 1, "{sddl}");
-        assert!(sddl.contains(&me.user), "{sddl}");
         for group in [";WD)", ";AU)", ";BU)", ";AN)"] {
             assert!(!sddl.contains(group), "{sddl}");
         }
+        // The alias case itself: this machine's built-in Administrator (RID 500).
+        let machine = &me.user[..me.user.rfind('-').unwrap()];
+        assert_eq!(
+            normalized(&format!("D:P(A;;FA;;;{machine}-500)")),
+            "D:P(A;;FA;;;LA)"
+        );
+    }
+}
+
+/// An SDDL DACL string as Windows writes it back (aliases applied).
+fn normalized(dacl: &str) -> String {
+    use windows::Win32::Security::{
+        Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW,
+        DACL_SECURITY_INFORMATION,
+    };
+    // SAFETY: test-only conversions; both allocations are freed with LocalFree.
+    unsafe {
+        let mut descriptor = PSECURITY_DESCRIPTOR::default();
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            &HSTRING::from(dacl),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            None,
+        )
+        .unwrap();
+        let mut text = PWSTR::null();
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor,
+            SDDL_REVISION_1,
+            DACL_SECURITY_INFORMATION,
+            &mut text,
+            None,
+        )
+        .unwrap();
+        let value = text.to_string().unwrap();
+        let _ = LocalFree(Some(HLOCAL(text.0.cast())));
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+        value
     }
 }
