@@ -47,8 +47,16 @@ Step two, multiple windows:
   installer-fixture-v6, `target-v017`); 0.17 Setup already registers, so the
   fresh-install check expects registration.
 
-Next: mutation checks, full local gates, version 0.18.0, VALIDATION section,
-owner bundle, push and CI on the final head.
+- `81e3a54` engine suite strengthened after two mutation survivors; all 10
+  mutation checks caught (`work/v18/mutate.py`). `7076c01` CI and release run
+  the window suites; `99a0bb7` installer upgrade from 0.17; `4044820` 0.18.0;
+  `1aba4dc` docs; VALIDATION in the following docs commits.
+- All 36 local gates passed on `1aba4dc` (`work/v18/production-gates.json`); the
+  commits after it change documentation only.
+
+Next: CI on the pushed head (results in PR #24 comments, not here, to avoid
+another run), owner bundle from that head, owner checklist steps 12 to 21.
+Stop at the draft PR: do not merge, tag or mark ready without the owner.
 
 ## v0.17: link handling (Claude Code, in progress, owner away)
 
