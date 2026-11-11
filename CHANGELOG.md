@@ -13,8 +13,9 @@
   folder you downloaded, lists your extensions, turns them on or off and removes
   them. uBlock Origin Lite works for ad blocking (see README). Extensions never run
   in private windows or the toolbar, and Rust Browser never downloads them.
-- Fixed: since 0.18 the status line and loading text showed garbled characters
-  ("Ready Â· Ctrl+L", "Connectingâ€¦").
+- Fixed: since 0.18 the status line, the "Connecting" and "Loading" text and the
+  window-title separator showed garbled characters instead of the middle dot,
+  ellipsis and dash.
 - Fixed: the toolbar's own profile could keep form entries saved before 0.19, when
   WebView2 had autofill on in the address field. They are cleared once on upgrade;
   saved passwords and website form data are not touched.
