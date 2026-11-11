@@ -33,7 +33,16 @@ final head are recorded in the pull request.
    events. The suite now delivers that focus event after Exit, which reproduced
    the same failure locally; focus events are now ignored once shutdown begins,
    and the suite passed twice. Removing the guard makes it fail again.
-4. **Fixture only:** creating windows from `about_to_wait` wedged winit's event
+4. **Second-launch test read only the main window (found by hosted CI).** CI
+   43087322886 on `90bcfa7` failed `native_second_launch_hands_links_to_the_running_browser`:
+   it looked for the handed-over link in the saved main window, but after the
+   "new window" hand-off the new, focused window is the main one and the link is
+   in `other_windows` (the CI log shows the main window as `[new-tab]`, which is
+   the intended result). Locally the background test process could not keep the
+   foreground, so focus went back to the first window and the check passed; the
+   failure was not reproduced here. The check now searches every saved window;
+   the exact per-window check that follows is unchanged. Passed three runs locally.
+5. **Fixture only:** creating windows from `about_to_wait` wedged winit's event
    loop. Production creates windows only from events, so the fixtures send window
    requests through the event proxy as well.
 

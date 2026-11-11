@@ -59,6 +59,10 @@ Step two, multiple windows:
   others. Reproduced locally by delivering that focus event, fixed in `335ba12`
   (focus ignored during shutdown); all 36 local gates passed on `335ba12`.
 
+- CI 43087322886 on `90bcfa7` (security 43087323119 passed) failed the
+  second-launch test: it read only the main window, which is the new window
+  after a new-window hand-off. Test fixed to search every saved window.
+
 Next: CI on the pushed head (results in PR #24 comments, not here, to avoid
 another run), owner bundle from that head, owner checklist steps 12 to 21.
 Stop at the draft PR: do not merge, tag or mark ready without the owner.

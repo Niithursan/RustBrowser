@@ -225,12 +225,15 @@ fn native_second_launch_hands_links_to_the_running_browser() {
         Duration::from_secs(20),
     );
     assert_eq!(code, 2, "{stderr}");
+    // The link is in the first window, which is no longer the main (focused)
+    // one once the new window has opened; its exact place is checked below.
     assert!(
-        wait_for(Duration::from_secs(10), || saved_tabs(&profile.0)
+        wait_for(Duration::from_secs(10), || saved_windows(&profile.0)
             .iter()
+            .flatten()
             .any(|t| t == link)),
         "Handed-over link was not opened: {:?}",
-        saved_tabs(&profile.0)
+        saved_windows(&profile.0)
     );
     // The new-window request opened a second window on the new-tab page, which
     // is now the focused (main) window; the link stayed in the first window.
