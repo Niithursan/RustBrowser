@@ -125,6 +125,7 @@ fn build_toolbar(
     proxy: &EventLoopProxy<Event>,
     private: bool,
     source: u64,
+    focused: bool,
 ) -> Result<WebView, Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
     let window_id = window.id();
@@ -139,6 +140,8 @@ fn build_toolbar(
         .with_permission_handler(|_| wry::PermissionResponse::Deny)
         .with_download_started_handler(|_, _| false)
         .with_url(&toolbar_url)
+        // A toolbar that takes focus as it loads brings its window forward.
+        .with_focused(focused)
         .with_devtools(false)
         .with_default_context_menus(false)
         .with_browser_accelerator_keys(false)
@@ -239,7 +242,11 @@ fn launch_settings(uri: &str) -> bool {
 }
 
 /// A browser window with the application icon (taskbar and Alt+Tab included).
-fn new_native_window(event_loop: &ActiveEventLoop) -> Result<Window, winit::error::OsError> {
+/// `active` false shows it without taking focus, as for restored background windows.
+fn new_native_window(
+    event_loop: &ActiveEventLoop,
+    active: bool,
+) -> Result<Window, winit::error::OsError> {
     use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
     let icon =
         winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
@@ -249,7 +256,8 @@ fn new_native_window(event_loop: &ActiveEventLoop) -> Result<Window, winit::erro
             .with_taskbar_icon(icon)
             .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
             .with_inner_size(LogicalSize::new(1200.0, 820.0))
-            .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
+            .with_min_inner_size(LogicalSize::new(560.0, 320.0))
+            .with_active(active),
     )
 }
 
@@ -442,11 +450,14 @@ impl Session {
         self.focus_order.insert(0, id);
     }
 
-    /// Open a normal window with `restore`'s tabs, or the new-tab page.
+    /// Open a normal window with `restore`'s tabs, or the new-tab page. With
+    /// `foreground` it takes focus; otherwise (startup restore) it opens behind
+    /// the focused window and last in the focus order.
     fn open_window(
         &mut self,
         event_loop: &ActiveEventLoop,
         restore: Option<storage::WindowSnapshot>,
+        foreground: bool,
     ) -> Result<(), String> {
         if self.private {
             return Err("New windows open from a normal window. Use Ctrl+Shift+N for another private window.".into());
@@ -458,7 +469,7 @@ impl Session {
             ));
         }
         let failed = |_| "A new window could not be created.".to_string();
-        let window = new_native_window(event_loop).map_err(failed)?;
+        let window = new_native_window(event_loop, foreground).map_err(failed)?;
         let source = next_toolbar_source();
         let toolbar = build_toolbar(
             &window,
@@ -466,6 +477,7 @@ impl Session {
             &self.proxy,
             self.private,
             source,
+            foreground,
         )
         .map_err(|_| "A new window's toolbar could not be created.".to_string())?;
         self.windows.push(WindowState {
@@ -491,6 +503,13 @@ impl Session {
             last_title: RefCell::new(String::new()),
         });
         self.current = self.windows.len() - 1;
+        if !foreground {
+            // Not focused yet: keep page focus requests out of this window.
+            let first = self.windows[0].window.id();
+            if !self.focus_order.contains(&first) {
+                self.focus_order.insert(0, first);
+            }
+        }
         let restore = restore.unwrap_or_else(|| storage::WindowSnapshot {
             tabs: vec![navigation::HOME.into()],
             ..Default::default()
@@ -520,8 +539,12 @@ impl Session {
         let _ = self.resize();
         self.render();
         let id = self.window.id();
-        self.focused(id);
-        self.window.focus_window();
+        if foreground {
+            self.focused(id);
+            self.window.focus_window();
+        } else {
+            self.focus_order.push(id);
+        }
         self.persist();
         Ok(())
     }
@@ -590,7 +613,7 @@ impl Session {
             tabs: tabs.into_iter().map(|(url, _)| url).collect(),
             ..Default::default()
         };
-        self.open_window(event_loop, Some(restore))?;
+        self.open_window(event_loop, Some(restore), true)?;
         self.closed_windows.remove(0);
         Ok(())
     }
@@ -692,13 +715,16 @@ impl Session {
         // the window that was focused last.
         let first = session.windows[0].window.id();
         for restore in std::mem::take(&mut session.pending_restore) {
-            if let Err(message) = session.open_window(event_loop, Some(restore)) {
+            if let Err(message) = session.open_window(event_loop, Some(restore), false) {
                 session.select_window(first);
                 session.notice = message;
                 break;
             }
         }
         session.select_window(first);
+        // The saved main window receives links and stays first in the next save;
+        // restored windows opened behind it.
+        session.focused(first);
         session.window.focus_window();
         session.persist();
         Ok(session)
@@ -781,7 +807,7 @@ impl Session {
                 }
                 opened
             }
-            Request::NewWindow => match self.open_window(event_loop, None) {
+            Request::NewWindow => match self.open_window(event_loop, None, true) {
                 Ok(()) => {
                     // open_window focused and saved the new window.
                     self.window.set_minimized(false);
@@ -869,7 +895,7 @@ impl Session {
             },
             proxy.clone(),
         )?;
-        let window = new_native_window(event_loop)?;
+        let window = new_native_window(event_loop, true)?;
         let content_context = WebContext::new(Some(profile.join("content")));
         let mut toolbar_context = WebContext::new(Some(profile.join("toolbar")));
         let toolbar_source = next_toolbar_source();
@@ -879,6 +905,7 @@ impl Session {
             &proxy,
             private,
             toolbar_source,
+            true,
         )?;
         let tab_ids = Rc::new(std::cell::Cell::new(1));
         let first_window = WindowState {
@@ -1235,12 +1262,14 @@ impl Session {
             return;
         }
         let next_source = next_toolbar_source();
+        let focused = self.is_focused();
         let toolbar = match build_toolbar(
             &self.windows[self.current].window,
             &mut self.toolbar_context,
             &self.proxy,
             self.private,
             next_source,
+            focused,
         ) {
             Ok(toolbar) => toolbar,
             Err(_) => {
@@ -1399,8 +1428,21 @@ impl Session {
         Ok(())
     }
 
-    fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    /// Only the active tab of the focused window may ask for a permission; a
+    /// change of tab or of focused window cancels pending requests.
+    fn claim_permissions(&mut self) {
+        if !self.is_focused() {
+            return;
+        }
         let next = self.tabs.active().map(|tab| tab.id);
+        let mut permissions = self.permissions.borrow_mut();
+        if permissions.active != next {
+            permissions.cancel_all();
+        }
+        permissions.active = next;
+    }
+
+    fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let fullscreen = self
             .tabs
             .active()
@@ -1411,15 +1453,7 @@ impl Session {
             self.window
                 .set_fullscreen(fullscreen.map(|_| winit::window::Fullscreen::Borderless(None)));
         }
-        // Only the active tab of the focused window may ask for a permission;
-        // a change of tab or of focused window cancels pending requests.
-        if self.is_focused() {
-            let mut permissions = self.permissions.borrow_mut();
-            if permissions.active != next {
-                permissions.cancel_all();
-            }
-            permissions.active = next;
-        }
+        self.claim_permissions();
         let active = self.tabs.active_index();
         let panel = self.effective_panel();
         let now = self.started.elapsed();
@@ -1450,7 +1484,8 @@ impl Session {
         // WebView2 MoveFocus rejects a minimized parent (E_INVALIDARG). Keep
         // visibility/tab changes, then request focus once Windows restores it.
         self.focus_pending = self.window.is_minimized() == Some(true);
-        if self.focus_pending {
+        // Moving page focus inside a background window would bring it forward.
+        if self.focus_pending || !self.is_focused() {
             return Ok(());
         }
         if self.effective_panel().is_some() {
@@ -1989,6 +2024,7 @@ impl Session {
             }
             Command::Navigate(input) => {
                 let panel_open = self.effective_panel().is_some();
+                let focused = self.is_focused();
                 self.permissions.borrow_mut().cancel_all();
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.notice.clear();
@@ -2000,6 +2036,9 @@ impl Session {
                     tab.content.state.message = "Connectingâ€¦".into();
                     tab.content.state.loading = true;
                     tab.content.state.failed = false;
+                }
+                // Focusing a page of a background window would pull it forward.
+                if focused && let Some(tab) = self.tabs.active() {
                     tab.content.engine.focus()?;
                 }
                 if panel_open {
@@ -2638,6 +2677,10 @@ mod keyboard_validation;
 mod edit_menu_validation;
 
 #[cfg(test)]
+#[path = "windows_validation.rs"]
+mod windows_validation;
+
+#[cfg(test)]
 #[path = "basics_validation.rs"]
 mod basics_validation;
 
@@ -2763,7 +2806,9 @@ impl ApplicationHandler<Event> for App {
                 if let Some(session) = &mut self.session {
                     let id = session.window.id();
                     session.focused(id);
-                    let _ = session.activate();
+                    // Windows and WebView2 restore keyboard focus inside the window;
+                    // moving it here as well makes several windows trade focus forever.
+                    session.claim_permissions();
                     session.persist();
                     session.render_all();
                 }
@@ -2843,7 +2888,7 @@ impl ApplicationHandler<Event> for App {
         };
         match &event {
             Event::Command(Command::NewWindow) => {
-                if let Err(message) = session.open_window(event_loop, None) {
+                if let Err(message) = session.open_window(event_loop, None, true) {
                     session.notice = message;
                     session.render_all();
                 }
