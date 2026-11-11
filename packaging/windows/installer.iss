@@ -14,12 +14,26 @@
   #define ProductName "Rust Browser validation " + ValidationId
   #define InstallDirectory ValidationRoot
   #define RunningMutex "Local\RustBrowser.Validation." + ValidationId
+  ; Default-browser registration names of a validation install are its own, so
+  ; tests never touch the production registration or the user's real defaults.
+  #define ProgId "RustBrowserV." + Copy(ValidationId, 1, 16)
+  #define ClientKey "RustBrowser.Validation." + ValidationId
+  ; Links Windows starts through this registration get no environment, so the
+  ; validation install records its own disposable profile.
+  #ifndef ValidationProfile
+    #define ValidationProfile ValidationRoot + "-profile"
+  #endif
 #else
   #define Identity "Niithursan.RustBrowser"
   #define ProductName "Rust Browser"
   #define InstallDirectory "{localappdata}\Programs\RustBrowser"
   #define RunningMutex "Local\RustBrowser.ApplicationRunning"
+  #define ProgId "RustBrowserHTML"
+  #define ClientKey "RustBrowser"
 #endif
+; The RegisteredApplications value name is what Windows Settings lists and what
+; ms-settings:defaultapps?registeredAppUser= expects.
+#define RegisteredName ProductName
 
 [Setup]
 AppId={#Identity}
@@ -73,6 +87,36 @@ Source: "{#PayloadRoot}\package.json"; DestDir: "{app}"; Flags: ignoreversion
 [INI]
 Filename: "{app}\installation.ini"; Section: "Installation"; Key: "Identity"; String: "{#Identity}"
 Filename: "{app}\installation.ini"; Section: "Installation"; Key: "Version"; String: "{#AppVersion}"
+Filename: "{app}\installation.ini"; Section: "Installation"; Key: "RegisteredName"; String: "{#RegisteredName}"
+#ifdef ValidationId
+Filename: "{app}\installation.ini"; Section: "Installation"; Key: "Profile"; String: "{#ValidationProfile}"
+#endif
+
+[Registry]
+; Per-user default-browser registration (HKCU, no elevation). Setup never sets the
+; default: Windows asks the user to choose in Settings. Only http and https are
+; registered; local .htm and .html files are not accepted by the browser.
+; The command separates the link from options: everything after --single-argument
+; is one link.
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueName: ""; ValueData: "Rust Browser link"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "Rust Browser link"
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#ProductName}"
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}\Application"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\rust-browser.exe,0"
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}\Application"; ValueType: string; ValueName: "ApplicationCompany"; ValueData: "Niithursan"
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\rust-browser.exe,0"
+Root: HKCU; Subkey: "Software\Classes\{#ProgId}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\rust-browser.exe"" --single-argument %1"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}"; ValueType: string; ValueName: ""; ValueData: "{#ProductName}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#ProductName}"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A lightweight web browser built in Rust."
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\rust-browser.exe,0"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "{#ProgId}"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities\URLAssociations"; ValueType: string; ValueName: "https"; ValueData: "{#ProgId}"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities\StartMenu"; ValueType: string; ValueName: "StartMenuInternet"; ValueData: "{#ClientKey}"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\rust-browser.exe,0"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\{#ClientKey}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\rust-browser.exe"""
+; Only this value: the RegisteredApplications key belongs to Windows and other apps.
+Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "{#RegisteredName}"; ValueData: "Software\Clients\StartMenuInternet\{#ClientKey}\Capabilities"; Flags: uninsdeletevalue
 
 [UninstallDelete]
 ; Exact installer-owned marker only. Never delete the app tree or any profile.

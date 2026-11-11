@@ -319,9 +319,46 @@ pub fn lock(profile: &Path) -> io::Result<File> {
     Ok(lock)
 }
 
+/// One value from `installation.ini` next to the running executable, which Setup
+/// writes; a portable copy has none.
+pub fn installation_value(key: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let text = fs::read_to_string(exe.parent()?.join("installation.ini")).ok()?;
+    if text.len() > 16 * 1024 {
+        return None;
+    }
+    let mut section = "";
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line;
+        } else if section == "[Installation]"
+            && let Some((name, value)) = line.split_once('=')
+            && name.trim() == key
+        {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+/// A validation install (never the production identity) records its own
+/// disposable profile, because links Windows starts through its registration get
+/// no environment.
+fn validation_profile() -> Option<PathBuf> {
+    let identity = installation_value("Identity")?;
+    if !identity.starts_with("RustBrowser.Validation.") {
+        return None;
+    }
+    let profile = PathBuf::from(installation_value("Profile")?);
+    profile.is_absolute().then_some(profile)
+}
+
 pub fn profile_dir() -> io::Result<PathBuf> {
     if let Some(value) = std::env::var_os("RUST_BROWSER_PROFILE") {
         return Ok(value.into());
+    }
+    if let Some(profile) = validation_profile() {
+        return Ok(profile);
     }
     // Keep the v0.1 location so upgrading preserves existing cookies and site storage.
     Ok(PathBuf::from(

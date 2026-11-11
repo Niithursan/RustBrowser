@@ -189,6 +189,51 @@ fn toolbar_unrecoverable(window: &Window) {
     let _ = window;
 }
 
+/// Percent-encode a URI query component (RFC 3986 unreserved characters kept).
+fn escape_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Settings URIs the browser asked to open, instead of opening them in tests.
+    pub(crate) static OPENED_SETTINGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Ask Windows to open an `ms-settings:` page. Only fixed Settings URIs reach here.
+fn launch_settings(uri: &str) -> bool {
+    if !uri.starts_with("ms-settings:defaultapps") {
+        return false;
+    }
+    #[cfg(test)]
+    {
+        OPENED_SETTINGS.with(|opened| opened.borrow_mut().push(uri.to_string()));
+        true
+    }
+    #[cfg(not(test))]
+    // SAFETY: owned wide strings; no window handle is needed for a URI.
+    unsafe {
+        use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let result = ShellExecuteW(
+            None,
+            &windows::core::HSTRING::from("open"),
+            &windows::core::HSTRING::from(uri),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        );
+        result.0 as isize > 32
+    }
+}
+
 /// Bound automatic restarts so a persistently crashing engine cannot loop.
 fn admit_engine_restart(history: &mut Vec<Instant>, now: Instant) -> bool {
     history.retain(|at| now.duration_since(*at) < ENGINE_RESTART_WINDOW);
@@ -347,6 +392,29 @@ impl Session {
             }
             Err(ServerError::Failed) => {}
         }
+    }
+
+    /// Open Windows Default apps, at this browser's page when Setup registered it.
+    /// Windows 11 requires the user to choose the default; nothing is changed here.
+    fn open_default_apps(&mut self) {
+        let name = storage::installation_value("RegisteredName").filter(|name| {
+            !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control)
+        });
+        let uri = match &name {
+            Some(name) => format!(
+                "ms-settings:defaultapps?registeredAppUser={}",
+                escape_component(name)
+            ),
+            None => "ms-settings:defaultapps".to_string(),
+        };
+        self.notice = if !launch_settings(&uri) {
+            "Windows Settings could not be opened. Open Settings, then Apps, then Default apps."
+                .into()
+        } else if name.is_some() {
+            "Windows Settings opened at Default apps. Windows asks you to choose: select Rust Browser there and set it for HTTP and HTTPS. Rust Browser cannot change this for you.".into()
+        } else {
+            "Windows Settings opened at Default apps. This copy was not installed with Setup, so Windows does not list it as a browser. Install Rust Browser with Setup to choose it as your default.".into()
+        };
     }
 
     /// Open what a later launch handed over, then bring this window forward.
@@ -1205,6 +1273,7 @@ impl Session {
                 }
             }
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
+            Command::OpenDefaultApps => self.open_default_apps(),
             Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
@@ -2002,6 +2071,26 @@ mod tests {
         assert_eq!(start_failure(text.as_ref()), StartFailure::Other);
         let _ = std::fs::remove_dir_all(root);
     }
+    #[test]
+    fn default_apps_uri_is_escaped_and_only_default_apps_can_be_opened() {
+        assert_eq!(
+            escape_component("Rust Browser validation 01ab"),
+            "Rust%20Browser%20validation%2001ab"
+        );
+        assert_eq!(escape_component("a&b=c?d#e/f"), "a%26b%3Dc%3Fd%23e%2Ff");
+        assert!(!launch_settings("https://example.com/"));
+        assert!(!launch_settings("ms-settings:privacy-webcam"));
+        assert!(launch_settings(
+            "ms-settings:defaultapps?registeredAppUser=Rust%20Browser"
+        ));
+        OPENED_SETTINGS.with(|opened| {
+            assert_eq!(
+                *opened.borrow(),
+                vec!["ms-settings:defaultapps?registeredAppUser=Rust%20Browser".to_string()]
+            )
+        });
+    }
+
     #[test]
     fn engine_restarts_are_bounded_within_the_window_and_allowed_again_after_it() {
         let start = Instant::now();
