@@ -1,4 +1,4 @@
-# Owner checklist (about 30 minutes)
+# Owner checklist (about 40 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -185,17 +185,16 @@ to the front; no second window appears; no "already running" message.
 
 1. With the window open, run `.\Launch.ps1 -Installed` again.
 
-**Pass:** no second window and no error; the running window gets a new tab and comes
-to the front.
+**Pass:** no error; a second browser window opens on the new-tab page and comes to
+the front. (Before 0.18 this opened a new tab instead.)
 
 ## 15. Second window (1 minute)
 
-Multiple normal windows are not in this build (see MULTI_WINDOW_PROPOSAL.md).
+1. Press Ctrl+N, then use More (⋯) → New window.
 
-1. Press Ctrl+N.
-
-**Pass:** nothing unexpected happens (no window, no error). Report if you expected a
-new window here; that decision is open.
+**Pass:** each opens one new window on the new-tab page, with its own taskbar and
+Alt+Tab entry. Close the extra windows with their close buttons; the browser stays
+open until the last one closes.
 
 ## 16. Right-click paste in the address field (1 minute)
 
@@ -204,6 +203,49 @@ new window here; that decision is open.
 
 **Pass:** the menu shows exactly Cut, Copy, Paste and Select all; the pasted text is
 on one line; right-clicking elsewhere in the toolbar shows no menu.
+
+## 17. Three windows with tabs (3 minutes)
+
+1. Open two more windows with Ctrl+N, so three are open.
+2. In each window open two or three websites in separate tabs. Use Ctrl+Tab,
+   Ctrl+T and Ctrl+W in each.
+
+**Pass:** tabs, shortcuts, the address field and notices act only in the window you
+are using; each window's title and taskbar entry show its own page.
+
+## 18. Close and reopen the browser (2 minutes)
+
+1. With the three windows from step 17 open, use More (⋯) → Exit.
+2. Start the browser again with the same launcher.
+
+**Pass:** all three windows return with their tabs, pinned tabs and selected tabs;
+the window you used last is in front.
+
+## 19. A link lands in the last-used window (2 minutes)
+
+1. With two or more windows open, click one window to use it, then click a link in
+   another app (as in step 13).
+
+**Pass:** the link opens as a new tab in the window you used last, and that window
+comes to the front.
+
+## 20. Drag windows between monitors (2 minutes)
+
+Needs two monitors; otherwise report not tested.
+
+1. Drag one window to the other monitor and back, and leave another window on each
+   monitor.
+
+**Pass:** each window redraws sharply at each monitor's scale, its toolbar fits and
+its page stays usable.
+
+## 21. Narrator on a second window's toolbar (3 minutes)
+
+1. Open a second window, start Narrator (Ctrl+Windows+Enter) and move through the
+   second window's toolbar with Tab and Shift+Tab.
+
+**Pass:** Narrator reads that window's buttons, tabs and address field, not the
+first window's. Turn Narrator off afterwards.
 
 When you finish, set your usual default browser back (step 12.3) and uninstall the
 validation entry from Apps & Features.

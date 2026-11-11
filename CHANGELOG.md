@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.18.0 (unreleased)
+
+- Several normal windows on one profile: Ctrl+N, More > New window and a second
+  launch with no link open a window on the new-tab page, up to 8. A ninth request
+  shows a notice. Each window has its own tabs, toolbar, closed-tab list, taskbar
+  and Alt+Tab entry; the profile, downloads, history and settings are shared.
+- Links from other apps go to the most recently focused window, which comes to the
+  front.
+- Closing one window closes only that window; its pages are destroyed after the
+  usual retirement delay. More > Reopen closed window brings back its tab
+  addresses and pins until the browser exits. Closing the last window or
+  More > Exit ends the browser.
+- Every open window is saved and restored at the next start, also after a crash.
+  Session format 1 keeps the focused window in its existing fields and adds an
+  optional `other_windows` list (at most 8 windows, 64 tabs each), written only
+  when more than one window is open. 0.17 reads the file but restores only the
+  focused window; see INSTALL_WINDOWS.md before downgrading.
+- An engine restart rebuilds every window; data clearing closes other windows and
+  waits for every retired page; a toolbar failure is recovered in its own window.
+  Only the selected tab of the focused window may show a permission prompt.
+- Fixed before release: handling a focus change by moving focus into the page made
+  several windows hand focus to each other forever, and restored windows took focus
+  as they loaded, so the wrong window ended up in front.
+- Native suites cover routing, the limit, close, reopen, hand-off, engine restart,
+  toolbar recovery, clearing with retired pages in two windows, and restore after a
+  normal exit and after a killed process. Installer upgrade tests now start from a
+  real 0.17 installation. Profile path and SQLite schema 3 are unchanged.
+
 ## 0.17.0 (unreleased)
 
 - Rust Browser can be chosen as the Windows default browser. Setup registers it for
@@ -18,8 +46,7 @@
   size and rate limited, and can only ask to open links. See SECURITY.md.
 - The address field has Cut, Copy, Paste and Select all on right-click or the menu
   key. Paste inserts plain text only, on one line, at most 8,192 characters.
-- Multiple normal windows are not included; a design and session-format proposal
-  awaits approval (MULTI_WINDOW_PROPOSAL.md).
+- Multiple normal windows were not included in 0.17; they arrived in 0.18.
 - Installer upgrade tests now start from a real 0.16 installation. Profile path,
   session format 1 and SQLite schema 3 are unchanged.
 

@@ -23,7 +23,32 @@ Draft PR #24. Step one CI green on `eb80224`: CI 43066449889, security
 statement and SECURITY reporting wording (private vulnerability reporting was
 still disabled when checked: `enabled: false`).
 
-Next: step two (multiple windows).
+Step two, multiple windows:
+- `57d73a6` format option B (`storage::WindowSnapshot`, `other_windows`,
+  `MAX_WINDOWS` 8, `storage::fits`), 7 tests in `tests/session_windows.rs`.
+- `11dda94` windows: open (Ctrl+N, More > New window, hand-off), limit notice,
+  close one window (retired after `RETIRE_DELAY`), Reopen closed window, Exit,
+  save and restore, engine restart and clearing across windows, per-window
+  toolbar checks, permissions only for the focused window.
+- `ee0b8a4` two defects found by the new native suites, reproduced first:
+  (1) the Focused handler moved page focus, so three windows traded focus
+  forever and the loop never idled (pages stuck on "Connecting"); (2) restored
+  windows' toolbars took focus as they loaded (wry `with_focused` default), so the
+  last restored window became "most recent". Fixes: focus events only claim
+  permissions; restored windows are created inactive with unfocused toolbars;
+  page focus is never moved inside a background window. Adds
+  `src/windows_validation.rs` (3 native suites).
+- `46a9304` `tests/single_instance.rs`: new-window hand-off opens a window;
+  killed-browser restore of two windows. Only "Window Class" windows are counted
+  (winit's event target window reports visible).
+- Fixture lesson: creating windows from `about_to_wait` wedges winit's loop; the
+  fixtures send window requests through the proxy, as production does.
+- Installer upgrade fixture now pins v0.17 `7a61d97` (cache key
+  installer-fixture-v6, `target-v017`); 0.17 Setup already registers, so the
+  fresh-install check expects registration.
+
+Next: mutation checks, full local gates, version 0.18.0, VALIDATION section,
+owner bundle, push and CI on the final head.
 
 ## v0.17: link handling (Claude Code, in progress, owner away)
 

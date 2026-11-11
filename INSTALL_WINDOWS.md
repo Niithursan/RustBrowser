@@ -95,6 +95,15 @@ down; wait for it before running Setup, which otherwise reports the browser as
 running. If the browser is started while a normal window is already open for the
 same profile, it shows "Rust Browser is already running" and changes nothing.
 
+Upgrading v0.17 to v0.18 keeps session format 1 and SQLite schema 3. With more than
+one window open, 0.18 adds an `other_windows` list to `session.json`.
+
+**Downgrading from 0.18 to 0.17 with several windows open loses all but one
+window.** 0.17 reads the file and restores only the window that was focused last
+when 0.18 saved; it ignores the others, and its first save removes them for good.
+Before downgrading, close every window except the one to keep, or copy the tabs you
+need, and keep a backup of the closed profile.
+
 For existing portable users, close the old copy, install the new version
 normally and launch it: both use the same separate profile. Do not point Setup at the portable folder.
 Verify tabs/bookmarks/settings before removing old application files. Portable
