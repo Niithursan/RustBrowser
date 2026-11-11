@@ -13,8 +13,17 @@ v0.19 branches from verified main `efd1a2a` (CI 43091111950 and security
 WebView2 (form autofill is now off by default), two clearing choices and bookmark
 import from an exported HTML file, and fixes silent loss of windows when the session
 is too large. All 39 local gates passed on `1336439` and 14 mutation checks were
-caught; see VALIDATION.md. Owner checklist steps 22 to 27 are new and not yet done.
-No release candidate is declared.
+caught; see VALIDATION.md. No release candidate is declared.
+
+Owner checklist on bundle `o-b60800e5`, version 0.19.0, built from PR #25 head
+`abdff7b` (EXE SHA-256
+`6e59d53d49fbe99cbca28d5caaca8a0b2d0bc7aefaac12f5f4c67da755e445e9`), 2026-11-11:
+steps 22 to 27 all passed by owner report, with the bundle's disposable profile.
+Passwords used the public demo login at the-internet.herokuapp.com; autofill used
+made-up details on httpbin.org/forms/post, submitted because autofill saves entries
+on submit; a real Firefox export was imported. The validation install and its
+profile were removed. Folder mapping on import is approved as it is. These results
+cover that build only.
 
 v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
 42931608910 passed. It adds content-only native find, zoom and print, and toolbar

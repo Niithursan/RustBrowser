@@ -79,11 +79,22 @@ define 266 `ICoreWebView2*` interfaces and no member whose name contains "import
 the only password members are the two autosave switches and
 `ICoreWebView2BasicAuthenticationResponse` (answers to HTTP sign-in prompts).
 
+### Owner results
+
+Owner checklist on bundle `o-b60800e5`, version 0.19.0, built from PR #25 head
+`abdff7b` (EXE SHA-256
+`6e59d53d49fbe99cbca28d5caaca8a0b2d0bc7aefaac12f5f4c67da755e445e9`), 2026-11-11:
+steps 22 to 27 all passed by owner report, with the bundle's disposable profile.
+Passwords used the public demo login at the-internet.herokuapp.com; autofill used
+made-up details on httpbin.org/forms/post, submitted because autofill saves entries
+on submit; a real Firefox export was imported. The validation install and its
+profile were removed. Folder mapping on import is approved as it is. These results
+cover that build only.
+
 ### Not tested here
 
-Owner checklist steps 22 to 27 (saving a password on a real sign-in page, a
-private window, filling a real form, clearing passwords, importing a real Firefox
-export) are not done. Whether WebView2 actually offers to save or fill on a given
+Before the owner results above, owner checklist steps 22 to 27 had not been done.
+Whether WebView2 actually offers to save or fill on a given
 site, and what clearing removes from its stores, were not observed: the suites
 check the settings WebView2 reports and the clearing kinds requested. The native
 file dialog was not driven by a test. Popups get the switches through the same view

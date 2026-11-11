@@ -271,9 +271,10 @@ and the two switches are greyed out in that window's Privacy & security.
 ## 24. Fill in a form (3 minutes)
 
 1. Turn on **Fill in forms automatically**.
-2. On any website form with name and address fields, type a made-up name and
-   address, then reload the page (do not submit real details anywhere).
-3. Click the name field again.
+2. On a test form such as https://httpbin.org/forms/post, type a made-up name and
+   address and **submit** the form (autofill saves entries when a form is submitted).
+   Never enter real details.
+3. Open the same form again and click the name field.
 
 **Pass:** the earlier entry is suggested and fills the form. With the switch off
 again, nothing is suggested.
