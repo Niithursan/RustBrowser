@@ -44,10 +44,17 @@ Both are isolated; do not overwrite target/release or use the real profile.
 Draft https://github.com/Niithursan/RustBrowser/pull/22 is open. Initial head CI
 42941163150 was running and security 42941163324 passed when this final evidence
 update was prepared. These are initial-head results, not a final CI claim.
-Next: commit this evidence-only update, repeat every local gate, then make the
-second/final push. Verify the final head/run IDs with gh pr checks before marking
-ready. Record final status in the PR/delivery, not another packaged-doc commit.
-No reruns/dispatches unless a hosted failure was reproduced and fixed locally.
+Final qualification (Claude Code, 2026-11-10): repeating the gates after d6df29f
+failed once in native_toolbar_keyboard_reachability_and_scaled_layout ("Control list
+unreadable"): a late focus-probe response was parsed as the next query. afa8fb4
+fixes the fixtures only (one outstanding query, ordered responses, fixed 120 ms
+focus-response delay; ticketed responses in the page-tools fixture). After it:
+keyboard 5/5, normal page tools 3/3, private page tools 3/3, then all 31 local gates
+passed on afa8fb4508098ca9ee74de716baaa13ed22286eb (81 regular tests, 12 native
+suites, three daily runs, package/installer/metadata/owner/audit). Release EXE
+SHA-256 3db516901dd655c0621bd4e53f099ece6d2744072df83fc1aa9bae3bdd1a6941. The
+following commit changes only this unpackaged file, which no build or test reads.
+Final hosted results are recorded in PR #22, not here.
 No merge/tag/publication or RC declaration is authorized.
 See validation/V016.md for baseline, reproduction, API research and evidence limits.
 
