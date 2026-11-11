@@ -39,6 +39,16 @@ unexpected; the address-field menu showed exactly Cut, Copy, Paste and Select al
 and paste was one line. Firefox was restored as the default and the validation
 install was removed. These results cover that build only.
 
+Owner checklist on bundle `o-9ad95301`, version 0.18.0, built from PR #24 head
+`42e3f45` (EXE SHA-256
+`db97e72331f2ae708396eb7103ad5cf2e37e0e32f109424a322b3a758fc84a06`), 2026-11-11:
+steps 12, 13, 14, 17, 18, 19, 20 and 21 all passed by owner report. Steps 15 and 16
+were not re-run (they passed on 0.17 bundle `o-4349a481`; 0.17's step 15 checked
+that Ctrl+N did nothing, so the 0.18 New window step was not checked by hand, though
+steps 17 and 18 used Ctrl+N). Step 20 used two monitors at the same scale. Firefox
+was restored as the default and the validation install was removed. More > Exit is
+approved as named. These results cover that build only.
+
 ## Historical v0.15 technical evidence
 
 After PR #19 merged at `13ff603`, Windows 11 x64 is the initial qualification

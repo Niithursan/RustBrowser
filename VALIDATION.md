@@ -94,12 +94,23 @@ retires both at the same moment). One check in that suite also compared view
 addresses across tabs; the allocator reuses a freed address for another tab's new
 view, so it now compares per tab, as the single-window restart suite does.
 
+### Owner results
+
+Owner checklist on bundle `o-9ad95301`, version 0.18.0, built from PR #24 head
+`42e3f45` (EXE SHA-256
+`db97e72331f2ae708396eb7103ad5cf2e37e0e32f109424a322b3a758fc84a06`), 2026-11-11:
+steps 12, 13, 14, 17, 18, 19, 20 and 21 all passed by owner report. Steps 15 and 16
+were not re-run (they passed on 0.17 bundle `o-4349a481`; 0.17's step 15 checked
+that Ctrl+N did nothing, so the 0.18 New window step was not checked by hand, though
+steps 17 and 18 used Ctrl+N). Step 20 used two monitors at the same scale. Firefox
+was restored as the default and the validation install was removed. More > Exit is
+approved as named. These results cover that build only.
+
 ### Not tested here
 
-Owner checklist steps 17 to 21 (three windows by hand, close and reopen, link to
-the last-used window, two monitors, Narrator on a second window) are not done.
-Drag between monitors, real taskbar grouping and Alt+Tab order were not observed
-by a person. Downgrade to 0.17 with several windows was not run; it is documented
+Before the owner results above, owner checklist steps 17 to 21 had not been done.
+Dragging between monitors with different scales was not tested; real taskbar
+grouping and Alt+Tab order were not separately observed. Downgrade to 0.17 with several windows was not run; it is documented
 in INSTALL_WINDOWS.md from the format tests.
 
 ## v0.17 links from other apps, hand-off and default-browser registration
