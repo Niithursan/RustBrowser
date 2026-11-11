@@ -1,5 +1,38 @@
 # Validation
 
+## v0.16 everyday browsing and toolbar follow-ups
+
+Baseline `cb3d81dc4e5f7fca883fc561ff6216523a21dd2d` includes merged PRs #21,
+#20 and #4. Windows CI 42931608985 and security 42931608910 passed before
+branching. Branch: `feat/v0.16-everyday-basics`. The application is 0.16.0;
+profile path, session format 1, SQLite schema 3 and dynamic CRT are unchanged.
+RC status remains **unapproved**. See the
+[reproductions, native tests, GUI checks, mutation results and Actions review](https://github.com/Niithursan/RustBrowser/blob/main/validation/V016.md).
+
+Focused native toolbar/content tests pass in development. Eight compiled mutants
+were rejected by their intended semantic assertions, including the old stale-event,
+repeated-alert and ignored-hang behaviors. Native find requires a real query to
+verify completion/matches; blank-dialog visibility is checked separately in the GUI.
+The full pre-push gates and final exact-head hosted results are still pending at
+this checkpoint; earlier commits' CI is not evidence for the new head.
+
+### Owner report for the exact PR #21 build
+
+On 2026-11-10 the owner reported **PASS for checklist items 1 to 8**: installer,
+taskbar/window identity, Narrator, contrast theme, IME entry, real sign-in with
+restart, video-call page, and two monitors with different scale. These are owner
+results, not automated observations. Bundle `o-d8ee96f5`, source
+`062c93dc7688ef296345f20ac7b1e39fd7c06fae`, static CRT experiment, executable
+SHA-256 `bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+It used the validation installation identity and only `Launch.ps1 -Installed`
+with that bundle's disposable profile. The results apply only to those bytes.
+
+They do not transfer to v0.16 or another candidate. Repeat the existing checklist
+and its new find/zoom/print steps on the exact proposed candidate. A6 for that
+candidate, clean-machine testing, risk-disposition approval and RC authorization
+remain open. Static CRT remains opt-in. No Windows setting, real profile or
+production installation was changed by this milestone.
+
 ## Post-merge v0.15 qualification investigation
 
 PR #19 was squash-merged at `13ff603b84ba2b0c0429dc61bc338de738e9025b`.

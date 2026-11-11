@@ -1,9 +1,31 @@
-# Windows release readiness (v0.15 preparation)
+# Windows release readiness (v0.16 development)
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
-are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) remain open.
+are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
+repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
+
+## Current milestone and exact prior-build owner results
+
+v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
+42931608910 passed. It adds content-only native find, zoom and print, and toolbar
+recovery follow-ups. Focused native tests and eight compiled mutation checks pass;
+full local and exact-head hosted qualification remain pending at this checkpoint.
+Details: [v0.16 record](V016.md). No RC is declared.
+
+The owner's 2026-11-10 report passes checklist items 1 to 8 for **one build**:
+bundle `o-d8ee96f5`, source `062c93dc7688ef296345f20ac7b1e39fd7c06fae`, static
+CRT experiment, EXE SHA-256
+`bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+It used the validation installation identity and only `Launch.ps1 -Installed`
+with the bundle's disposable profile. Installer, identity, Narrator, contrast,
+IME, sign-in/restart, video-call page and mixed-scale monitor checks passed by
+owner report. They do not cover later bytes or the new v0.16 tools. A6 must be
+repeated on the exact candidate. Static CRT stays opt-in; criteria approval,
+clean-machine testing and publication authorization remain the owner's decisions.
+
+## Historical v0.15 technical evidence
 
 After PR #19 merged at `13ff603`, Windows 11 x64 is the initial qualification
 priority. Technical qualification is separate from declaring/tagging/publishing
@@ -49,9 +71,9 @@ not recurring CI workloads. Their raw data stays outside Git.
 | Standard user outside Administrators | Not separately tested; non-elevated local token is only partial evidence |
 | Missing WebView2 | No missing-runtime host test; existing checks/instructions remain; no automatic runtime installation |
 | Missing Visual C++ runtime | Production EXE remains dynamic; Setup checks both VCRUNTIME140 DLLs. The opt-in static EXE has no direct/delay CRT imports, but clean-host/runtime-chain verification and adoption approval remain open |
-| Human installer wizard / icon / taskbar review | Owner checklist, not established by silent installation or resource checks |
-| Narrator / contrast themes / physical IME / native mixed DPI | Still owner checks; renderer emulation and UIA do not replace them |
-| Real sign-in / camera / microphone / video call | Owner-controlled test-account/device checks outstanding |
+| Human installer wizard / icon / taskbar review | Owner passed items 1 and 2 on exact bundle o-d8ee96f5 only; repeat on the next candidate |
+| Narrator / contrast themes / physical IME / native mixed DPI | Owner passed items 3, 4, 5 and 8 on that exact build only; new bytes remain unverified |
+| Real sign-in / camera / microphone / video call | Owner passed items 6 and 7 on that exact build only; repeat on the next candidate |
 | Power loss / full disk / every interruption timing | Unverified; controlled process termination is only a tested subset |
 | 30-minute v0.15 soak | Pinned static experiment completed one fresh controlled run; dynamic v0.15 was not measured in a matched soak. Finite results do not establish leak freedom or human/media/device behavior |
 | Signing / authenticated updates | No identity/root/service; no signing, updater or invented key added |
