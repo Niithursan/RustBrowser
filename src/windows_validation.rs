@@ -1270,6 +1270,17 @@ fn extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     return Err(format!("Both extensions should run on the page: {found}"));
                 }
                 let s = p.app.session.as_mut().ok_or("No session")?;
+                // WebView2's built-in PDF viewer is not the user's extension.
+                let builtin = "mhjfbmdgcfjbbpaeojofohoefgiehjai".to_string();
+                if s.command(Command::RemoveExtension(builtin.clone())).is_ok()
+                    || s.command(Command::SetExtensionEnabled {
+                        id: builtin,
+                        enabled: false,
+                    })
+                    .is_ok()
+                {
+                    return Err("A built-in extension could be removed or turned off".into());
+                }
                 let a = s.settings.extensions[0].id.clone();
                 let b = s.settings.extensions[1].id.clone();
                 p.command(
@@ -1334,8 +1345,30 @@ fn extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 }
                 p.log
                     .push(format!("extensions: toolbar profile reported {found:?}"));
+                s.extension_added = None;
+                // Refused either at once or in WebView2's answer.
+                if let Err(message) =
+                    native_extensions::add(&s.windows[0].toolbar, &marker('b'), s.proxy.clone())
+                {
+                    s.extension_added = Some(Err(message));
+                }
+                p.phase = 80;
+                p.at = Instant::now();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The toolbar profile was never listed".into());
+            }
+        }
+        80 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(added) = s.extension_added.clone() {
+                if added.is_ok() {
+                    return Err("WebView2 accepted an extension in the toolbar profile".into());
+                }
                 p.app.user_event(el, Event::Command(Command::ExitBrowser));
-                p.next();
+                p.phase = 9;
+                p.at = Instant::now();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("Adding to the toolbar profile never answered".into());
             } else if p.at.elapsed() > Duration::from_secs(10) {
                 return Err("The toolbar profile was never listed".into());
             }
@@ -1483,10 +1516,30 @@ fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
                         s.settings.extensions
                     ));
                 }
+                s.extension_added = None;
+                // Refused either at once or in WebView2's answer.
+                if let Err(message) = native_extensions::add(
+                    &s.tabs.items[0].content.engine.view,
+                    &marker('a'),
+                    s.proxy.clone(),
+                ) {
+                    s.extension_added = Some(Err(message));
+                }
+                p.next();
+            }
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(added) = s.extension_added.clone() {
+                if added.is_ok() {
+                    return Err("WebView2 accepted an extension in a private window".into());
+                }
                 p.log
                     .push("extensions: private windows never run them".into());
                 p.done = true;
                 el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("Adding in a private window never answered".into());
             }
         }
         _ => {}

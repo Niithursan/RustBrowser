@@ -445,6 +445,9 @@ struct Session {
     /// The last `native_extensions::installed` answer (tests only).
     #[cfg(test)]
     extension_probe: Option<Result<Vec<native_extensions::Info>, String>>,
+    /// The last answer WebView2 gave to adding an extension (tests only).
+    #[cfg(test)]
+    extension_added: Option<Result<String, String>>,
     /// Toolbar views the one-time autofill cleanup was asked to clear.
     #[cfg(test)]
     toolbar_autofill_clears: Vec<usize>,
@@ -574,7 +577,15 @@ impl Session {
                 }
             }
             Reply::Folder(Err(message)) => self.notice = message,
+            #[cfg(test)]
+            Reply::Added(Ok((info, _))) if self.private => {
+                self.extension_added = Some(Ok(info.id));
+            }
             Reply::Added(Ok((info, folder))) => {
+                #[cfg(test)]
+                {
+                    self.extension_added = Some(Ok(info.id.clone()));
+                }
                 let version = self
                     .pending_extension
                     .take()
@@ -602,6 +613,10 @@ impl Session {
                 self.refresh_extensions();
             }
             Reply::Added(Err(message)) => {
+                #[cfg(test)]
+                {
+                    self.extension_added = Some(Err(message.clone()));
+                }
                 self.pending_extension = None;
                 self.notice = message;
             }
@@ -1219,6 +1234,8 @@ impl Session {
             extensions_listed: false,
             #[cfg(test)]
             extension_probe: None,
+            #[cfg(test)]
+            extension_added: None,
             #[cfg(test)]
             toolbar_autofill_clears: Vec::new(),
             _private_lease: private_lease,
