@@ -32,7 +32,8 @@ final head are recorded in the pull request.
 ### Automated evidence
 
 All 36 local gates passed on `1aba4dc` (`work/v18/production-gates.json`):
-format, Clippy with `-D warnings`, 136 regular tests, debug and release builds,
+format, Clippy with `-D warnings`, 112 regular tests (the 24 native tests are
+ignored there and run on their own below), debug and release builds,
 16 native suites each in its own process (including the three new
 `native_multiple_windows_*` suites), the second-launch suite (3 tests, including
 the new killed-browser restore of two windows), three daily runs, process sampler,
