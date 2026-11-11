@@ -1,5 +1,107 @@
 # Validation
 
+## v0.18 multiple normal windows
+
+Baseline `7a61d97` (PR #23); CI 43063434943 and security 43063435068 passed before
+branching. Branch `feat/v0.18-multiple-windows`, draft PR #24. Version 0.18.0;
+profile path, session format 1 (with the optional `other_windows` field) and SQLite
+schema 3 unchanged; dynamic CRT. One Windows 11 Pro x64 machine, WebView2 157,
+non-elevated session. Local results only in this section; hosted results for the
+final head are recorded in the pull request.
+
+### Reproduced defects and fixes
+
+1. **Several windows traded focus forever.** Each window handled its Focused
+   event by moving keyboard focus into its page. With three windows the requests
+   chased each other; the event loop never went idle, pages stayed on
+   "Connecting" and the routing suite timed out. Reproduced with a breadcrumb
+   watchdog in the fixture (Focused(true) cycling 0, 1, 2 every few
+   milliseconds). Fixed: a focus event only records the focused window and which
+   tab may ask for permissions. The routing suite then passed.
+2. **The wrong window ended up in front after restore.** Each restored window's
+   toolbar took focus as it loaded (wry's `with_focused` default), so the last
+   restored window became the most recent one; the next save would have swapped
+   the main window and links would have gone to it. Reproduced by the restore
+   suite (focus order [2, 1, 0]). Fixed: restored windows are created inactive
+   with unfocused toolbars, and page focus is never moved inside a background
+   window. The restore suite then passed.
+3. **Exit saved the wrong main window (found by hosted CI).** CI 43085823286
+   failed the restore suite on `10a51d8`: after More > Exit the third window was
+   saved first (pins `[false, false]` instead of `[true, false]`). Hiding the
+   windows lets Windows activate another one, and that focus event saved again.
+   Local runs missed it because the background test process got no real focus
+   events. The suite now delivers that focus event after Exit, which reproduced
+   the same failure locally; focus events are now ignored once shutdown begins,
+   and the suite passed twice. Removing the guard makes it fail again.
+4. **Second-launch test read only the main window (found by hosted CI).** CI
+   43087322886 on `90bcfa7` failed `native_second_launch_hands_links_to_the_running_browser`:
+   it looked for the handed-over link in the saved main window, but after the
+   "new window" hand-off the new, focused window is the main one and the link is
+   in `other_windows` (the CI log shows the main window as `[new-tab]`, which is
+   the intended result). Locally the background test process could not keep the
+   foreground, so focus went back to the first window and the check passed; the
+   failure was not reproduced here. The check now searches every saved window;
+   the exact per-window check that follows is unchanged. Passed three runs locally.
+5. **Fixture only:** creating windows from `about_to_wait` wedged winit's event
+   loop. Production creates windows only from events, so the fixtures send window
+   requests through the event proxy as well.
+
+### Automated evidence
+
+All 36 local gates passed on `1aba4dc` and again on `335ba12` after the third fix
+(`work/v18/production-gates.json`):
+format, Clippy with `-D warnings`, 112 regular tests (the 24 native tests are
+ignored there and run on their own below), debug and release builds,
+16 native suites each in its own process (including the three new
+`native_multiple_windows_*` suites), the second-launch suite (3 tests, including
+the new killed-browser restore of two windows), three daily runs, process sampler,
+launcher fixtures, experimental and production Python tests, dynamic imports,
+portable package, installer lifecycle from a real 0.17 installation (pinned
+`7a61d97`, executable SHA-256
+`b27926cd71b9b18f31e0b7a3ebb3701b471672824513cefd75a6ca54e7f1b67c`), release
+metadata, static-build restoration, owner bundle tests and `cargo audit`. The
+installer suite checks that the real default-browser choice and registered
+applications are unchanged.
+
+New tests:
+- `tests/session_windows.rs` (7): format 1 with and without `other_windows`,
+  limits, invalid entries, size limit, and a 0.17-shaped reader loading a 0.18 file.
+- `native_multiple_windows_routing_limit_close_reopen_and_handoff`: unique tab IDs
+  and toolbars per window, navigation and real toolbar IPC stay in their window, a
+  link goes to the focused window, a "new window" hand-off opens a window, the
+  ninth window is refused with a notice, closing a window keeps the others and
+  destroys its views only after the retirement delay, reopening restores its tabs,
+  the save holds every window with the focused one first, Exit keeps all 8.
+- `native_multiple_windows_engine_restart_toolbar_and_clearing`: an engine restart
+  rebuilds every view of both windows and keeps tabs, order, pins and selection; a
+  toolbar failure in the window without focus is recovered there only; clearing
+  with retired views in both windows closes the other window and starts engine
+  clearing only after every retired view and closed window is gone.
+- `native_multiple_windows_restore_and_exit`: three saved windows return with their
+  tabs, pins and selection, the main window focused, and Exit saves them again.
+- `native_killed_browser_restores_every_window` (two processes): a killed browser
+  with two windows returns with both at the next start, saved in the same order.
+
+Mutation checks (one defect injected at a time, `work/v18/mutate.py`), all 10
+caught: old focus handling, links to the last handled window, no window limit,
+closed window destroyed at once, other windows not saved, engine restart of one
+window only, clearing ignoring closed windows, toolbar failure handled in the
+focused window, restored toolbars taking focus, and the v0.17 new-window hand-off.
+The first run caught 8; the two survivors exposed weak checks in the engine suite,
+which were strengthened (the toolbar failure now targets the window without focus;
+the closed window is kept longer than the retired tabs, because clearing otherwise
+retires both at the same moment). One check in that suite also compared view
+addresses across tabs; the allocator reuses a freed address for another tab's new
+view, so it now compares per tab, as the single-window restart suite does.
+
+### Not tested here
+
+Owner checklist steps 17 to 21 (three windows by hand, close and reopen, link to
+the last-used window, two monitors, Narrator on a second window) are not done.
+Drag between monitors, real taskbar grouping and Alt+Tab order were not observed
+by a person. Downgrade to 0.17 with several windows was not run; it is documented
+in INSTALL_WINDOWS.md from the format tests.
+
 ## v0.17 links from other apps, hand-off and default-browser registration
 
 Baseline `96a70a2` (PR #22); CI 42945393777 and security 42945393781 passed before
@@ -54,6 +156,18 @@ results for the final head are recorded in the pull request.
 - Settings deep link: `ms-settings:defaultapps?registeredAppUser=` with the
   RegisteredApplications value name, as Microsoft documents; covered by a unit test
   that also refuses any other URI. Automated runs never open Settings.
+
+### Owner results
+
+Owner checklist steps 12 to 16, 2026-11-11, bundle `o-4349a481`, version 0.17.0,
+built from PR #23 head `25a94d0` (EXE SHA-256
+`72b9a9f8a8806f829a8ca3a65b6424b26f22be8ba841396d289d16fa6c26a95c`). All passed by
+owner report: the default was chosen in Windows Settings through the validation
+entry; links from Discord and from a mail or PDF app opened as tabs in the running
+window; a second launch handed off with no second window; Ctrl+N did nothing
+unexpected; the address-field menu showed exactly Cut, Copy, Paste and Select all,
+and paste was one line. Firefox was restored as the default and the validation
+install was removed. These results cover that build only.
 
 ### Not tested here
 

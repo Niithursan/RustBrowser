@@ -1,8 +1,26 @@
 # Multiple normal windows: design and session-format proposal
 
-**Status: proposal for the owner (v0.17).** Nothing here is implemented. Multiple
-normal windows did not ship in v0.17; this records why, what was decided instead,
-and what needs approval before the work starts.
+**Status: implemented in v0.18** with option B and the two-step refactor, both
+approved by the owner. The proposal below is kept as written for v0.17. What
+v0.18 does differently from it:
+
+- **Exit command.** More > Exit closes every window at once and keeps all of them
+  for the next start. Closing windows one by one keeps only the last one closed,
+  because closing a window removes it from the saved session.
+- **Reopen closed window.** More > Reopen closed window brings back the most
+  recently closed window's tab addresses and pins until the browser exits (up to
+  8, in memory only). Titles, keep-awake choices and page history are not kept.
+  Clearing browsing data empties the list and closes every other window first.
+- **Focus.** A focus change only records which window is focused and which tab may
+  ask for permissions; it does not move keyboard focus. Restored windows open
+  behind the window that was focused last and do not take focus while they load.
+- **Size limit.** If saving every window would exceed the existing 1 MiB session
+  limit, the other windows are left out of that save rather than tabs of the
+  focused window.
+
+The design in step 1 is implemented as `Session` (profile services) holding a list
+of `WindowState` (per-window state) in `src/app.rs`, rather than separate `Profile`
+and `Window` types.
 
 ## What v0.17 does instead
 
@@ -53,7 +71,7 @@ the twelve native suites that guard the current behaviour.
 4. **Closing.** Closing one window retires only its views; the process ends when
    the last normal window closes. The hand-off endpoint stays with the process.
 5. **Ctrl+N and More > New window** open a window with the new-tab page; a
-   "new window" hand-off does the same.
+   "new window" hand-off does the same. At most 8 normal windows.
 
 Delivery would be in two steps, each with all native suites green: first the
 behaviour-neutral split (one window, same results), then the second window.

@@ -1,15 +1,23 @@
-# Rust Browser 0.17.0
+# Rust Browser 0.18.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
 
+v0.18 opens several normal windows on one profile: Ctrl+N or More (⋯) → New
+window, up to 8 at a time. Links from other apps go to the window you used last,
+which comes to the front. Closing a window closes only that window; the browser
+exits when the last one closes, and every open window returns at the next start,
+also after a crash. Private windows are unchanged. See
+[Windows](#windows) below and the
+[design record](https://github.com/Niithursan/RustBrowser/blob/main/MULTI_WINDOW_PROPOSAL.md).
+This is not a release candidate.
+
 v0.17 can be chosen as the Windows default browser: links from other apps open in
 it, and starting it again while it runs hands the link to the open window instead
 of showing "already running". The address field has Cut, Copy, Paste and Select
-all. A second normal window is not available yet; see
-[the proposal](https://github.com/Niithursan/RustBrowser/blob/main/MULTI_WINDOW_PROPOSAL.md).
+all.
 
 v0.16 adds native find, per-tab zoom with a live percentage/reset, and print
 preview through keyboard shortcuts and More. Toolbar recovery ignores stale
@@ -99,6 +107,12 @@ cargo build --release --locked
 .\target\release\rust-browser.exe
 ```
 
+**Where builds come from.** Official builds are published only on this
+repository's [Releases page](https://github.com/Niithursan/RustBrowser/releases);
+none has been published yet. Executables and packages attached to CI runs are
+unsigned test builds for review, not releases. Every build is unsigned, so Windows
+shows an unknown-publisher warning. Do not install Rust Browser from anywhere else.
+
 CI stores an x64 Windows executable as a build artifact and tests portable
 packaging. Approved version tags produce package/checksum Actions artifacts;
 publishing a GitHub Release requires an explicit manual workflow action.
@@ -138,6 +152,10 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Bookmark manager | More (⋯) → Bookmarks, or Ctrl+Shift+O |
 | Browsing history | More (⋯) → History, or Ctrl+H |
 | Download manager | More (⋯) → Downloads, or Ctrl+J |
+| New window | More (⋯) → New window, or Ctrl+N (up to 8 normal windows) |
+| Close this window | Its close button or Alt+F4 (other windows stay open; the last one exits) |
+| Reopen a closed window | More (⋯) → Reopen closed window (this run only) |
+| Close every window | More (⋯) → Exit (all of them return at the next start) |
 | New private window | More (⋯) → Private window, or Ctrl+Shift+N |
 | Cut, copy, paste or select all in the address field | Right-click the address field, or the menu key |
 | Choose Rust Browser as the default browser | More (⋯) → Privacy & security → Make default browser (opens Windows Settings) |
@@ -182,6 +200,31 @@ to preserve normal cookies and data on upgrade. There is no password manager or
 general profile manager. Private windows use separate temporary storage.
 Close every instance before manually removing a profile folder.
 
+### Windows
+
+Every normal window shares the profile: cookies, site data, bookmarks, history,
+downloads and settings are the same in all of them. Each window has its own tabs,
+toolbar, closed-tab list (Ctrl+Shift+T reopens only that window's tabs), notices
+and panels, and its own taskbar and Alt+Tab entry. At most 8 normal windows can
+be open; asking for a ninth shows a notice in the current window. Up to 64 tabs
+can be open in each window.
+
+Closing one of several windows hides it at once and removes it from the saved
+session; its pages are destroyed a few seconds later, like closed tabs. Until
+Rust Browser exits, More (⋯) → Reopen closed window brings back the most recently
+closed window with its tab addresses and pins, in the same order. Titles,
+keep-awake choices, back/forward history and page state are not restored, and the
+list is kept in memory only (up to 8 windows). Clearing browsing data empties it
+and closes every other window first.
+
+Closing the last window, or More (⋯) → Exit, ends the browser. At the next start
+every window that was open returns with its tabs, the one used last in front.
+After a crash the next start restores the windows from the last save.
+
+Permission prompts appear only for the selected tab of the focused window. An
+engine restart rebuilds the pages of every window; a toolbar failure is
+recovered in its own window only.
+
 ### Links from other apps and a second launch
 
 Other apps and Windows pass links on the command line. Rust Browser opens only
@@ -191,17 +234,18 @@ local `.htm` or `.html` files. Links from other apps open in a normal window. A
 command line with an unknown option or text that is not valid is refused with a
 message before anything opens.
 
-If a normal window is already running, a second launch hands its links to that
-window, which opens them as tabs and comes to the front; started with no link, it
-asks the window for a new tab. Nothing else can be requested, and no second window
-is opened on the same profile. If the running window is starting, closing, busy or
+If a normal window is already running, a second launch hands its links to the
+window used last, which opens them as tabs and comes to the front; started with
+no link, it asks the browser for a new window (or shows the 8-window notice).
+Nothing else can be requested, and no second process is started on the same
+profile. If the running window is starting, closing, busy or
 not responding, the second launch waits up to six seconds and then explains what
 happened. After a crash the next launch simply takes over the profile. The channel
 is private to your user account and Windows session; see SECURITY.md for its
 protections.
 
-`session.json` stores tab URLs, bounded titles, order, pinned/keep-awake state,
-active tab, favorites, theme and search/performance settings in **plain text**
+`session.json` stores, for every open normal window, tab URLs, bounded titles,
+order, pinned/keep-awake state and the active tab, plus favorites, theme and search/performance settings in **plain text**
 inside this profile. URLs may contain sensitive paths, queries or tokens. No URL log
 or page content is saved by the Rust session layer. Keep the profile private and out
 of Git; OS account permissions protect it, not application encryption. Session saves
@@ -209,11 +253,11 @@ are coalesced on a background thread, atomically replaced and flushed on normal 
 A profile lock prevents current browser instances from overwriting the same session.
 Do not run v0.1 against the same profile simultaneously.
 
-By default, restart restores normal tab URLs and the active tab. The Privacy & security
+By default, restart restores every normal window's tab URLs and active tab. The Privacy & security
 panel can disable URL retention while preserving search and history preferences. An optional command
 line URL opens an additional tab. Back/forward history, form data, scroll position and
 page JavaScript state are not restored after restarting the application. Up to 64 live
-tabs are supported. Hidden tabs retain their engines; eligible tabs can sleep as
+tabs are supported in each window. Hidden tabs retain their engines; eligible tabs can sleep as
 described below. Invalid, oversized or unsupported session files are
 backed up as `session-invalid-*.json`, with a visible recovery notice. Disk-write
 failures show a notice; check disk space and profile permissions before exiting.

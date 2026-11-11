@@ -1,5 +1,24 @@
 # Security
 
+## v0.18 multiple windows
+
+- All normal windows share one profile, engine environment, permission rules and
+  hand-off server; nothing new is exposed to web content. Toolbar IPC is tagged
+  with its own window, so a toolbar can act only on the window that holds it.
+- Only the selected tab of the focused window may show a permission prompt. A
+  change of tab or of focused window cancels pending requests, and closing a
+  window cancels its tabs' requests and popups.
+- Every `other_windows` entry in `session.json` is validated like the main window
+  (at most 8 windows and 64 tabs each, same address rules). An invalid entry makes
+  the whole file invalid; it is backed up as `session-invalid-*.json` as before.
+  The saved file stays within the existing 1 MiB limit by dropping other windows
+  rather than tabs of the focused window.
+- Clearing browsing data closes every other window first and waits until no page
+  of a closed tab or window remains. Reopening a closed window is in memory only
+  and is emptied by clearing.
+- Private windows are unchanged: they never join the normal window list, are never
+  saved and do not receive links.
+
 ## v0.17 links from other apps and single-instance hand-off
 
 ### Command-line links
@@ -221,7 +240,7 @@ do not validate Windows input services, monitor changes, or physical
 input latency. Servo's pinned DOM composition constructor is disabled
 by default and remains unavailable in that fixture.
 
-This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting if enabled, or contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
+This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting (the repository's Security tab, "Report a vulnerability") when it is enabled, or otherwise contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
 
 The browser uses the installed Microsoft WebView2 Runtime. Keep that runtime and Windows updated. Remote content receives no application IPC handler; the local toolbar has a separate profile and restricted navigation. HTTP traffic is unencrypted. HTTPS does not establish trustworthiness, and certificate validation is never bypassed.
 
@@ -326,7 +345,7 @@ Permission prompts identify the engine-supplied origin and kind. A request remai
 denied until explicitly allowed; only supported active-tab requests can be granted.
 Remembered rules are scoped to an exact origin, capability and profile. New decisions
 do not use WebView2's native persistence. Pending deferrals are denied on tab change,
-navigation, shutdown or timeout. Revocation and data clearing close tabs and report
+change of focused window, navigation, shutdown or timeout. Revocation and data clearing close tabs and report
 native completion or failure; an unconfirmed permission clear suppresses grants
 until restart. Device access remains subject to Windows and WebView2 policy.
 

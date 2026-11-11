@@ -29,6 +29,16 @@ owner report. They do not cover later bytes or the new v0.16 tools. A6 must be
 repeated on the exact candidate. Static CRT stays opt-in; criteria approval,
 clean-machine testing and publication authorization remain the owner's decisions.
 
+Owner checklist steps 12 to 16, 2026-11-11, bundle `o-4349a481`, version 0.17.0,
+built from PR #23 head `25a94d0` (EXE SHA-256
+`72b9a9f8a8806f829a8ca3a65b6424b26f22be8ba841396d289d16fa6c26a95c`). All passed by
+owner report: the default was chosen in Windows Settings through the validation
+entry; links from Discord and from a mail or PDF app opened as tabs in the running
+window; a second launch handed off with no second window; Ctrl+N did nothing
+unexpected; the address-field menu showed exactly Cut, Copy, Paste and Select all,
+and paste was one line. Firefox was restored as the default and the validation
+install was removed. These results cover that build only.
+
 ## Historical v0.15 technical evidence
 
 After PR #19 merged at `13ff603`, Windows 11 x64 is the initial qualification
@@ -81,7 +91,8 @@ not recurring CI workloads. Their raw data stays outside Git.
 | Power loss / full disk / every interruption timing | Unverified; controlled process termination is only a tested subset |
 | 30-minute v0.15 soak | Pinned static experiment completed one fresh controlled run; dynamic v0.15 was not measured in a matched soak. Finite results do not establish leak freedom or human/media/device behavior |
 | Signing / authenticated updates | No identity/root/service; no signing, updater or invented key added |
-| Second-launch address hand-off | Not approved; existing already-running behavior retained |
+| Second-launch hand-off and links from other apps | Implemented in v0.17; owner passed checklist steps 13 and 14 on exact bundle o-4349a481 only |
+| Default-browser registration | Implemented in v0.17 (per-user Setup); owner passed checklist step 12 on exact bundle o-4349a481 only |
 
 Approval of the proposed dispositions is separate from approval of this milestone's
 implementation. Do not treat automated success as owner acceptance or permission to

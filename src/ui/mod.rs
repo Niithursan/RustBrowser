@@ -53,6 +53,12 @@ pub enum Command {
         confirmed: bool,
     },
     NewPrivateWindow,
+    /// Open another normal window (Ctrl+N, More > New window).
+    NewWindow,
+    /// Reopen the most recently closed window of this session.
+    ReopenClosedWindow,
+    /// Close every window and keep them all for the next start.
+    ExitBrowser,
     SetRestoreSession(bool),
     ClearData(rust_browser::privacy::ClearRequest),
     PermissionDecision {
@@ -166,6 +172,7 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
         (0xbd | 0x6d, true, _) => Some(Command::ZoomOut),
         (0x30 | 0x60, true, _) if !shift => Some(Command::ResetZoom),
         (0x4e, true, _) if shift => Some(Command::NewPrivateWindow),
+        (0x4e, true, _) => Some(Command::NewWindow),
         (0x44, true, _) => Some(Command::BookmarkCurrent),
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
         (0x4a, true, _) => Some(Command::ShowPanel(Panel::Downloads)),

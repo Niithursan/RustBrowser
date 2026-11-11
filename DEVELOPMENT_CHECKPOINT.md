@@ -1,5 +1,72 @@
 # Development checkpoint
 
+## v0.18: multiple normal windows (Claude Code, in progress)
+
+Branch `feat/v0.18-multiple-windows` from verified origin/main `7a61d97` (PR #23;
+CI 43063434943 and security 43063435068 passed). Scratch `<workspace>/work/v18`;
+gate script `work/v18/gates.ps1`. Owner decisions: session option B, two-step
+refactor, v0.17 interpretations approved, "new window" opens a real window.
+
+Done:
+- `231c9bf` recovered the unpushed v0.17 checkpoint note; `c1b6dcb` owner v0.17
+  results (steps 12 to 16, bundle o-4349a481) in VALIDATION and RELEASE_READINESS.
+- Step one, behaviour-neutral split: `5c88b6e` (WindowState per window, Session
+  profile services, Deref to the current window, process-wide tab IDs via
+  `Tabs::with_ids`, Event::WindowCommand for toolbar IPC, routing by window, tab
+  and toolbar source) and `10e653a` (two fixtures' event probes recognise the
+  routed command form; no assertion changed). The first gate run failed in
+  `native_content_find_zoom_print_boundary` step 46 for that reason. All 33 local
+  gates then passed on `10e653a`.
+
+Draft PR #24. Step one CI green on `eb80224`: CI 43066449889, security
+43066449940. Then `65d7c50` weekly Dependabot, `df67871` README official-build
+statement and SECURITY reporting wording (private vulnerability reporting was
+still disabled when checked: `enabled: false`).
+
+Step two, multiple windows:
+- `57d73a6` format option B (`storage::WindowSnapshot`, `other_windows`,
+  `MAX_WINDOWS` 8, `storage::fits`), 7 tests in `tests/session_windows.rs`.
+- `11dda94` windows: open (Ctrl+N, More > New window, hand-off), limit notice,
+  close one window (retired after `RETIRE_DELAY`), Reopen closed window, Exit,
+  save and restore, engine restart and clearing across windows, per-window
+  toolbar checks, permissions only for the focused window.
+- `ee0b8a4` two defects found by the new native suites, reproduced first:
+  (1) the Focused handler moved page focus, so three windows traded focus
+  forever and the loop never idled (pages stuck on "Connecting"); (2) restored
+  windows' toolbars took focus as they loaded (wry `with_focused` default), so the
+  last restored window became "most recent". Fixes: focus events only claim
+  permissions; restored windows are created inactive with unfocused toolbars;
+  page focus is never moved inside a background window. Adds
+  `src/windows_validation.rs` (3 native suites).
+- `46a9304` `tests/single_instance.rs`: new-window hand-off opens a window;
+  killed-browser restore of two windows. Only "Window Class" windows are counted
+  (winit's event target window reports visible).
+- Fixture lesson: creating windows from `about_to_wait` wedges winit's loop; the
+  fixtures send window requests through the proxy, as production does.
+- Installer upgrade fixture now pins v0.17 `7a61d97` (cache key
+  installer-fixture-v6, `target-v017`); 0.17 Setup already registers, so the
+  fresh-install check expects registration.
+
+- `81e3a54` engine suite strengthened after two mutation survivors; all 10
+  mutation checks caught (`work/v18/mutate.py`). `7076c01` CI and release run
+  the window suites; `99a0bb7` installer upgrade from 0.17; `4044820` 0.18.0;
+  `1aba4dc` docs; VALIDATION in the following docs commits.
+- All 36 local gates passed on `1aba4dc` (`work/v18/production-gates.json`); the
+  commits after it change documentation only.
+
+- CI 43085823286 on `10a51d8` failed the restore suite (security
+  43085823200 passed): Exit saved the window Windows activated while hiding the
+  others. Reproduced locally by delivering that focus event, fixed in `335ba12`
+  (focus ignored during shutdown); all 36 local gates passed on `335ba12`.
+
+- CI 43087322886 on `90bcfa7` (security 43087323119 passed) failed the
+  second-launch test: it read only the main window, which is the new window
+  after a new-window hand-off. Test fixed to search every saved window.
+
+Next: CI on the pushed head (results in PR #24 comments, not here, to avoid
+another run), owner bundle from that head, owner checklist steps 12 to 21.
+Stop at the draft PR: do not merge, tag or mark ready without the owner.
+
 ## v0.17: link handling (Claude Code, in progress, owner away)
 
 Branch `feat/v0.17-link-handling` from verified origin/main `96a70a2` (PR #22; CI
@@ -44,9 +111,13 @@ Done:
 - Gate script: `work/v17/gates.ps1` (adds edit-menu and single-instance suites,
   v0.16 baseline in `work/v17/install/baseline`).
 
-Next: full local gates on `d7b8e93`, then open ONE draft PR (first push that
-starts CI), verify CI on that head, fix only reproduced failures, final push,
-verify CI on the final head. Do not merge, tag or mark ready.
+Final state (2026-11-11): draft PR #23, final head `25a94d0`. CI 42962367821 and
+security 42962367796 passed on it. The earlier head `ab72a65` failed CI 42961341354
+in the DACL test (hosted runner is the built-in Administrator, written as SDDL
+alias LA); fixed in the test only. All 33 local gates passed on `25a94d0`
+(`work/v17/production-gates.json`). This checkpoint note is a local commit only,
+not pushed, to avoid another full CI run; the same status is in the PR comments.
+Stop at the draft PR: do not merge, tag or mark ready without the owner.
 
 Decisions recorded for the owner:
 - Extra features of the existing `windows` crate enabled (no new crate,

@@ -9,7 +9,8 @@ use std::{
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
     UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE,
+        EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+        PostMessageW, WM_CLOSE,
     },
 };
 
@@ -70,7 +71,7 @@ fn finish(mut child: Child, limit: Duration) -> (i32, String) {
     (status.code().unwrap_or(-1), stderr)
 }
 
-/// Visible top-level windows of `pid`.
+/// Visible browser windows of `pid` (winit's own event target window is left out).
 fn windows_of(pid: u32) -> Vec<HWND> {
     struct Search {
         pid: u32,
@@ -83,7 +84,12 @@ fn windows_of(pid: u32) -> Vec<HWND> {
         // SAFETY: plain queries on a window handle supplied by EnumWindows.
         unsafe {
             GetWindowThreadProcessId(window, Some(&mut owner));
-            if owner == search.pid && IsWindowVisible(window).as_bool() {
+            let mut class = [0u16; 64];
+            let length = GetClassNameW(window, &mut class).max(0) as usize;
+            if owner == search.pid
+                && IsWindowVisible(window).as_bool()
+                && String::from_utf16_lossy(&class[..length]) == "Window Class"
+            {
                 search.found.push(window);
             }
         }
@@ -98,6 +104,19 @@ fn windows_of(pid: u32) -> Vec<HWND> {
         let _ = EnumWindows(Some(each), LPARAM(&mut search as *mut Search as isize));
     }
     search.found
+}
+
+/// Title of each browser window of `pid`, for failure messages.
+fn describe(pid: u32) -> Vec<String> {
+    windows_of(pid)
+        .into_iter()
+        .map(|window| {
+            let mut title = [0u16; 128];
+            // SAFETY: a plain query on a live window handle into a local buffer.
+            let length = unsafe { GetWindowTextW(window, &mut title) }.max(0) as usize;
+            String::from_utf16_lossy(&title[..length])
+        })
+        .collect()
 }
 
 /// A browser started by a test; stopped if the test fails before closing it.
@@ -130,16 +149,32 @@ fn close(mut browser: Browser) {
 }
 
 fn saved_tabs(profile: &Path) -> Vec<String> {
+    saved_windows(profile)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// Tabs of every saved window: the most recently focused window first, then
+/// `other_windows` in order.
+fn saved_windows(profile: &Path) -> Vec<Vec<String>> {
     let text = std::fs::read_to_string(profile.join("session.json")).unwrap_or_default();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-    value["tabs"]
-        .as_array()
-        .map(|tabs| {
-            tabs.iter()
-                .filter_map(|t| t.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
+    let tabs = |window: &serde_json::Value| -> Vec<String> {
+        window["tabs"]
+            .as_array()
+            .map(|tabs| {
+                tabs.iter()
+                    .filter_map(|t| t.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut windows = vec![tabs(&value)];
+    if let Some(others) = value["other_windows"].as_array() {
+        windows.extend(others.iter().map(tabs));
+    }
+    windows
 }
 
 fn wait_for(limit: Duration, mut condition: impl FnMut() -> bool) -> bool {
@@ -190,20 +225,74 @@ fn native_second_launch_hands_links_to_the_running_browser() {
         Duration::from_secs(20),
     );
     assert_eq!(code, 2, "{stderr}");
+    // The link is in the first window, which is no longer the main (focused)
+    // one once the new window has opened; its exact place is checked below.
     assert!(
-        wait_for(Duration::from_secs(10), || saved_tabs(&profile.0)
+        wait_for(Duration::from_secs(10), || saved_windows(&profile.0)
             .iter()
+            .flatten()
             .any(|t| t == link)),
         "Handed-over link was not opened: {:?}",
-        saved_tabs(&profile.0)
+        saved_windows(&profile.0)
+    );
+    // The new-window request opened a second window on the new-tab page, which
+    // is now the focused (main) window; the link stayed in the first window.
+    // Nothing from the refused launch.
+    let home = "rust-browser:new-tab".to_string();
+    let expected = vec![vec![home.clone()], vec![home.clone(), link.to_string()]];
+    assert!(
+        wait_for(Duration::from_secs(10), || windows_of(first.id()).len()
+            == 2
+            && saved_windows(&profile.0) == expected),
+        "New-window hand-off: windows {:?}, saved {:?}",
+        describe(first.id()),
+        saved_windows(&profile.0)
     );
     close(first);
-    // Start tab, the handed-over link, and the tab the new-window request opened
-    // (this version opens a tab for it). Nothing from the refused launch.
-    assert_eq!(
-        saved_tabs(&profile.0),
-        vec!["rust-browser:new-tab", link, "rust-browser:new-tab"]
+    // Closing the windows one after another keeps only the last one closed.
+    let left = saved_windows(&profile.0);
+    assert!(
+        left == vec![expected[0].clone()] || left == vec![expected[1].clone()],
+        "{left:?}"
     );
+}
+
+#[test]
+#[ignore = "Opens real browser windows; run as a native suite"]
+fn native_killed_browser_restores_every_window() {
+    let profile = Profile::new("windows-crash");
+    let mut first = Browser(Some(launch(&profile.0, &[])));
+    assert!(
+        wait_for(Duration::from_secs(30), || !windows_of(first.id())
+            .is_empty()),
+        "First window did not appear"
+    );
+    let link = "http://127.0.0.1:9/first-window";
+    hand_over(&profile.0, &["--single-argument", link]);
+    hand_over(&profile.0, &[]);
+    let home = "rust-browser:new-tab".to_string();
+    let expected = vec![vec![home.clone()], vec![home, link.to_string()]];
+    assert!(
+        wait_for(Duration::from_secs(10), || saved_windows(&profile.0)
+            == expected),
+        "{:?}",
+        saved_windows(&profile.0)
+    );
+    // An abrupt end: the next start restores both windows from the last save.
+    let mut crashed = first.0.take().unwrap();
+    crashed.kill().unwrap();
+    let _ = crashed.wait();
+    let second = Browser(Some(launch(&profile.0, &[])));
+    assert!(
+        wait_for(Duration::from_secs(30), || windows_of(second.id()).len()
+            == 2),
+        "Both windows did not return: {} visible",
+        windows_of(second.id()).len()
+    );
+    // Restoring saves again with the same windows in the same order.
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(saved_windows(&profile.0), expected);
+    close(second);
 }
 
 #[test]

@@ -1,13 +1,12 @@
 version: 2
-# Every Dependabot pull request costs a full Windows CI run, and so does every
-# automatic rebase after main changes. Updates are therefore grouped into one pull
-# request per ecosystem, checked monthly, and rebased only on request
-# ("@dependabot rebase") when someone is ready to review them. See CI.md.
+# Updates are grouped into one pull request per ecosystem and checked weekly.
+# Automatic rebasing stays off: each rebase restarts the full Windows CI, so
+# comment "@dependabot rebase" when ready to review. See CI.md.
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 1
     rebase-strategy: disabled
     groups:
@@ -18,7 +17,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 1
     rebase-strategy: disabled
     groups:

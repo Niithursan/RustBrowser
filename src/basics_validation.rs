@@ -451,7 +451,11 @@ impl ApplicationHandler<Event> for Probe {
         if let Event::FindResult(_, success) = &event {
             println!("Native Find.Start completed: {success}");
         }
-        if matches!(&event, Event::Command(Command::FindInPage)) {
+        // Toolbar IPC arrives routed to its window (Event::WindowCommand).
+        if matches!(
+            &event,
+            Event::Command(Command::FindInPage) | Event::WindowCommand(_, Command::FindInPage)
+        ) {
             self.find_requested = true;
             println!("Find IPC reached application");
         }

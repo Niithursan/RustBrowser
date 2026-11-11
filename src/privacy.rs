@@ -42,6 +42,7 @@ pub fn persistent_snapshot(
         snapshot.pinned.clear();
         snapshot.titles.clear();
         snapshot.keep_awake.clear();
+        snapshot.other_windows.clear();
     }
     Some(snapshot)
 }

@@ -15,7 +15,48 @@ use std::{
     time::Duration,
 };
 
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
+pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
+/// Normal windows restored at most (the main window and seven others).
+pub const MAX_WINDOWS: usize = 8;
+
+/// Another normal window's tabs, saved beside the main window (format 1, v0.18).
+/// Validated exactly like the main window's tab fields.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct WindowSnapshot {
+    pub tabs: Vec<String>,
+    pub active: usize,
+    #[serde(default)]
+    pub pinned: Vec<bool>,
+    #[serde(default)]
+    pub titles: Vec<String>,
+    #[serde(default)]
+    pub keep_awake: Vec<bool>,
+}
+
+/// The tab rules every saved window must meet.
+fn valid_window(
+    tabs: &[String],
+    active: usize,
+    pinned: &[bool],
+    titles: &[String],
+    keep_awake: &[bool],
+) -> bool {
+    !(tabs.is_empty()
+        || tabs.len() > MAX_TABS
+        || active >= tabs.len()
+        || tabs.iter().any(|url| {
+            url != navigation::HOME
+                && (url.len() > 8192 || navigation::address(url).as_deref() != Ok(url.as_str()))
+        })
+        || (!pinned.is_empty()
+            && (pinned.len() != tabs.len() || pinned.windows(2).any(|pair| !pair[0] && pair[1])))
+        || (!keep_awake.is_empty() && keep_awake.len() != tabs.len())
+        || (!titles.is_empty()
+            && (titles.len() != tabs.len()
+                || titles.iter().any(|title| {
+                    title.chars().count() > 120 || title.chars().any(char::is_control)
+                }))))
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Snapshot {
@@ -30,6 +71,11 @@ pub struct Snapshot {
     pub titles: Vec<String>,
     #[serde(default)]
     pub keep_awake: Vec<bool>,
+    /// The other open normal windows (the fields above hold the most recently
+    /// focused one). Written only when more than one window is open, so a
+    /// single-window file is unchanged; versions before 0.18 ignore it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_windows: Vec<WindowSnapshot>,
 }
 
 impl Default for Snapshot {
@@ -42,6 +88,7 @@ impl Default for Snapshot {
             pinned: Vec::new(),
             titles: Vec::new(),
             keep_awake: Vec::new(),
+            other_windows: Vec::new(),
         }
     }
 }
@@ -49,22 +96,18 @@ impl Default for Snapshot {
 impl Snapshot {
     pub fn validate(&self) -> io::Result<()> {
         if self.version != 1
-            || self.tabs.is_empty()
-            || self.tabs.len() > MAX_TABS
-            || self.active >= self.tabs.len()
-            || self.tabs.iter().any(|url| {
-                url != navigation::HOME
-                    && (url.len() > 8192 || navigation::address(url).as_deref() != Ok(url.as_str()))
-            })
-            || (!self.pinned.is_empty()
-                && (self.pinned.len() != self.tabs.len()
-                    || self.pinned.windows(2).any(|pair| !pair[0] && pair[1])))
-            || (!self.keep_awake.is_empty() && self.keep_awake.len() != self.tabs.len())
-            || (!self.titles.is_empty()
-                && (self.titles.len() != self.tabs.len()
-                    || self.titles.iter().any(|title| {
-                        title.chars().count() > 120 || title.chars().any(char::is_control)
-                    })))
+            || !valid_window(
+                &self.tabs,
+                self.active,
+                &self.pinned,
+                &self.titles,
+                &self.keep_awake,
+            )
+            || self.other_windows.len() >= MAX_WINDOWS
+            || self
+                .other_windows
+                .iter()
+                .any(|w| !valid_window(&w.tabs, w.active, &w.pinned, &w.titles, &w.keep_awake))
             || self.settings.validate().is_err()
         {
             return Err(io::Error::new(
@@ -74,6 +117,12 @@ impl Snapshot {
         }
         Ok(())
     }
+}
+
+/// Whether a snapshot's saved file stays within the size every version accepts
+/// on load. A writer that would exceed it saves the main window only.
+pub fn fits(snapshot: &Snapshot) -> bool {
+    serde_json::to_vec_pretty(snapshot).is_ok_and(|bytes| bytes.len() as u64 <= MAX_FILE_BYTES)
 }
 
 pub fn load(path: &Path) -> io::Result<Snapshot> {
