@@ -90,6 +90,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_content_find_zoom_print_boundary -- --ignored --test-threads=1
       - name: Native private content tools and persistence boundary
         run: cargo test --locked --bin rust-browser native_private_content_tools_are_ephemeral -- --ignored --test-threads=1
+      - name: Native single-instance hand-off between two browser processes
+        run: cargo test --locked --test single_instance -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
         run: cargo test --locked --bin rust-browser native_servo_comparison_fixture -- --ignored --test-threads=1 --nocapture
       - name: Native daily-driver compatibility, diagnostics and untrusted TLS
