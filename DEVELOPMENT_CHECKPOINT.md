@@ -1,5 +1,25 @@
 # Development checkpoint
 
+## v0.18: multiple normal windows (Claude Code, in progress)
+
+Branch `feat/v0.18-multiple-windows` from verified origin/main `7a61d97` (PR #23;
+CI 43063434943 and security 43063435068 passed). Scratch `<workspace>/work/v18`;
+gate script `work/v18/gates.ps1`. Owner decisions: session option B, two-step
+refactor, v0.17 interpretations approved, "new window" opens a real window.
+
+Done:
+- `231c9bf` recovered the unpushed v0.17 checkpoint note; `c1b6dcb` owner v0.17
+  results (steps 12 to 16, bundle o-4349a481) in VALIDATION and RELEASE_READINESS.
+- Step one, behaviour-neutral split: `5c88b6e` (WindowState per window, Session
+  profile services, Deref to the current window, process-wide tab IDs via
+  `Tabs::with_ids`, Event::WindowCommand for toolbar IPC, routing by window, tab
+  and toolbar source) and `10e653a` (two fixtures' event probes recognise the
+  routed command form; no assertion changed). The first gate run failed in
+  `native_content_find_zoom_print_boundary` step 46 for that reason. All 33 local
+  gates then passed on `10e653a`.
+
+Next: push, open the draft PR, confirm CI on step one, then step two.
+
 ## v0.17: link handling (Claude Code, in progress, owner away)
 
 Branch `feat/v0.17-link-handling` from verified origin/main `96a70a2` (PR #22; CI
