@@ -99,6 +99,12 @@ cargo build --release --locked
 .\target\release\rust-browser.exe
 ```
 
+**Where builds come from.** Official builds are published only on this
+repository's [Releases page](https://github.com/Niithursan/RustBrowser/releases);
+none has been published yet. Executables and packages attached to CI runs are
+unsigned test builds for review, not releases. Every build is unsigned, so Windows
+shows an unknown-publisher warning. Do not install Rust Browser from anywhere else.
+
 CI stores an x64 Windows executable as a build artifact and tests portable
 packaging. Approved version tags produce package/checksum Actions artifacts;
 publishing a GitHub Release requires an explicit manual workflow action.

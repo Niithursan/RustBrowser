@@ -221,7 +221,7 @@ do not validate Windows input services, monitor changes, or physical
 input latency. Servo's pinned DOM composition constructor is disabled
 by default and remains unavailable in that fixture.
 
-This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting if enabled, or contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
+This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting (the repository's Security tab, "Report a vulnerability") when it is enabled, or otherwise contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
 
 The browser uses the installed Microsoft WebView2 Runtime. Keep that runtime and Windows updated. Remote content receives no application IPC handler; the local toolbar has a separate profile and restricted navigation. HTTP traffic is unencrypted. HTTPS does not establish trustworthiness, and certificate validation is never bypassed.
 
