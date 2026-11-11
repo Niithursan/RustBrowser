@@ -1224,6 +1224,7 @@ impl Session {
                 })
                 .collect(),
             keep_awake: self.tabs.items.iter().map(|tab| tab.keep_awake).collect(),
+            other_windows: Vec::new(),
         };
         if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
             let mut last = self.last_snapshot.borrow_mut();
