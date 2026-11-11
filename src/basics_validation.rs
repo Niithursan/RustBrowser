@@ -63,10 +63,12 @@ struct Probe {
     private_profile: Option<PathBuf>,
     phase: u8,
     started: Instant,
-    result: Arc<Mutex<Option<String>>>,
+    result: Arc<Mutex<Option<(u64, String)>>>,
+    eval_ticket: Arc<std::sync::atomic::AtomicU64>,
     failure: Option<String>,
     first: Option<TabId>,
     find_ready: bool,
+    find_requested: bool,
     zoom_event: bool,
     last_phase: u8,
     step: Instant,
@@ -80,8 +82,16 @@ impl Probe {
             &s.tabs.active().ok_or("No tab")?.content.engine.view
         };
         let result = self.result.clone();
+        let active = self.eval_ticket.clone();
+        let ticket = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        *result.lock().map_err(|_| "Result lock failed")? = None;
         view.evaluate_script_with_callback(script, move |value| {
-            *result.lock().unwrap() = Some(value);
+            let mut slot = result.lock().unwrap();
+            // A property can advance the fixture before an older click's
+            // callback arrives. Never parse that response as the next query.
+            if active.load(std::sync::atomic::Ordering::SeqCst) == ticket {
+                *slot = Some((ticket, value));
+            }
         })
         .map_err(|e| e.to_string())
     }
@@ -104,7 +114,15 @@ impl Probe {
             }
             return Ok(());
         }
-        let value = self.result.lock().unwrap().take();
+        let value = self
+            .result
+            .lock()
+            .unwrap()
+            .take()
+            .filter(|(ticket, _)| {
+                *ticket == self.eval_ticket.load(std::sync::atomic::Ordering::SeqCst)
+            })
+            .map(|(_, value)| value);
         let s = self.app.session.as_mut().ok_or("No session")?;
         if !s.ready {
             return Ok(());
@@ -275,6 +293,10 @@ impl Probe {
                 if value.as_deref() != Some("false") {
                     return Err("Find button was disabled".into());
                 }
+                self.phase = 46;
+            }
+            46 if self.find_requested => {
+                // Wait for real menu dispatch before issuing the controlled query.
                 // Empty queries do not complete a match callback on this runtime.
                 // Exercise a real query through the same content adapter and require
                 // its actual native result. Empty UI is validated separately by GUI.
@@ -430,6 +452,7 @@ impl ApplicationHandler<Event> for Probe {
             println!("Native Find.Start completed: {success}");
         }
         if matches!(&event, Event::Command(Command::FindInPage)) {
+            self.find_requested = true;
             println!("Find IPC reached application");
         }
         if matches!(&event, Event::ZoomChanged(_)) {
@@ -496,9 +519,11 @@ fn exercise(private: bool) {
         phase: 0,
         started: Instant::now(),
         result: Arc::new(Mutex::new(None)),
+        eval_ticket: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         failure: None,
         first: None,
         find_ready: false,
+        find_requested: false,
         zoom_event: false,
         last_phase: 0,
         step: Instant::now(),
