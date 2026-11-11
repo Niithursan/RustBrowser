@@ -28,15 +28,25 @@ Done:
   `tests/single_instance.rs` (hand-off, new window, refused link, crash takeover;
   2 mutants caught; drop guard stops leaked test browsers). SECURITY.md threat
   model written.
-- Item 3 (uncommitted while tests ran): HKCU registration in installer.iss
-  (validation identity has its own ProgID `RustBrowserV.<16 hex>`, client key and
-  RegisteredApplications name, and an `installation.ini` Profile used only for
-  `RustBrowser.Validation.*`), "Make default browser" button opening
-  `ms-settings:defaultapps?registeredAppUser=<name>` (verified in Microsoft docs:
-  value name under HKCU\Software\RegisteredApplications; Windows 11 21H2/22H2 with
-  2023-04 update or later), lifecycle checks of registration and of the real
-  UserChoice/production registration, version 0.17.0, upgrade fixture pinned
-  v0.16 `96a70a2` (cache key installer-fixture-v5, first CI run cold).
+- Item 3 committed (`b19fc27` registration and button, `61302ef` lifecycle and
+  real-defaults guard, `6ed244b` 0.17.0, `0a8df20` v0.16 fixture, cache key
+  installer-fixture-v5, first CI run cold). Lifecycle passed from a real 0.16
+  install (baseline built with the pinned 0.16 installer.iss); interrupted sweep
+  16/16; real UserChoice and RegisteredApplications unchanged; 1 mutant caught (its
+  leftover validation value was removed by hand afterwards).
+- `d145a28` item 5 address-field menu (`src/native_clipboard.rs`, test build uses
+  an in-memory clipboard; `native_address_field_edit_menu`, 3 mutants caught).
+- Item 4 NOT implemented: evidence and design in `MULTI_WINDOW_PROPOSAL.md`
+  (options A/B/C, B recommended). Ctrl+N stays unbound; a "new window" hand-off
+  opens a tab. Owner approval needed before any refactor.
+- Docs: README, INSTALL_WINDOWS, CHANGELOG, SECURITY (threat model), VALIDATION,
+  OWNER_CHECKLIST steps 12 to 16; owner bundle Setup now records its profile.
+- Gate script: `work/v17/gates.ps1` (adds edit-menu and single-instance suites,
+  v0.16 baseline in `work/v17/install/baseline`).
+
+Next: full local gates on `d7b8e93`, then open ONE draft PR (first push that
+starts CI), verify CI on that head, fix only reproduced failures, final push,
+verify CI on the final head. Do not merge, tag or mark ready.
 
 Decisions recorded for the owner:
 - Extra features of the existing `windows` crate enabled (no new crate,
