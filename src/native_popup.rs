@@ -44,6 +44,13 @@ impl Manager {
         let index = self.pending.iter().position(|(key, _)| *key == id)?;
         Some(self.pending.remove(index).1)
     }
+    /// The tab that asked for popup `id`, so it opens in that tab's window.
+    pub fn source(&self, id: u64) -> Option<TabId> {
+        self.pending
+            .iter()
+            .find(|(key, _)| *key == id)
+            .map(|(_, r)| r.source)
+    }
     pub fn cancel_tab(&mut self, tab: TabId) {
         self.pending.retain(|(_, r)| r.source != tab);
     }

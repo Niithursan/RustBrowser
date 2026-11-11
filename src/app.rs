@@ -238,6 +238,21 @@ fn launch_settings(uri: &str) -> bool {
     }
 }
 
+/// A browser window with the application icon (taskbar and Alt+Tab included).
+fn new_native_window(event_loop: &ActiveEventLoop) -> Result<Window, winit::error::OsError> {
+    use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+    let icon =
+        winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
+    event_loop.create_window(
+        Window::default_attributes()
+            .with_window_icon(icon.clone())
+            .with_taskbar_icon(icon)
+            .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
+            .with_inner_size(LogicalSize::new(1200.0, 820.0))
+            .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
+    )
+}
+
 /// The tab with `id` in whichever window holds it (tab IDs are process-wide).
 fn tab_in(windows: &mut [WindowState], id: TabId) -> Option<&mut rust_browser::tabs::Tab<Page>> {
     windows
@@ -323,9 +338,17 @@ struct Session {
     windows: Vec<WindowState>,
     current: usize,
     /// One allocator for every window, so a tab ID names one tab in one window.
-    /// Read when another window's tab list is created (multiple windows step).
-    #[allow(dead_code)]
     tab_ids: Rc<std::cell::Cell<TabId>>,
+    /// Native window IDs, most recently focused first.
+    focus_order: Vec<WindowId>,
+    /// Windows closed while others stay open: hidden now, destroyed after
+    /// `RETIRE_DELAY`, like closed tabs.
+    closing_windows: Vec<(Instant, WindowState)>,
+    /// Tabs (address, pinned) of windows closed this session, newest first, for
+    /// "Reopen closed window". In memory only, like closed tabs.
+    closed_windows: Vec<Vec<(String, bool)>>,
+    /// Other windows of the restored session, opened once the first one exists.
+    pending_restore: Vec<storage::WindowSnapshot>,
     content_context: WebContext,
     toolbar_context: WebContext,
     proxy: EventLoopProxy<Event>,
@@ -398,6 +421,190 @@ impl Session {
             None => false,
         }
     }
+    /// The most recently focused window, which receives links from other apps.
+    fn focused_index(&self) -> usize {
+        self.focus_order
+            .first()
+            .and_then(|id| self.windows.iter().position(|w| w.window.id() == *id))
+            .unwrap_or(self.current.min(self.windows.len() - 1))
+    }
+    fn select_focused(&mut self) {
+        self.current = self.focused_index();
+    }
+    /// Whether the window being handled is the one with focus. A single window
+    /// counts as focused before Windows reports it.
+    fn is_focused(&self) -> bool {
+        self.windows.len() == 1 || self.focused_index() == self.current
+    }
+    /// Record that window `id` has focus.
+    fn focused(&mut self, id: WindowId) {
+        self.focus_order.retain(|w| *w != id);
+        self.focus_order.insert(0, id);
+    }
+
+    /// Open a normal window with `restore`'s tabs, or the new-tab page.
+    fn open_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        restore: Option<storage::WindowSnapshot>,
+    ) -> Result<(), String> {
+        if self.private {
+            return Err("New windows open from a normal window. Use Ctrl+Shift+N for another private window.".into());
+        }
+        if self.windows.len() >= storage::MAX_WINDOWS {
+            return Err(format!(
+                "At most {} windows can be open. Close a window to open another.",
+                storage::MAX_WINDOWS
+            ));
+        }
+        let failed = |_| "A new window could not be created.".to_string();
+        let window = new_native_window(event_loop).map_err(failed)?;
+        let source = next_toolbar_source();
+        let toolbar = build_toolbar(
+            &window,
+            &mut self.toolbar_context,
+            &self.proxy,
+            self.private,
+            source,
+        )
+        .map_err(|_| "A new window's toolbar could not be created.".to_string())?;
+        self.windows.push(WindowState {
+            tabs: Tabs::with_ids(self.tab_ids.clone()),
+            retired: Vec::new(),
+            closed: ClosedTabs::default(),
+            toolbar,
+            toolbar_source: source,
+            toolbar_alert_shown: false,
+            toolbar_probe: None,
+            toolbar_checks: 0,
+            #[cfg(test)]
+            toolbar_alerts: 0,
+            retired_toolbar: None,
+            toolbar_restarts: Vec::new(),
+            window,
+            notice: String::new(),
+            panel: None,
+            fullscreen: None,
+            focus_pending: false,
+            chrome_height: ui::HEIGHT,
+            last_render: RefCell::new(String::new()),
+            last_title: RefCell::new(String::new()),
+        });
+        self.current = self.windows.len() - 1;
+        let restore = restore.unwrap_or_else(|| storage::WindowSnapshot {
+            tabs: vec![navigation::HOME.into()],
+            ..Default::default()
+        });
+        let mut opened = 0;
+        for (index, url) in restore.tabs.iter().enumerate() {
+            if self.open_tab(url.clone()).is_ok() {
+                opened += 1;
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.pinned = restore.pinned.get(index).copied().unwrap_or(false);
+                    tab.keep_awake = restore.keep_awake.get(index).copied().unwrap_or(false);
+                    if let Some(title) = restore.titles.get(index) {
+                        tab.title = title.clone();
+                    }
+                }
+            }
+        }
+        if opened == 0 {
+            let _ = self.open_tab(navigation::HOME.into());
+        }
+        if let Some(id) = self.tabs.items.get(restore.active).map(|t| t.id) {
+            self.tabs.select(id);
+        }
+        if self.activate().is_err() {
+            self.notice = "This window's tabs could not all be shown.".into();
+        }
+        let _ = self.resize();
+        self.render();
+        let id = self.window.id();
+        self.focused(id);
+        self.window.focus_window();
+        self.persist();
+        Ok(())
+    }
+
+    /// Hide window `index` and its views now and destroy them after the retirement
+    /// delay. Its tabs are kept in memory for "Reopen closed window" when
+    /// `remember` is set. The caller must not close the last window this way.
+    fn retire_window(&mut self, index: usize, remember: bool) {
+        let window = self.windows.remove(index);
+        let id = window.window.id();
+        if remember {
+            let tabs: Vec<(String, bool)> = window
+                .tabs
+                .items
+                .iter()
+                .map(|t| (t.url.clone(), t.pinned))
+                .collect();
+            self.closed_windows.insert(0, tabs);
+            self.closed_windows.truncate(storage::MAX_WINDOWS);
+        }
+        {
+            let mut permissions = self.permissions.borrow_mut();
+            let mut popups = self.popups.borrow_mut();
+            for tab in &window.tabs.items {
+                permissions.cancel_tab(tab.id);
+                popups.cancel_tab(tab.id);
+                let _ = tab.content.engine.set_visible(false);
+            }
+        }
+        let _ = window.toolbar.set_visible(false);
+        window.window.set_visible(false);
+        self.focus_order.retain(|w| *w != id);
+        self.closing_windows
+            .push((Instant::now() + RETIRE_DELAY, window));
+        self.current = self.focused_index();
+    }
+
+    /// Close the window being handled while others stay open.
+    fn close_window(&mut self) {
+        let tabs = self
+            .tabs
+            .items
+            .iter()
+            .filter(|t| t.url != navigation::HOME)
+            .count();
+        self.retire_window(self.current, true);
+        if tabs > 0 {
+            self.notice = format!(
+                "A window with {tabs} tab{} was closed. More > Reopen closed window brings it back until Rust Browser exits.",
+                if tabs == 1 { "" } else { "s" }
+            );
+        }
+        let _ = self.activate();
+        self.persist();
+        self.render_all();
+        self.window.focus_window();
+    }
+
+    /// Reopen the most recently closed window of this session.
+    fn reopen_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+        let Some(tabs) = self.closed_windows.first().cloned() else {
+            return Err("No window was closed in this session.".into());
+        };
+        let restore = storage::WindowSnapshot {
+            pinned: tabs.iter().map(|(_, pinned)| *pinned).collect(),
+            tabs: tabs.into_iter().map(|(url, _)| url).collect(),
+            ..Default::default()
+        };
+        self.open_window(event_loop, Some(restore))?;
+        self.closed_windows.remove(0);
+        Ok(())
+    }
+
+    /// Render every window's toolbar (each renders only what changed).
+    fn render_all(&mut self) {
+        let current = self.current;
+        for index in 0..self.windows.len() {
+            self.current = index;
+            self.render();
+        }
+        self.current = current;
+    }
+
     /// Choose the window an application event belongs to before it is handled.
     /// Events for a tab or toolbar that no longer exists keep the current window.
     fn route(&mut self, event: Event) -> Event {
@@ -405,6 +612,8 @@ impl Session {
             Event::WindowCommand(id, _) => {
                 self.select_window(*id);
             }
+            // Keyboard accelerators act on the window that has focus.
+            Event::Command(_) => self.select_focused(),
             Event::Page(tab, _)
             | Event::NavigationBlocked(tab)
             | Event::PageClose(tab)
@@ -418,6 +627,18 @@ impl Session {
             }
             Event::ToolbarProcess(source, _) | Event::ToolbarResponsive(source, _) => {
                 self.select_toolbar(*source);
+            }
+            Event::PermissionPrompt => {
+                let tab = self.permissions.borrow().prompt().map(|p| p.tab);
+                if let Some(tab) = tab {
+                    self.select_tab(tab);
+                }
+            }
+            Event::PopupRequested(ticket) => {
+                let source = self.popups.borrow().source(*ticket);
+                if let Some(source) = source {
+                    self.select_tab(source);
+                }
             }
             _ => {}
         }
@@ -467,6 +688,19 @@ impl Session {
         if !private {
             session.start_handoff();
         }
+        // Reopen the other windows of the restored session, then give focus back to
+        // the window that was focused last.
+        let first = session.windows[0].window.id();
+        for restore in std::mem::take(&mut session.pending_restore) {
+            if let Err(message) = session.open_window(event_loop, Some(restore)) {
+                session.select_window(first);
+                session.notice = message;
+                break;
+            }
+        }
+        session.select_window(first);
+        session.window.focus_window();
+        session.persist();
         Ok(session)
     }
 
@@ -523,12 +757,15 @@ impl Session {
     /// Open what a later launch handed over, then bring this window forward.
     fn hand_off(
         &mut self,
+        event_loop: &ActiveEventLoop,
         request: rust_browser::handoff::Request,
     ) -> rust_browser::handoff::Status {
         use rust_browser::handoff::{Request, Status};
         if !self.ready || self.clearing.is_some() {
             return Status::Busy;
         }
+        // Links from other apps go to the most recently focused window.
+        self.select_focused();
         let opened = match request {
             Request::Open(links) => {
                 let mut opened = 0;
@@ -544,11 +781,16 @@ impl Session {
                 }
                 opened
             }
-            Request::NewWindow => match self.open_tab(navigation::HOME.into()) {
-                Ok(()) => 1,
-                Err(error) => {
-                    self.notice = error.to_string();
-                    0
+            Request::NewWindow => match self.open_window(event_loop, None) {
+                Ok(()) => {
+                    // open_window focused and saved the new window.
+                    self.window.set_minimized(false);
+                    return Status::Accepted;
+                }
+                Err(message) => {
+                    self.notice = message;
+                    self.render();
+                    return Status::Refused;
                 }
             },
         };
@@ -627,17 +869,7 @@ impl Session {
             },
             proxy.clone(),
         )?;
-        use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
-        let icon =
-            winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
-        let window = event_loop.create_window(
-            Window::default_attributes()
-                .with_window_icon(icon.clone())
-                .with_taskbar_icon(icon)
-                .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
-                .with_inner_size(LogicalSize::new(1200.0, 820.0))
-                .with_min_inner_size(LogicalSize::new(560.0, 320.0)),
-        )?;
+        let window = new_native_window(event_loop)?;
         let content_context = WebContext::new(Some(profile.join("content")));
         let mut toolbar_context = WebContext::new(Some(profile.join("toolbar")));
         let toolbar_source = next_toolbar_source();
@@ -679,6 +911,10 @@ impl Session {
             windows: vec![first_window],
             current: 0,
             tab_ids,
+            focus_order: Vec::new(),
+            closing_windows: Vec::new(),
+            closed_windows: Vec::new(),
+            pending_restore: Vec::new(),
             content_context,
             toolbar_context,
             proxy,
@@ -733,6 +969,9 @@ impl Session {
             let id = tab.id;
             session.tabs.select(id);
         }
+        if session.settings.restore_session {
+            session.pending_restore = snapshot.other_windows;
+        }
         // Links from the command line open additional tabs rather than discarding
         // restoration. They were validated by the parser and are checked again here.
         for input in launch {
@@ -746,7 +985,10 @@ impl Session {
             }
         }
         session.activate()?;
-        session.persist();
+        // With other windows still to reopen, saving now would drop them.
+        if session.pending_restore.is_empty() {
+            session.persist();
+        }
         if session.library_action(Action::Refresh).is_err() {
             session.notice="Library database is unavailable. Browsing remains available; check profile access or use the browser version that created this library.".into();
         }
@@ -856,25 +1098,36 @@ impl Session {
     /// Destroy retired views whose delay has passed. Returns the next deadline.
     fn reap_retired(&mut self) -> Option<Instant> {
         let now = Instant::now();
-        let before = self.retired.len();
-        self.retired.retain(|(deadline, _)| *deadline > now);
-        if self.retired.len() != before {
+        let before: usize = self.windows.iter().map(|w| w.retired.len()).sum::<usize>()
+            + self.closing_windows.len();
+        for window in &mut self.windows {
+            window.retired.retain(|(deadline, _)| *deadline > now);
+            if window
+                .retired_toolbar
+                .as_ref()
+                .is_some_and(|(deadline, _)| *deadline <= now)
+            {
+                window.retired_toolbar = None;
+            }
+        }
+        self.closing_windows.retain(|(deadline, _)| *deadline > now);
+        let after: usize = self.windows.iter().map(|w| w.retired.len()).sum::<usize>()
+            + self.closing_windows.len();
+        if after != before {
             // Engine data clearing waits until no document of a closed tab remains.
             self.start_engine_clear();
         }
-        if self
-            .retired_toolbar
-            .as_ref()
-            .is_some_and(|(deadline, _)| *deadline <= now)
-        {
-            self.retired_toolbar = None;
-        }
-        let pages = self.retired.first().map(|(deadline, _)| *deadline);
-        let toolbar = self.retired_toolbar.as_ref().map(|(deadline, _)| *deadline);
-        match (pages, toolbar) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        self.windows
+            .iter()
+            .flat_map(|w| {
+                w.retired
+                    .first()
+                    .map(|(deadline, _)| *deadline)
+                    .into_iter()
+                    .chain(w.retired_toolbar.as_ref().map(|(deadline, _)| *deadline))
+            })
+            .chain(self.closing_windows.first().map(|(deadline, _)| *deadline))
+            .min()
     }
 
     /// Write navigation failures that no download request claimed within the delay
@@ -1021,6 +1274,33 @@ impl Session {
         // Deferrals and operations of the ended process can no longer complete.
         self.permissions.borrow_mut().cancel_all();
         self.popups.borrow_mut().clear();
+        self.closing_windows.clear();
+        let current = self.current;
+        let mut failed = false;
+        for window in 0..self.windows.len() {
+            self.current = window;
+            failed |= self.recover_window();
+        }
+        self.current = current;
+        // Startup security initialization was lost with the old process.
+        if !self.ready && self.reset_engine_permissions().is_err() {
+            failed = true;
+        }
+        for window in 0..self.windows.len() {
+            self.current = window;
+            self.notice = if failed {
+                "The browser engine stopped and could not be fully restarted. Restart Rust Browser; open tabs are saved."
+            } else {
+                "The browser engine stopped unexpectedly and was restarted. Open pages were reloaded; unsaved page work and unfinished downloads may be lost."
+            }
+            .into();
+        }
+        self.current = current;
+    }
+
+    /// Rebuild the views of the window being handled, keeping its tabs, order,
+    /// pins and selection. Returns whether anything failed.
+    fn recover_window(&mut self) -> bool {
         self.retired.clear();
         self.fullscreen = None;
         self.window.set_fullscreen(None);
@@ -1058,17 +1338,7 @@ impl Session {
                 Err(_) => failed = true,
             }
         }
-        // Startup security initialization was lost with the old process.
-        if !self.ready && self.reset_engine_permissions().is_err() {
-            failed = true;
-        }
-        failed |= self.activate().is_err();
-        self.notice = if failed {
-            "The browser engine stopped and could not be fully restarted. Restart Rust Browser; open tabs are saved."
-        } else {
-            "The browser engine stopped unexpectedly and was restarted. Open pages were reloaded; unsaved page work and unfinished downloads may be lost."
-        }
-        .into();
+        failed | self.activate().is_err()
     }
 
     fn effective_panel(&self) -> Option<Panel> {
@@ -1141,7 +1411,9 @@ impl Session {
             self.window
                 .set_fullscreen(fullscreen.map(|_| winit::window::Fullscreen::Borderless(None)));
         }
-        {
+        // Only the active tab of the focused window may ask for a permission;
+        // a change of tab or of focused window cancels pending requests.
+        if self.is_focused() {
             let mut permissions = self.permissions.borrow_mut();
             if permissions.active != next {
                 permissions.cancel_all();
@@ -1189,15 +1461,11 @@ impl Session {
         Ok(())
     }
 
-    fn persist(&self) {
-        if self.private || self.clearing.is_some() {
-            return;
-        }
-        let Some(store) = &self.store else { return };
-        let snapshot = Snapshot {
-            version: 1,
-            tabs: self
-                .tabs
+    /// A window's tabs as saved: local pages and valid addresses only.
+    fn window_snapshot(window: &WindowState) -> storage::WindowSnapshot {
+        let tabs = &window.tabs;
+        storage::WindowSnapshot {
+            tabs: tabs
                 .items
                 .iter()
                 .map(|tab| {
@@ -1208,11 +1476,9 @@ impl Session {
                     }
                 })
                 .collect(),
-            active: self.tabs.active_index(),
-            settings: self.settings.clone(),
-            pinned: self.tabs.items.iter().map(|tab| tab.pinned).collect(),
-            titles: self
-                .tabs
+            active: tabs.active_index(),
+            pinned: tabs.items.iter().map(|tab| tab.pinned).collect(),
+            titles: tabs
                 .items
                 .iter()
                 .map(|tab| {
@@ -1223,9 +1489,48 @@ impl Session {
                         .collect()
                 })
                 .collect(),
-            keep_awake: self.tabs.items.iter().map(|tab| tab.keep_awake).collect(),
-            other_windows: Vec::new(),
+            keep_awake: tabs.items.iter().map(|tab| tab.keep_awake).collect(),
+        }
+    }
+
+    /// Save every normal window: the most recently focused one in the format 1
+    /// fields (what 0.17 restores), the others in `other_windows`, which is left
+    /// out if it would make the file larger than every version accepts.
+    fn persist(&self) {
+        if self.private || self.clearing.is_some() {
+            return;
+        }
+        let Some(store) = &self.store else { return };
+        let main = self.focused_index();
+        let first = Self::window_snapshot(&self.windows[main]);
+        let mut others: Vec<usize> = self
+            .focus_order
+            .iter()
+            .filter_map(|id| self.windows.iter().position(|w| w.window.id() == *id))
+            .filter(|index| *index != main)
+            .collect();
+        for index in 0..self.windows.len() {
+            if index != main && !others.contains(&index) {
+                others.push(index);
+            }
+        }
+        let mut snapshot = Snapshot {
+            version: 1,
+            tabs: first.tabs,
+            active: first.active,
+            settings: self.settings.clone(),
+            pinned: first.pinned,
+            titles: first.titles,
+            keep_awake: first.keep_awake,
+            other_windows: others
+                .into_iter()
+                .take(storage::MAX_WINDOWS - 1)
+                .map(|index| Self::window_snapshot(&self.windows[index]))
+                .collect(),
         };
+        if !storage::fits(&snapshot) {
+            snapshot.other_windows.clear();
+        }
         if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
             let mut last = self.last_snapshot.borrow_mut();
             if last.as_ref() != Some(&snapshot) {
@@ -1261,7 +1566,12 @@ impl Session {
                 active.content.state.loading,
                 active.content.state.failed,
             ),
-            permission_prompt: self.permissions.borrow().prompt(),
+            // A prompt is shown only in the window that holds its tab.
+            permission_prompt: self
+                .permissions
+                .borrow()
+                .prompt()
+                .filter(|p| self.tabs.items.iter().any(|t| t.id == p.tab)),
             busy: self.clearing.is_some() || !self.ready,
             page: &active.content.state,
             active_id: active.id,
@@ -1493,6 +1803,8 @@ impl Session {
                 }
                 self.settings.favorites.remove(index);
             }
+            // Need the event loop; handled by App before commands reach here.
+            Command::NewWindow | Command::ReopenClosedWindow | Command::ExitBrowser => {}
             Command::NewPrivateWindow => {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
@@ -1955,6 +2267,18 @@ impl Session {
             }
             return true;
         }
+        let current = self.current;
+        let mut changed = false;
+        for index in 0..self.windows.len() {
+            self.current = index;
+            changed |= self.background_window();
+        }
+        self.current = current;
+        changed
+    }
+
+    /// Sleep and wake decisions for the tabs of the window being handled.
+    fn background_window(&mut self) -> bool {
         let now = self.started.elapsed();
         let mut changed = false;
         let ids: Vec<_> = self.tabs.items.iter().map(|tab| tab.id).collect();
@@ -2074,8 +2398,20 @@ impl Session {
             started_native: false,
             results: Vec::new(),
         });
-        // Cleared data must not be reachable again through "reopen closed tab".
+        // Cleared data must not be reachable again through "reopen closed tab" or
+        // "reopen closed window", and no other window may keep a document open.
         self.closed.clear();
+        self.closed_windows.clear();
+        let keep = self.windows[self.current].window.id();
+        while self.windows.len() > 1 {
+            let other = self
+                .windows
+                .iter()
+                .position(|w| w.window.id() != keep)
+                .unwrap_or(0);
+            self.retire_window(other, false);
+        }
+        self.current = 0;
         // Keep monotonically increasing tab IDs so late events cannot target a new tab.
         for tab in std::mem::take(&mut self.tabs.items) {
             self.retire(tab.content);
@@ -2131,7 +2467,10 @@ impl Session {
         };
         // Documents of the closed tabs, in every window, must be gone before their
         // data is cleared.
-        if clear.started_native || self.windows.iter().any(|w| !w.retired.is_empty()) {
+        if clear.started_native
+            || self.windows.iter().any(|w| !w.retired.is_empty())
+            || !self.closing_windows.is_empty()
+        {
             return;
         }
         let Some(tab) = self.windows[self.current].tabs.active() else {
@@ -2348,11 +2687,13 @@ impl App {
             session.handoff = None;
             session.record_navigation_failures(true);
             session.persist();
-            session.window.set_visible(false);
-            for tab in &session.tabs.items {
-                let _ = tab.content.engine.set_visible(false);
+            for window in &session.windows {
+                window.window.set_visible(false);
+                for tab in &window.tabs.items {
+                    let _ = tab.content.engine.set_visible(false);
+                }
+                let _ = window.toolbar.set_visible(false);
             }
-            let _ = session.toolbar.set_visible(false);
         }
         self.closing = Some(Instant::now() + RETIRE_DELAY);
     }
@@ -2367,8 +2708,8 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match Session::create(event_loop, self.proxy.clone(), start) {
-            Ok(session) => {
-                session.render();
+            Ok(mut session) => {
+                session.render_all();
                 self.session = Some(session);
             }
             Err(error) => {
@@ -2418,13 +2759,29 @@ impl ApplicationHandler<Event> for App {
                     self.user_event(event_loop, Event::Command(command));
                 }
             }
+            WindowEvent::Focused(true) => {
+                if let Some(session) = &mut self.session {
+                    let id = session.window.id();
+                    session.focused(id);
+                    let _ = session.activate();
+                    session.persist();
+                    session.render_all();
+                }
+            }
             WindowEvent::CloseRequested => {
                 if let Some(session) = &mut self.session
                     && session.clearing.is_some()
                 {
                     session.notice =
                         "Wait for the clearing result before closing the browser.".into();
-                    session.render();
+                    session.render_all();
+                    return;
+                }
+                // Closing one of several windows closes only that window.
+                if let Some(session) = &mut self.session
+                    && session.windows.len() > 1
+                {
+                    session.close_window();
                     return;
                 }
                 self.begin_shutdown();
@@ -2435,7 +2792,7 @@ impl ApplicationHandler<Event> for App {
                     && session.resize().is_err()
                 {
                     session.notice = "Could not resize webpage.".into();
-                    session.render();
+                    session.render_all();
                 }
                 if let Some(session) = &mut self.session
                     && session.focus_pending
@@ -2443,7 +2800,7 @@ impl ApplicationHandler<Event> for App {
                 {
                     session.notice =
                         "Could not focus the selected tab. Select it again to retry.".into();
-                    session.render();
+                    session.render_all();
                 }
             }
             _ => {}
@@ -2455,7 +2812,7 @@ impl ApplicationHandler<Event> for App {
                 use rust_browser::handoff::Status;
                 let status = match &mut self.session {
                     _ if self.closing.is_some() => Status::Closing,
-                    Some(session) => session.hand_off(request),
+                    Some(session) => session.hand_off(event_loop, request),
                     None => Status::Busy,
                 };
                 let _ = reply.send(status);
@@ -2484,6 +2841,34 @@ impl ApplicationHandler<Event> for App {
         let Some(session) = &mut self.session else {
             return;
         };
+        match &event {
+            Event::Command(Command::NewWindow) => {
+                if let Err(message) = session.open_window(event_loop, None) {
+                    session.notice = message;
+                    session.render_all();
+                }
+                return;
+            }
+            Event::Command(Command::ReopenClosedWindow) => {
+                if let Err(message) = session.reopen_window(event_loop) {
+                    session.notice = message;
+                    session.render_all();
+                }
+                return;
+            }
+            Event::Command(Command::ExitBrowser) => {
+                if session.clearing.is_some() {
+                    session.notice =
+                        "Wait for the clearing result before closing the browser.".into();
+                    session.render_all();
+                    return;
+                }
+                self.begin_shutdown();
+                event_loop.set_control_flow(ControlFlow::Poll);
+                return;
+            }
+            _ => {}
+        }
         match event {
             // Answered before the closing check above; routed to Command.
             Event::HandOff(..) | Event::WindowCommand(..) => {}
@@ -2637,7 +3022,7 @@ impl ApplicationHandler<Event> for App {
             }
         }
         session.finish_clear();
-        session.render();
+        session.render_all();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -2651,26 +3036,33 @@ impl ApplicationHandler<Event> for App {
             return;
         }
         if let Some(session) = &mut self.session {
-            if session
-                .toolbar_probe
-                .is_some_and(|(at, _)| Instant::now() >= at)
-            {
-                session.toolbar_failed(
-                    session.toolbar_source,
-                    crate::native_activity::Failure::Renderer,
-                );
-                session.render();
+            let current = session.current;
+            for index in 0..session.windows.len() {
+                session.current = index;
+                if session
+                    .toolbar_probe
+                    .is_some_and(|(at, _)| Instant::now() >= at)
+                {
+                    session.toolbar_failed(
+                        session.toolbar_source,
+                        crate::native_activity::Failure::Renderer,
+                    );
+                    session.render_all();
+                }
             }
+            session.current = current.min(session.windows.len() - 1);
             if session.engine_lost {
                 session.recover_engine();
-                session.render();
+                session.render_all();
             }
-            let recording = match (
-                session.record_navigation_failures(false),
-                session.toolbar_probe,
-            ) {
-                (Some(a), Some((b, _))) => Some(a.min(b)),
-                (a, b) => a.or(b.map(|(at, _)| at)),
+            let probes = session
+                .windows
+                .iter()
+                .filter_map(|w| w.toolbar_probe.map(|(at, _)| at))
+                .min();
+            let recording = match (session.record_navigation_failures(false), probes) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
             };
             let retiring = match (session.reap_retired(), recording) {
                 (Some(a), Some(b)) => Some(a.min(b)),
@@ -2678,10 +3070,10 @@ impl ApplicationHandler<Event> for App {
             };
             session.popups.borrow_mut().expire();
             if session.background_tick() {
-                session.render();
+                session.render_all();
             }
             if session.permissions.borrow_mut().expire() {
-                session.render();
+                session.render_all();
             }
             if session
                 .clearing
@@ -2692,10 +3084,10 @@ impl ApplicationHandler<Event> for App {
                 session.permission_lockout = true;
                 session.notice =
                     "Clearing timed out. Completion is unconfirmed; some data may remain. Website permission requests remain denied until restart.".into();
-                session.render();
+                session.render_all();
             }
             if session.downloads.borrow_mut().poll(&session.proxy) {
-                session.render();
+                session.render_all();
             }
             let periodic = if session.downloads.borrow().active_count() > 0
                 || session.permissions.borrow().prompt().is_some()
