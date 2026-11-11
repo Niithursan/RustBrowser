@@ -1,5 +1,29 @@
 # Development checkpoint
 
+## v0.17: link handling (Claude Code, in progress, owner away)
+
+Branch `feat/v0.17-link-handling` from verified origin/main `96a70a2` (PR #22; CI
+42945393777 and security 42945393781 passed). Scratch `<workspace>/work/v17`.
+No PR yet: branch pushes start no workflow; open the draft PR once, then push
+once more for the final head. Do not rerun or dispatch workflows.
+
+Plan and order (advisor-reviewed): 1 command line, 2 hand-off, 3 installer
+registration, 5 address-field menu, then 4 multiple windows (may not land; if
+its refactor is not green, deliver the design and session-format proposal).
+
+Done:
+- `a2aa270` item 1. Reproduced first: invalid UTF-16 argument panicked (exit 101)
+  and unknown options were ignored. Pure parser `src/launch.rs` over the raw
+  GetCommandLineW text; `--single-argument` takes the rest verbatim as one link;
+  `navigation::external` requires explicit http(s). Decision: local .htm/.html
+  are NOT accepted (typed file: is refused today), so registration is http/https
+  only. Refusals exit 2 with a message. Profile lock now taken before the event
+  loop (`storage::lock`, `Store::open_locked`, `App.start`). Tests: 6 unit tests,
+  `tests/command_line.rs` (spawned exe, raw_arg).
+
+Decisions recorded for the owner: extra features of the existing `windows`
+crate enabled (no new crate, Cargo.lock unchanged).
+
 ## v0.16: everyday browsing and toolbar follow-ups
 
 Active branch `feat/v0.16-everyday-basics`, created from verified origin/main
