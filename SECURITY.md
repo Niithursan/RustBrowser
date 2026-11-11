@@ -1,5 +1,50 @@
 # Security
 
+## v0.19 passwords, autofill and imported bookmark files
+
+### Password saving and autofill boundary
+
+- Passwords and form data are saved only by WebView2's own features, and only after
+  the user turns on "Offer to save passwords" or "Fill in forms automatically". Both
+  are off for new and existing profiles. WebView2 157 turns general autofill on by
+  default and applies these settings per view (a view created later starts from the
+  defaults again), so Rust Browser sets both on every content view as it is created
+  and on every open view when a switch changes.
+- Rust Browser never reads, decrypts, lists, exports or imports saved passwords or
+  form data, and has no code that could. WebView2 stores them in the profile's
+  `content` folder, protected by Windows for the user account; anyone who can sign
+  in as that user, or run software as them, may be able to reach them.
+- Private windows never save passwords or form data: the setting is forced off when
+  each private view is created, independently of the switches, and the switches are
+  refused in private windows. The toolbar view always has both off, so the address
+  field never offers autofill.
+- Web content cannot change these settings; they are set only from the toolbar's
+  Privacy & security panel through the existing toolbar command bridge.
+- Clearing uses WebView2's `PASSWORD_AUTOSAVE` and `GENERAL_AUTOFILL` kinds only
+  when those separate choices are checked; clearing history never includes them.
+  WebView2 cannot remove one saved password, so clearing removes all of them.
+- Password import is not offered: the WebView2 API in use has no import interface
+  (the `webview2-com-sys` 0.39.1 bindings define 266 `ICoreWebView2*` interfaces,
+  none with an import member; the only password members are the autosave switches
+  and HTTP basic authentication responses).
+
+### Imported bookmark files
+
+| Threat | Protection | Tests |
+| --- | --- | --- |
+| A crafted file runs script or loads content | The file is scanned as plain text by a small parser; it is never rendered, so nothing in it runs, loads, resolves entities from outside or follows paths. Only each link's `HREF` (exact attribute name, so `ICON_URI` or `FEEDURL` are never used) and link and folder text are read | Fixture and hostile-input tests in `tests/bookmark_import.rs` |
+| Dangerous or misleading addresses | Only explicit `http://` and `https://` addresses that saved bookmarks accept; `javascript:` (also when written with character references), `data:`, `file:`, `place:`, `vbscript:` and addresses with a user name or password are refused and counted | `hostile_addresses_are_refused`, Edge fixture |
+| Resource exhaustion | 10 MiB file limit checked before reading it all, at most 20,000 links and 32 folder levels (the whole file is refused beyond these), titles and folder names shortened, addresses over 8,192 characters refused, invalid UTF-8 refused, linear-time scanning | `size_count_and_depth_limits`, malformed-file tests |
+| Partial or corrupting import | One SQLite transaction: a failure part way, a refused file or passing the 5,000 bookmark limit leaves bookmarks and folders unchanged; duplicates are skipped | Interrupted-import and limit tests |
+| Reading another browser's data | Only the file the user picks in a Windows file dialog is read; no other browser's profile folder or database is opened | Code review; no such code exists |
+| Web or toolbar content injecting bookmarks | The import action cannot be deserialized from toolbar messages; it is built only from the chosen file. Private windows refuse imports | `the_toolbar_cannot_send_import_entries`, private-window suite |
+
+## Reporting a vulnerability
+
+Report suspected vulnerabilities privately on GitHub: open the repository's
+**Security** tab and choose **Report a vulnerability**. See the end of this file for
+what not to include.
+
 ## v0.18 multiple windows
 
 - All normal windows share one profile, engine environment, permission rules and
@@ -240,7 +285,7 @@ do not validate Windows input services, monitor changes, or physical
 input latency. Servo's pinned DOM composition constructor is disabled
 by default and remains unavailable in that fixture.
 
-This is an experimental browser. Report suspected vulnerabilities privately through GitHub private vulnerability reporting (the repository's Security tab, "Report a vulnerability") when it is enabled, or otherwise contact the repository owner privately. Do not include cookies, passwords, browsing profiles, or personal URLs in public issues.
+This is an experimental browser. Report suspected vulnerabilities privately on GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (https://github.com/Niithursan/RustBrowser/security/advisories/new). Only you and the maintainer see the report. Do not report vulnerabilities in public issues, and do not include cookies, passwords, browsing profiles or personal URLs in any report.
 
 The browser uses the installed Microsoft WebView2 Runtime. Keep that runtime and Windows updated. Remote content receives no application IPC handler; the local toolbar has a separate profile and restricted navigation. HTTP traffic is unencrypted. HTTPS does not establish trustworthiness, and certificate validation is never bypassed.
 

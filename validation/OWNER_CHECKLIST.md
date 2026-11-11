@@ -1,4 +1,4 @@
-# Owner checklist (about 40 minutes)
+# Owner checklist (about 55 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -246,6 +246,64 @@ its page stays usable.
 
 **Pass:** Narrator reads that window's buttons, tabs and address field, not the
 first window's. Turn Narrator off afterwards.
+
+Steps 22 to 27 use the bundle's disposable owner profile only. For step 22 use a
+throwaway test account you created for this check, never a real account or a
+password you use anywhere else.
+
+## 22. Save a password (4 minutes)
+
+1. More (⋯) → Privacy & security → turn on **Offer to save passwords**.
+2. Sign in to your throwaway test account on its website and accept WebView2's
+   offer to save the password.
+3. Sign out, then go back to the sign-in page.
+
+**Pass:** the save offer appears after signing in, and on the sign-in page the saved
+user name and password are offered.
+
+## 23. A private window never offers to save (2 minutes)
+
+1. Open a private window (Ctrl+Shift+N) and sign in to the same test account there.
+
+**Pass:** no offer to save the password appears, the saved password is not offered,
+and the two switches are greyed out in that window's Privacy & security.
+
+## 24. Fill in a form (3 minutes)
+
+1. Turn on **Fill in forms automatically**.
+2. On any website form with name and address fields, type a made-up name and
+   address, then reload the page (do not submit real details anywhere).
+3. Click the name field again.
+
+**Pass:** the earlier entry is suggested and fills the form. With the switch off
+again, nothing is suggested.
+
+## 25. Clear saved passwords (2 minutes)
+
+1. Privacy & security → Clear browsing data → check only **Saved passwords** →
+   Clear selected data.
+2. Go back to the test account's sign-in page.
+
+**Pass:** the saved password is no longer offered. Bookmarks and history are still
+there.
+
+## 26. Import Firefox bookmarks (4 minutes)
+
+1. In Firefox: Bookmarks → Manage bookmarks → Import and Backup → Export Bookmarks
+   to HTML, and save the file.
+2. In Rust Browser: More (⋯) → Bookmarks → **Import from file…** and choose that
+   file.
+
+**Pass:** a notice says how many were added, skipped and refused; the bookmarks and
+their folders appear in the bookmark manager. Importing the same file again adds
+nothing.
+
+## 27. Remove the test data (1 minute)
+
+1. Clear **Saved passwords** and **Autofill data** again, and delete the throwaway
+   test account if the site allows it.
+
+**Pass:** nothing from steps 22 to 26 remains outside the disposable profile.
 
 When you finish, set your usual default browser back (step 12.3) and uninstall the
 validation entry from Apps & Features.

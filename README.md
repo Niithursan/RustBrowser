@@ -1,9 +1,17 @@
-# Rust Browser 0.18.0
+# Rust Browser 0.19.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.19 can save passwords and fill in forms using WebView2's own features. Both
+are off until you turn them on in More (⋯) → Privacy & security, and private
+windows never save either. **Form autofill is now off by default**: WebView2
+turned it on by itself before this version. Bookmarks can be imported from an
+exported bookmarks HTML file (Firefox, Chrome or Edge). Passwords cannot be
+imported. See [Passwords and autofill](#passwords-and-autofill) and
+[Importing bookmarks](#importing-bookmarks). This is not a release candidate.
 
 v0.18 opens several normal windows on one profile: Ctrl+N or More (⋯) → New
 window, up to 8 at a time. Links from other apps go to the window you used last,
@@ -113,6 +121,10 @@ none has been published yet. Executables and packages attached to CI runs are
 unsigned test builds for review, not releases. Every build is unsigned, so Windows
 shows an unknown-publisher warning. Do not install Rust Browser from anywhere else.
 
+**Reporting a vulnerability.** Report it privately: on GitHub open this
+repository's **Security** tab and choose **Report a vulnerability**. Please do not
+use public issues for security problems. See SECURITY.md.
+
 CI stores an x64 Windows executable as a build artifact and tests portable
 packaging. Approved version tags produce package/checksum Actions artifacts;
 publishing a GitHub Release requires an explicit manual workflow action.
@@ -150,6 +162,8 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Focus webpage from toolbar | F7 |
 | Bookmark current page | Ctrl+D |
 | Bookmark manager | More (⋯) → Bookmarks, or Ctrl+Shift+O |
+| Import bookmarks from another browser | More (⋯) → Bookmarks → Import from file… (an exported bookmarks HTML file) |
+| Offer to save passwords / fill in forms | More (⋯) → Privacy & security → Passwords and forms (both off by default) |
 | Browsing history | More (⋯) → History, or Ctrl+H |
 | Download manager | More (⋯) → Downloads, or Ctrl+J |
 | New window | More (⋯) → New window, or Ctrl+N (up to 8 normal windows) |
@@ -196,8 +210,10 @@ the current page and its status unchanged; a blocked app link shows a notice.
 
 Cookies, site storage and cache persist in `%LOCALAPPDATA%\RustBrowser\v0.1\content`.
 The toolbar has its own `toolbar` profile folder. The existing v0.1 folder is reused
-to preserve normal cookies and data on upgrade. There is no password manager or
-general profile manager. Private windows use separate temporary storage.
+to preserve normal cookies and data on upgrade. Saved passwords and form data, when
+you turn them on, are kept by WebView2 in the same `content` folder (see
+[Passwords and autofill](#passwords-and-autofill)); there is no separate password
+manager or general profile manager. Private windows use separate temporary storage.
 Close every instance before manually removing a profile folder.
 
 ### Windows
@@ -282,8 +298,7 @@ retain the Runtime's default security features. Media autoplay is disabled.
 Runtime-marked user-initiated HTTP(S) and blank popup requests open a linked tab in
 the same window and browsing mode. Native opener relationships and `noopener` rules
 are preserved. See compatibility limits below. There are no
-extensions, printing UI, sync, full crash recovery or default-browser
-registration. Threat protections and compatibility
+extensions, sync or full crash recovery. Threat protections and compatibility
 need a dedicated review before everyday browsing. Runtime behavior remains dependent
 on Microsoft's installed WebView2 version and policy.
 
@@ -440,6 +455,35 @@ temporarily locked or survive an abrupt exit until a later cleanup succeeds.
 Private mode does not provide anonymity or hide activity from sites, network observers,
 Windows, or other software. Downloads and their metadata can remain on disk.
 
+## Passwords and autofill
+
+More (⋯) → Privacy & security → **Passwords and forms** has two switches:
+
+- **Offer to save passwords**: WebView2 offers to save a password when you sign in,
+  and fills it in next time.
+- **Fill in forms automatically**: WebView2 suggests and fills addresses and other
+  form entries you typed before.
+
+Both are off for new profiles and for profiles from earlier versions. WebView2
+itself turns form autofill on by default; Rust Browser turns it off until you opt
+in. A change applies at once to every open tab in every window, and to tabs,
+windows and popups opened later and to pages rebuilt after an engine restart.
+Private windows never save passwords or form data, whatever the switches say, and
+the switches cannot be changed there. The toolbar never saves or fills anything,
+including the address field.
+
+The data is stored by WebView2 inside the profile's `content` folder
+(`%LOCALAPPDATA%\RustBrowser\v0.1\content`), protected by Windows for your user
+account. Rust Browser never reads, decrypts, lists or exports it. WebView2 offers
+no way to list, view or delete one saved password: to remove them, use
+**Clear browsing data → Saved passwords** (or **Autofill data**), which removes all of
+them. Turning a switch off stops saving and filling; to remove what was saved, clear it.
+
+Passwords cannot be imported: WebView2 has no import interface (the WebView2 API
+used here has only the two switches and the clearing kinds). Keep using your old
+browser's saved passwords for sites you have not signed in to yet, or use a
+separate password manager app.
+
 ## Website permissions
 
 Camera, microphone, geolocation and notifications can prompt on the active tab after
@@ -463,6 +507,10 @@ blank view and closes other tabs before clearing, so active pages cannot immedia
 repopulate the old data. Finish or cancel downloads first. Clearing history covers
 the active library and engine history; cookies include site storage; cache includes
 disk cache and Cache Storage. Engine results are reported only after its callback.
+
+**Saved passwords** and **Autofill data** are separate choices, unchecked by
+default; they use WebView2's own password and autofill clearing. Clearing history,
+cookies or anything else never removes saved passwords or form data.
 
 Saved session clearing disables URL retention and removes session recovery files.
 Closing the tabs also changes the current tab list, even if that category is unchecked.
@@ -508,6 +556,34 @@ database is preserved as `library.corrupt-<timestamp>` before recovery. A newer 
 or access error disables the library with a notice rather than resetting its data;
 ordinary browsing remains available. Back up the profile with the browser closed.
 Database files/backups contain personal data, are not encrypted and must stay out of Git.
+
+## Importing bookmarks
+
+More (⋯) → Bookmarks → **Import from file…** opens a Windows file dialog. Choose a
+bookmarks HTML file exported from another browser:
+
+- Firefox: Bookmarks → Manage bookmarks → Import and Backup → Export Bookmarks to HTML.
+- Chrome or Edge: Bookmarks manager (or Favorites) → ⋯ → Export bookmarks.
+
+Rust Browser reads only the file you choose. It never reads another browser's
+profile folder or databases. The file is treated as untrusted text: nothing in it
+runs, loads from the network or is followed, and only each link's address and the
+names of links and folders are read. Only explicit `http://` and `https://`
+addresses that bookmarks accept are imported; `javascript:`, `data:`, `file:`,
+`place:` and addresses with a user name or password are refused.
+
+Limits: the file may be at most 10 MiB with at most 20,000 links and 32 levels of
+folders, or it is refused whole. Titles longer than 256 characters and folder names
+longer than 80 are shortened; addresses longer than 8,192 characters are refused.
+
+Each bookmark goes into a folder named like the innermost folder that held it, and
+an existing folder with the same name is reused. Folders here cannot contain other
+folders, so nested folders become top-level folders, and the summary says how many.
+Addresses you already have, or that repeat in the file, are skipped. When the import
+finishes, a notice says how many were added, skipped as duplicates and refused, and
+why. The import is all or nothing: if it fails, the file is refused, or it would
+pass the 5,000 bookmark limit, your bookmarks stay as they were. Private windows
+cannot import.
 
 ## Downloads
 
