@@ -55,6 +55,18 @@ results for the final head are recorded in the pull request.
   RegisteredApplications value name, as Microsoft documents; covered by a unit test
   that also refuses any other URI. Automated runs never open Settings.
 
+### Owner results
+
+Owner checklist steps 12 to 16, 2026-11-11, bundle `o-4349a481`, version 0.17.0,
+built from PR #23 head `25a94d0` (EXE SHA-256
+`72b9a9f8a8806f829a8ca3a65b6424b26f22be8ba841396d289d16fa6c26a95c`). All passed by
+owner report: the default was chosen in Windows Settings through the validation
+entry; links from Discord and from a mail or PDF app opened as tabs in the running
+window; a second launch handed off with no second window; Ctrl+N did nothing
+unexpected; the address-field menu showed exactly Cut, Copy, Paste and Select all,
+and paste was one line. Firefox was restored as the default and the validation
+install was removed. These results cover that build only.
+
 ### Not tested here
 
 - A second Windows user account (cannot be created here): the user rule is unit
