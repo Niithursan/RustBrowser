@@ -1500,3 +1500,107 @@ fn native_private_windows_never_run_extensions() {
     let (root, _) = run("private-extensions", private_extension_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Screenshot tool for the layout review (not a gate): the toolbar view in the
+/// light and dark themes at 100% and 150%, on the new-tab page (the toolbar view
+/// fills the window there) and above a website. Writes PNG files to
+/// `RUST_BROWSER_SHOTS` named `<label>-<page>-<theme>-<scale>.png`.
+fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    const SHOTS: [(&str, rust_browser::settings::Theme, f64); 4] = [
+        ("light", rust_browser::settings::Theme::Light, 1.0),
+        ("light", rust_browser::settings::Theme::Light, 1.5),
+        ("dark", rust_browser::settings::Theme::Dark, 1.0),
+        ("dark", rust_browser::settings::Theme::Dark, 1.5),
+    ];
+    let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
+    let label = std::env::var("RUST_BROWSER_SHOTS_LABEL").unwrap_or_else(|_| "shot".into());
+    let url = p.url.clone();
+    // Phases: 0 settle; then per page (new tab, website) and per shot: set, capture.
+    let index = p.phase as usize;
+    if p.at.elapsed() < Duration::from_millis(if index == 0 { 2000 } else { 900 }) {
+        return Ok(());
+    }
+    if index > 2 * SHOTS.len() * 2 {
+        p.done = true;
+        el.exit();
+        return Ok(());
+    }
+    if index == 0 {
+        p.next();
+        return Ok(());
+    }
+    let step = index - 1;
+    let (page, shot, capture) = (
+        step / (SHOTS.len() * 2),
+        (step / 2) % SHOTS.len(),
+        step % 2 == 1,
+    );
+    let (theme_name, theme, scale) = SHOTS[shot];
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    let toolbar = s.windows[0].toolbar.webview();
+    if !capture {
+        if page == 1 && shot == 0 {
+            p.command(el, 0, Command::Navigate(format!("{url}?layout")))?;
+        }
+        let s = p.app.session.as_mut().ok_or("No session")?;
+        s.settings.theme = theme;
+        s.last_render.borrow_mut().clear();
+        s.render();
+        let size = s
+            .window
+            .inner_size()
+            .to_logical::<f64>(s.window.scale_factor());
+        let height = if page == 0 {
+            size.height
+        } else {
+            s.chrome_height
+        };
+        let params = serde_json::json!({ "width": size.width.round() as u32,
+            "height": height.round() as u32, "deviceScaleFactor": scale, "mobile": false });
+        let toolbar = s.windows[0].toolbar.webview();
+        // SAFETY: UI-thread call on this fixture's own toolbar view.
+        unsafe {
+            toolbar.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from("Emulation.setDeviceMetricsOverride"),
+                &windows::core::HSTRING::from(params.to_string()),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),
+            )
+        }
+        .map_err(|_| "Metrics override failed")?;
+    } else {
+        let name = format!(
+            "{label}-{}-{theme_name}-{}.png",
+            if page == 0 { "newtab" } else { "website" },
+            (scale * 100.0) as u32
+        );
+        let path = out.join(name);
+        // SAFETY: UI-thread call on this fixture's own toolbar view.
+        unsafe {
+            toolbar.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from("Page.captureScreenshot"),
+                &windows::core::HSTRING::from(r#"{"format":"png"}"#),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |_, json| {
+                    let text = json.to_string();
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && let Some(data) = value["data"].as_str()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+                    {
+                        let _ = std::fs::write(&path, bytes);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|_| "Screenshot failed")?;
+    }
+    p.next();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Layout review tool: writes screenshots to RUST_BROWSER_SHOTS"]
+fn layout_screenshots() {
+    let (root, _) = run("shots", screenshot_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
