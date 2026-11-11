@@ -49,6 +49,8 @@ pub enum Event {
         success: bool,
     },
     PermissionPrompt,
+    /// The one-time toolbar autofill cleanup finished (true when it succeeded).
+    ToolbarAutofillCleared(bool),
     EngineCleared {
         startup: bool,
         success: bool,
@@ -432,6 +434,9 @@ struct Session {
     /// Windows left out of the last save because of the size limit, already
     /// announced to the user (so the notice is shown once).
     unsaved_windows: Vec<WindowId>,
+    /// Toolbar views the one-time autofill cleanup was asked to clear.
+    #[cfg(test)]
+    toolbar_autofill_clears: Vec<usize>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
 }
@@ -471,6 +476,25 @@ impl Session {
             None => false,
         }
     }
+    /// Remove the toolbar profile's leftover form data once (before 0.19 WebView2
+    /// had autofill on in the address field). Only the toolbar profile, only
+    /// general autofill; a failure is retried at the next start.
+    fn clear_toolbar_autofill_once(&mut self) {
+        if self.private || self.settings.toolbar_autofill_cleared {
+            return;
+        }
+        let toolbar = &self.windows[0].toolbar;
+        #[cfg(test)]
+        self.toolbar_autofill_clears
+            .push(
+                windows::core::Interface::as_raw(&wry::WebViewExtWindows::webview(toolbar))
+                    as usize,
+            );
+        if native_security::clear_toolbar_autofill(toolbar, self.proxy.clone()).is_err() {
+            self.diagnostics.record(DiagnosticCode::CommandFailed);
+        }
+    }
+
     /// Password saving and autofill for new content views. Private windows never
     /// have either.
     fn forms(&self) -> native_security::Forms {
@@ -781,6 +805,7 @@ impl Session {
         )?;
         if !private {
             session.start_handoff();
+            session.clear_toolbar_autofill_once();
         }
         // Reopen the other windows of the restored session, then give focus back to
         // the window that was focused last.
@@ -1047,6 +1072,8 @@ impl Session {
             last_background: Instant::now(),
             last_snapshot: RefCell::new(None),
             unsaved_windows: Vec::new(),
+            #[cfg(test)]
+            toolbar_autofill_clears: Vec::new(),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -3201,6 +3228,12 @@ impl ApplicationHandler<Event> for App {
                 },
                 Err(message) => session.notice = message,
             },
+            Event::ToolbarAutofillCleared(success) => {
+                if success && !session.private {
+                    session.settings.toolbar_autofill_cleared = true;
+                    session.persist();
+                }
+            }
             Event::DownloadDestination(id, result) => {
                 session.downloads.borrow_mut().destination(id, result)
             }

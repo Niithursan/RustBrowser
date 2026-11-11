@@ -40,6 +40,9 @@ pub struct Settings {
     /// Let WebView2 fill in forms (addresses and similar) automatically (v0.19,
     /// opt-in). Off by default even though WebView2's own default is on.
     pub autofill: bool,
+    /// Set once the toolbar profile's leftover form data (WebView2 turned autofill
+    /// on in the toolbar before 0.19) has been cleared. Missing from older files.
+    pub toolbar_autofill_cleared: bool,
 }
 
 impl Default for Settings {
@@ -55,6 +58,7 @@ impl Default for Settings {
             show_recent: false,
             save_passwords: false,
             autofill: false,
+            toolbar_autofill_cleared: false,
         }
     }
 }

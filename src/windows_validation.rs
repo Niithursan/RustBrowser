@@ -169,11 +169,14 @@ impl ApplicationHandler<Event> for Probe {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.app.about_to_wait(el);
         if self.done || self.failure.is_some() {
+            // Exit now instead of when the browser's next timer wakes the loop.
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         if self.started.elapsed() > self.limit {
             self.failure = Some(format!("Windows fixture timed out at phase {}", self.phase));
             el.exit();
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         let ready =
@@ -183,10 +186,13 @@ impl ApplicationHandler<Event> for Probe {
             if let Err(error) = steps(self, el) {
                 self.failure = Some(error);
                 el.exit();
+                el.set_control_flow(ControlFlow::Poll);
                 return;
             }
         }
-        if !self.done {
+        if self.done {
+            el.set_control_flow(ControlFlow::Poll);
+        } else {
             el.set_control_flow(ControlFlow::WaitUntil(
                 Instant::now() + Duration::from_millis(25),
             ));
@@ -956,6 +962,9 @@ fn private_forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
     {
         return Err("A private window accepted a bookmark import".into());
     }
+    if !s.toolbar_autofill_clears.is_empty() {
+        return Err("A private window ran the toolbar autofill cleanup".into());
+    }
     s.settings.save_passwords = true;
     s.settings.autofill = true;
     s.open_tab(navigation::HOME.into())
@@ -1049,5 +1058,97 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_bookmark_import_reaches_the_library() {
     let (root, _) = run("import", import_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Write a 0.19-shaped session file: settings without `toolbar_autofill_cleared`
+/// (or with it, when `cleared`), and website password saving on.
+fn write_019_session(root: &Path, cleared: bool) {
+    let mut settings = serde_json::to_value(rust_browser::settings::Settings {
+        save_passwords: true,
+        toolbar_autofill_cleared: cleared,
+        ..Default::default()
+    })
+    .unwrap();
+    if !cleared {
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("toolbar_autofill_cleared");
+    }
+    let file = serde_json::json!({
+        "version": 1,
+        "tabs": [navigation::HOME],
+        "active": 0,
+        "settings": settings,
+    });
+    std::fs::write(root.join("session.json"), file.to_string()).unwrap();
+}
+
+/// Upgrading from 0.19 clears the toolbar profile's form data once, on the
+/// toolbar view only, and leaves website password saving as it was.
+fn toolbar_cleanup_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if s.settings.toolbar_autofill_cleared {
+        let toolbar = s.windows[0].toolbar.webview().as_raw() as usize;
+        if s.toolbar_autofill_clears != [toolbar] {
+            return Err(format!(
+                "Cleanup ran {} times, or not on the toolbar view",
+                s.toolbar_autofill_clears.len()
+            ));
+        }
+        if !s.settings.save_passwords {
+            return Err("The cleanup changed the website password switch".into());
+        }
+        let page = native_security::forms(&s.tabs.items[0].content.engine.view)
+            .map_err(|e| e.to_string())?;
+        if !page.passwords {
+            return Err("A website view lost password saving".into());
+        }
+        p.log.push("toolbar: leftover autofill cleared once".into());
+        p.done = true;
+        el.exit();
+    } else if p.at.elapsed() > Duration::from_secs(15) {
+        return Err(format!(
+            "The toolbar cleanup never finished ({} requests)",
+            s.toolbar_autofill_clears.len()
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_toolbar_autofill_is_cleared_once_on_upgrade() {
+    let (root, _) = run("toolbar-cleanup", toolbar_cleanup_steps, |root, _| {
+        write_019_session(root, false)
+    });
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert!(saved.settings.toolbar_autofill_cleared);
+    assert!(saved.settings.save_passwords);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn toolbar_cleanup_done_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    if p.at.elapsed() < Duration::from_secs(3) {
+        return Ok(());
+    }
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if !s.toolbar_autofill_clears.is_empty() {
+        return Err("The toolbar cleanup ran again after it had finished".into());
+    }
+    p.done = true;
+    el.exit();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_toolbar_autofill_cleanup_does_not_repeat() {
+    let (root, _) = run(
+        "toolbar-cleanup-done",
+        toolbar_cleanup_done_steps,
+        |root, _| write_019_session(root, true),
+    );
     let _ = std::fs::remove_dir_all(root);
 }
