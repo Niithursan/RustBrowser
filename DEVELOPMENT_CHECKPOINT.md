@@ -18,7 +18,12 @@ Done:
   `native_content_find_zoom_print_boundary` step 46 for that reason. All 33 local
   gates then passed on `10e653a`.
 
-Next: push, open the draft PR, confirm CI on step one, then step two.
+Draft PR #24. Step one CI green on `eb80224`: CI 43066449889, security
+43066449940. Then `65d7c50` weekly Dependabot, `df67871` README official-build
+statement and SECURITY reporting wording (private vulnerability reporting was
+still disabled when checked: `enabled: false`).
+
+Next: step two (multiple windows).
 
 ## v0.17: link handling (Claude Code, in progress, owner away)
 
