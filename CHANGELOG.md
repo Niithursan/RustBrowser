@@ -22,7 +22,8 @@
   Only the selected tab of the focused window may show a permission prompt.
 - Fixed before release: handling a focus change by moving focus into the page made
   several windows hand focus to each other forever, and restored windows took focus
-  as they loaded, so the wrong window ended up in front.
+  as they loaded, so the wrong window ended up in front; and More > Exit could save
+  another window as the main one when Windows activated it during shutdown.
 - Native suites cover routing, the limit, close, reopen, hand-off, engine restart,
   toolbar recovery, clearing with retired pages in two windows, and restore after a
   normal exit and after a killed process. Installer upgrade tests now start from a

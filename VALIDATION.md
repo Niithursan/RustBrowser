@@ -25,13 +25,22 @@ final head are recorded in the pull request.
    suite (focus order [2, 1, 0]). Fixed: restored windows are created inactive
    with unfocused toolbars, and page focus is never moved inside a background
    window. The restore suite then passed.
-3. **Fixture only:** creating windows from `about_to_wait` wedged winit's event
+3. **Exit saved the wrong main window (found by hosted CI).** CI 43085823286
+   failed the restore suite on `10a51d8`: after More > Exit the third window was
+   saved first (pins `[false, false]` instead of `[true, false]`). Hiding the
+   windows lets Windows activate another one, and that focus event saved again.
+   Local runs missed it because the background test process got no real focus
+   events. The suite now delivers that focus event after Exit, which reproduced
+   the same failure locally; focus events are now ignored once shutdown begins,
+   and the suite passed twice. Removing the guard makes it fail again.
+4. **Fixture only:** creating windows from `about_to_wait` wedged winit's event
    loop. Production creates windows only from events, so the fixtures send window
    requests through the event proxy as well.
 
 ### Automated evidence
 
-All 36 local gates passed on `1aba4dc` (`work/v18/production-gates.json`):
+All 36 local gates passed on `1aba4dc` and again on `335ba12` after the third fix
+(`work/v18/production-gates.json`):
 format, Clippy with `-D warnings`, 112 regular tests (the 24 native tests are
 ignored there and run on their own below), debug and release builds,
 16 native suites each in its own process (including the three new

@@ -54,6 +54,11 @@ Step two, multiple windows:
 - All 36 local gates passed on `1aba4dc` (`work/v18/production-gates.json`); the
   commits after it change documentation only.
 
+- CI 43085823286 on `10a51d8` failed the restore suite (security
+  43085823200 passed): Exit saved the window Windows activated while hiding the
+  others. Reproduced locally by delivering that focus event, fixed in `335ba12`
+  (focus ignored during shutdown); all 36 local gates passed on `335ba12`.
+
 Next: CI on the pushed head (results in PR #24 comments, not here, to avoid
 another run), owner bundle from that head, owner checklist steps 12 to 21.
 Stop at the draft PR: do not merge, tag or mark ready without the owner.
