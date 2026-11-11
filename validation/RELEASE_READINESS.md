@@ -1,4 +1,4 @@
-# Windows release readiness (v0.16 development)
+# Windows release readiness (v0.19 development)
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
@@ -7,6 +7,14 @@ repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
 ## Current milestone and exact prior-build owner results
+
+v0.19 branches from verified main `efd1a2a` (CI 43091111950 and security
+43091111977 passed). It adds opt-in password saving and form autofill through
+WebView2 (form autofill is now off by default), two clearing choices and bookmark
+import from an exported HTML file, and fixes silent loss of windows when the session
+is too large. All 39 local gates passed on `1336439` and 14 mutation checks were
+caught; see VALIDATION.md. Owner checklist steps 22 to 27 are new and not yet done.
+No release candidate is declared.
 
 v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
 42931608910 passed. It adds content-only native find, zoom and print, and toolbar

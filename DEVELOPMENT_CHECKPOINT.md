@@ -1,5 +1,26 @@
 # Development checkpoint
 
+## v0.19: passwords, autofill and bookmark import (Claude Code, in progress)
+
+Branch `feat/v0.19-passwords-autofill-import` from verified origin/main `efd1a2a`
+(CI 43091111950 and security 43091111977 passed). Scratch `<workspace>/work/v19`;
+gate script `work/v19/gates.ps1`; mutation script `work/v19/mutate.py`.
+
+Done:
+- `b72f149` v0.18 owner results (bundle o-9ad95301) and AGENTS.md section 14.
+- `dbba2e2` session trimming: least recently focused windows first, named once.
+- `865f2fb` password saving and autofill switches (WebView2 157 measured: password
+  off, autofill on by default, per view). `native_security::apply_forms` on every
+  view in `Engine::new`, toolbar always off, private forced off.
+- `e643fd5` bookmark import (`src/bookmark_import.rs` parser, one transaction in
+  `Database::import_bookmarks`, native file dialog in `native_downloads.rs`).
+- `8f319d6` CI suites; `f83ab86` installer upgrade from 0.18 (cache key
+  installer-fixture-v7); `6f35337` 0.19.0; `1336439` docs.
+- All 39 local gates passed on `1336439`; 14 mutation checks caught.
+
+Next: draft PR, CI on the final head (results in the PR, not here), owner bundle,
+owner checklist steps 22 to 27. Do not merge, tag or publish.
+
 ## v0.18: multiple normal windows (Claude Code, in progress)
 
 Branch `feat/v0.18-multiple-windows` from verified origin/main `7a61d97` (PR #23;

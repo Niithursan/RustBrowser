@@ -1,5 +1,94 @@
 # Validation
 
+## v0.19 passwords, autofill and bookmark import
+
+Baseline `efd1a2a` (PR #24 squash merge); CI 43091111950 and security 43091111977
+passed before branching. Branch `feat/v0.19-passwords-autofill-import`. Version
+0.19.0; profile path, session format 1 and SQLite schema 3 unchanged; two optional
+settings fields that 0.18 ignores; dynamic CRT. One Windows 11 Pro x64 machine,
+WebView2 157, non-elevated session. Local results only in this section; hosted
+results for the final head are recorded in the pull request.
+
+### What WebView2 does by default (measured first)
+
+A temporary native probe on WebView2 157 read `ICoreWebView2Settings4` and
+`ICoreWebView2Profile6` on a fresh profile: password saving **off**, general
+autofill **on**, in content views and in the toolbar view. Turning autofill off
+through the profile changed only that view: a view created afterwards in the same
+profile started with autofill on again. So this milestone turns autofill off until
+the user opts in, and sets both switches on every view as it is created.
+
+### Reproduced defect and fix
+
+**Too large a session dropped every other window silently** (PR #24 review). With
+three large other windows of which two fit in 1 MiB, the new test
+`an_oversized_session_drops_only_the_least_recently_focused_windows` saw all three
+dropped (left 3, right 1). `storage::trim_to_fit` now leaves windows out one at a
+time, least recently focused first, and the window in front names them once
+(`the_unsaved_window_notice_names_each_window`). Both tests then passed. The
+notice wiring inside the save path is covered by these unit tests only: a native
+test would need hundreds of live tabs to pass 1 MiB.
+
+### Automated evidence
+
+All 39 local gates passed on `1336439` (`work/v19/production-gates.json`): format,
+Clippy with `-D warnings`, 132 regular tests (27 native tests are ignored there
+and run on their own), debug and release builds, 19 native suites each in its own
+process, the second-launch suite, three daily runs, fixtures, Python tests,
+dynamic imports, portable package, installer lifecycle from a real 0.18
+installation (pinned `efd1a2a`, executable SHA-256
+`1e0e7f961288f4a78fce915b53a031c80163a99ff9e87992d7250dc39df68206`), release
+metadata, static-build restoration, owner bundle tests and `cargo audit`. The
+installer suite checks that the real default-browser choice is unchanged.
+
+New tests:
+- `native_passwords_and_autofill_follow_the_switches`: reads each view's real
+  WebView2 settings. New profile: pages and toolbar off. Both switches on: every
+  open page on, toolbar off. New tab, new window and every view rebuilt after an
+  engine restart: on. Autofill off again: applied at once. Saved in settings.
+- `native_private_windows_never_save_passwords_or_forms`: a private window's views
+  stay off even with its in-memory switches forced on; the switch commands and
+  bookmark import are refused.
+- `native_bookmark_import_reaches_the_library`: a chosen file's bytes reach the
+  library in one import with the summary notice; a file that is not an export is
+  refused and changes nothing.
+- `tests/bookmark_import.rs` (12): Firefox, Chrome and Edge fixture exports;
+  hostile addresses (`javascript:` also via character references, `data:`,
+  `file:`, `vbscript:`, credentials); not-an-export, invalid UTF-8 and byte-order
+  mark; malformed and truncated files; size, link-count and depth limits; long
+  titles and addresses; folder reuse; the 5,000 bookmark limit; an import
+  interrupted part way by a database trigger leaves bookmarks and folders
+  unchanged; the toolbar cannot send import entries.
+- `tests/forms_settings.rs` (4) and `clearing_asks_webview2_for_exactly_the_chosen_kinds`:
+  both switches off for new profiles and 0.18 files, a 0.19 file read with 0.18's
+  rules, clearing kinds exactly as chosen and never implied by history.
+- `tests/session_windows.rs` gained 2 trimming tests.
+
+Mutation checks (one defect injected at a time, `work/v19/mutate.py`), all 14
+caught: private guards removed, toolbar left at WebView2 defaults, switch change
+not applied to open views, new views left at defaults, new views ignoring the
+switches, history clearing also clearing passwords, autofill on by default,
+trimming the most recent windows first, importer not checking credentials, no
+depth limit, duplicates not skipped, no bookmark limit, private windows importing,
+importer accepting any scheme. The private-window guard exists twice (when the
+switches are read and when each view is created); removing either alone is masked
+by the other, so the check removes both.
+
+Evidence that passwords cannot be imported: the `webview2-com-sys` 0.39.1 bindings
+define 266 `ICoreWebView2*` interfaces and no member whose name contains "import";
+the only password members are the two autosave switches and
+`ICoreWebView2BasicAuthenticationResponse` (answers to HTTP sign-in prompts).
+
+### Not tested here
+
+Owner checklist steps 22 to 27 (saving a password on a real sign-in page, a
+private window, filling a real form, clearing passwords, importing a real Firefox
+export) are not done. Whether WebView2 actually offers to save or fill on a given
+site, and what clearing removes from its stores, were not observed: the suites
+check the settings WebView2 reports and the clearing kinds requested. The native
+file dialog was not driven by a test. Popups get the switches through the same view
+constructor as tabs; no suite opens a popup with the switches on.
+
 ## v0.18 multiple normal windows
 
 Baseline `7a61d97` (PR #23); CI 43063434943 and security 43063435068 passed before
