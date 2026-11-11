@@ -79,6 +79,9 @@ pub enum Event {
     DownloadTick,
     DownloadRejected,
     DownloadDestination(u64, Result<Option<PathBuf>, String>),
+    /// An exported bookmarks file was chosen and read (or why not). `None` when
+    /// the user cancelled.
+    BookmarkFile(Result<Option<Vec<u8>>, String>),
     DownloadFinished(u64, Result<PathBuf, String>),
     DownloadRecovery(String),
 }
@@ -156,6 +159,9 @@ fn build_toolbar(
             }
         })
         .build_as_child(window)?;
+    // The toolbar never saves passwords or fills in forms (WebView2 would offer
+    // autofill in the address field by default).
+    native_security::apply_forms(&toolbar, native_security::Forms::default())?;
     if private {
         native_security::verify_private(&toolbar)?;
     }
@@ -258,6 +264,39 @@ fn new_native_window(
             .with_inner_size(LogicalSize::new(1200.0, 820.0))
             .with_min_inner_size(LogicalSize::new(560.0, 320.0))
             .with_active(active),
+    )
+}
+
+/// How a window is named in notices: its selected tab's title or address.
+fn window_label(window: &WindowState) -> String {
+    let name = window
+        .tabs
+        .active()
+        .map(|tab| {
+            if tab.title.trim().is_empty() {
+                tab.url.as_str()
+            } else {
+                tab.title.as_str()
+            }
+        })
+        .unwrap_or("New tab");
+    let mut label: String = name.chars().filter(|c| !c.is_control()).take(40).collect();
+    if name.chars().count() > 40 {
+        label.push('…');
+    }
+    format!("\"{label}\"")
+}
+
+/// The notice shown when windows are left out of the saved session.
+fn unsaved_notice(labels: &[String]) -> String {
+    let (count, them) = if labels.len() == 1 {
+        ("1 window".to_string(), "It stays")
+    } else {
+        (format!("{} windows", labels.len()), "They stay")
+    };
+    format!(
+        "{count} will not be restored next time because the saved session would be larger than 1 MiB: {}. {them} open now; close some tabs to save every window.",
+        labels.join(", ")
     )
 }
 
@@ -390,6 +429,9 @@ struct Session {
     next_background: Instant,
     last_background: Instant,
     last_snapshot: RefCell<Option<Snapshot>>,
+    /// Windows left out of the last save because of the size limit, already
+    /// announced to the user (so the notice is shown once).
+    unsaved_windows: Vec<WindowId>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
 }
@@ -429,6 +471,35 @@ impl Session {
             None => false,
         }
     }
+    /// Password saving and autofill for new content views. Private windows never
+    /// have either.
+    fn forms(&self) -> native_security::Forms {
+        if self.private {
+            return native_security::Forms::default();
+        }
+        native_security::Forms {
+            passwords: self.settings.save_passwords,
+            autofill: self.settings.autofill,
+        }
+    }
+
+    /// Apply the switches to every open content view of every window, so a
+    /// change takes effect without a restart. Views created later get them from
+    /// `forms()`.
+    fn apply_forms_everywhere(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let forms = self.forms();
+        let mut failed = false;
+        for window in &self.windows {
+            for tab in &window.tabs.items {
+                failed |= native_security::apply_forms(&tab.content.engine.view, forms).is_err();
+            }
+        }
+        if failed {
+            return Err("The setting could not be applied to every open tab. Restart Rust Browser to apply it everywhere.".into());
+        }
+        Ok(())
+    }
+
     /// The most recently focused window, which receives links from other apps.
     fn focused_index(&self) -> usize {
         self.focus_order
@@ -975,6 +1046,7 @@ impl Session {
             next_background: Instant::now(),
             last_background: Instant::now(),
             last_snapshot: RefCell::new(None),
+            unsaved_windows: Vec::new(),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -1095,6 +1167,7 @@ impl Session {
             webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
         >,
     ) -> Result<Engine, Box<dyn std::error::Error>> {
+        let forms = self.forms();
         let engine = Engine::new(
             &self.windows[self.current].window,
             &mut self.content_context,
@@ -1105,6 +1178,7 @@ impl Session {
             engine::Options {
                 private: self.private,
                 environment,
+                forms,
             },
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
@@ -1531,7 +1605,7 @@ impl Session {
     /// Save every normal window: the most recently focused one in the format 1
     /// fields (what 0.17 restores), the others in `other_windows`, which is left
     /// out if it would make the file larger than every version accepts.
-    fn persist(&self) {
+    fn persist(&mut self) {
         if self.private || self.clearing.is_some() {
             return;
         }
@@ -1558,14 +1632,27 @@ impl Session {
             titles: first.titles,
             keep_awake: first.keep_awake,
             other_windows: others
-                .into_iter()
+                .iter()
                 .take(storage::MAX_WINDOWS - 1)
-                .map(|index| Self::window_snapshot(&self.windows[index]))
+                .map(|index| Self::window_snapshot(&self.windows[*index]))
                 .collect(),
         };
-        if !storage::fits(&snapshot) {
-            snapshot.other_windows.clear();
+        // Least recently focused windows are left out first; say once which.
+        let dropped = storage::trim_to_fit(&mut snapshot);
+        let kept = snapshot.other_windows.len();
+        let unsaved: Vec<usize> = others.iter().copied().skip(kept).take(dropped).collect();
+        let ids: Vec<WindowId> = unsaved
+            .iter()
+            .map(|i| self.windows[*i].window.id())
+            .collect();
+        if ids.iter().any(|id| !self.unsaved_windows.contains(id)) {
+            let labels: Vec<String> = unsaved
+                .iter()
+                .map(|i| window_label(&self.windows[*i]))
+                .collect();
+            self.windows[main].notice = unsaved_notice(&labels);
         }
+        self.unsaved_windows = ids;
         if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
             let mut last = self.last_snapshot.borrow_mut();
             if last.as_ref() != Some(&snapshot) {
@@ -1844,6 +1931,41 @@ impl Session {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
                     .spawn()?;
+            }
+            Command::ImportBookmarks => {
+                if self.private {
+                    return Err("Import bookmarks from a normal window; private windows do not write bookmarks.".into());
+                }
+                let owner = match self.window.window_handle().map(|handle| handle.as_raw()) {
+                    Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
+                    _ => {
+                        return Err(
+                            "Could not identify the browser window for the file picker.".into()
+                        );
+                    }
+                };
+                let proxy = self.proxy.clone();
+                std::thread::Builder::new()
+                    .name("bookmark-file-picker".into())
+                    .spawn(move || {
+                        let result = native_downloads::choose_bookmarks_file(owner);
+                        let _ = proxy.send_event(Event::BookmarkFile(result));
+                    })
+                    .map_err(|_| "Could not open the file picker.")?;
+            }
+            Command::SetSavePasswords(value) => {
+                if self.private {
+                    return Err("Private windows never save passwords.".into());
+                }
+                self.settings.save_passwords = value;
+                self.apply_forms_everywhere()?;
+            }
+            Command::SetAutofill(value) => {
+                if self.private {
+                    return Err("Private windows never fill in forms.".into());
+                }
+                self.settings.autofill = value;
+                self.apply_forms_everywhere()?;
             }
             Command::SetRestoreSession(value) => {
                 if self.private {
@@ -2237,6 +2359,7 @@ impl Session {
             && matches!(
                 action,
                 Action::SaveBookmark { .. }
+                    | Action::ImportBookmarks(_)
                     | Action::RemoveBookmark { .. }
                     | Action::SaveFolder { .. }
                     | Action::RemoveFolder { .. }
@@ -2560,6 +2683,23 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_unsaved_window_notice_names_each_window() {
+        let one = unsaved_notice(&["\"Mail\"".into()]);
+        assert!(
+            one.starts_with("1 window will not be restored next time"),
+            "{one}"
+        );
+        assert!(one.contains("\"Mail\""), "{one}");
+        assert!(one.contains("It stays open now"), "{one}");
+        let two = unsaved_notice(&["\"Mail\"".into(), "\"News\"".into()]);
+        assert!(
+            two.starts_with("2 windows will not be restored next time"),
+            "{two}"
+        );
+        assert!(two.contains("\"Mail\", \"News\""), "{two}");
+        assert!(two.contains("They stay open now"), "{two}");
+    }
     #[test]
     fn a_profile_held_by_another_window_is_distinguished_from_startup_faults() {
         // Store::open reports the held session lock as WouldBlock.
@@ -2997,6 +3137,9 @@ impl ApplicationHandler<Event> for App {
                     session.diagnostics.record(DiagnosticCode::LibraryFailed);
                     session.notice = message;
                 }
+                if let Some(summary) = reply.summary {
+                    session.notice = summary;
+                }
                 if reply.revision == session.revision
                     && let Some(data) = reply.data
                 {
@@ -3046,6 +3189,18 @@ impl ApplicationHandler<Event> for App {
                 session.panel = Some(Panel::Downloads);
                 let _ = session.activate();
             }
+            Event::BookmarkFile(result) => match result {
+                Ok(None) => {}
+                Ok(Some(bytes)) => match rust_browser::bookmark_import::parse(&bytes) {
+                    Ok(parsed) => {
+                        if let Err(error) = session.library_action(Action::ImportBookmarks(parsed)) {
+                            session.notice = error.to_string();
+                        }
+                    }
+                    Err(error) => session.notice = error.message(),
+                },
+                Err(message) => session.notice = message,
+            },
             Event::DownloadDestination(id, result) => {
                 session.downloads.borrow_mut().destination(id, result)
             }

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.19.0 (unreleased)
+
+- **Form autofill is now off by default.** WebView2 turned general autofill on by
+  itself in content views and in the toolbar; it is now off until you turn it on.
+- Privacy & security has two new switches, "Offer to save passwords" and "Fill in
+  forms automatically", both off for new and existing profiles. They use WebView2's
+  own password saving and autofill and apply at once to every open tab, and to new
+  tabs, windows, popups and pages rebuilt after an engine restart. Private windows
+  and the toolbar never save passwords or form data.
+- Clear browsing data has two new choices, "Saved passwords" and "Autofill data",
+  unchecked by default. Clearing history never removes passwords.
+- Bookmarks can be imported from an exported bookmarks HTML file (Firefox, Chrome or
+  Edge) with More > Bookmarks > Import from file. The file is read as untrusted
+  text with strict limits; only http and https addresses are imported, duplicates
+  are skipped, nested folders become top-level folders, and the import is all or
+  nothing. Passwords cannot be imported (WebView2 offers no way to).
+- Fixed: when saving every window would pass the 1 MiB session limit, all other
+  windows were left out silently. Now the least recently focused windows are left
+  out one at a time until it fits, and a notice names them once.
+- Private vulnerability reporting is enabled: use the Security tab's "Report a
+  vulnerability".
+- Installer upgrade tests now start from a real 0.18 installation. Profile path,
+  session format 1 and SQLite schema 3 are unchanged; the two new settings fields
+  are optional and 0.18 ignores them.
+
 ## 0.18.0 (unreleased)
 
 - Several normal windows on one profile: Ctrl+N, More > New window and a second

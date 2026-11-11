@@ -223,13 +223,45 @@ pub fn verify_private(view: &WebView) -> windows::core::Result<()> {
     }
     Ok(())
 }
-pub fn clear(
-    view: &WebView,
-    request: &ClearRequest,
-    startup: bool,
-    ticket: u64,
-    proxy: EventLoopProxy<Event>,
-) -> windows::core::Result<()> {
+/// Whether a view may save passwords and fill in forms.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Forms {
+    pub passwords: bool,
+    pub autofill: bool,
+}
+
+/// Set a view's password saving and form autofill. WebView2 applies these per
+/// view: a view created later starts from WebView2's own defaults (password
+/// saving off, autofill on), so every view is set as it is created.
+pub fn apply_forms(view: &WebView, forms: Forms) -> windows::core::Result<()> {
+    // SAFETY: setting changes on a live view, on the UI thread that owns it.
+    unsafe {
+        let settings: ICoreWebView2Settings4 = view.webview().Settings()?.cast()?;
+        settings.SetIsPasswordAutosaveEnabled(forms.passwords)?;
+        settings.SetIsGeneralAutofillEnabled(forms.autofill)?;
+    }
+    Ok(())
+}
+
+/// A view's current password saving and form autofill settings.
+#[cfg(test)]
+pub fn forms(view: &WebView) -> windows::core::Result<Forms> {
+    // SAFETY: read-only queries on a live view, on the UI thread that owns it.
+    unsafe {
+        let settings: ICoreWebView2Settings4 = view.webview().Settings()?.cast()?;
+        let (mut passwords, mut autofill) = (BOOL::default(), BOOL::default());
+        settings.IsPasswordAutosaveEnabled(&mut passwords)?;
+        settings.IsGeneralAutofillEnabled(&mut autofill)?;
+        Ok(Forms {
+            passwords: passwords.as_bool(),
+            autofill: autofill.as_bool(),
+        })
+    }
+}
+
+/// WebView2 clearing kinds for a request. Passwords and autofill data are only
+/// included when chosen; clearing history never implies them.
+pub fn clear_kinds(request: &ClearRequest) -> i32 {
     let mut kinds = 0;
     if request.history {
         kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY.0;
@@ -244,6 +276,23 @@ pub fn clear(
     if request.permissions {
         kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS.0;
     }
+    if request.passwords {
+        kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE.0;
+    }
+    if request.autofill {
+        kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL.0;
+    }
+    kinds
+}
+
+pub fn clear(
+    view: &WebView,
+    request: &ClearRequest,
+    startup: bool,
+    ticket: u64,
+    proxy: EventLoopProxy<Event>,
+) -> windows::core::Result<()> {
+    let kinds = clear_kinds(request);
     if kinds == 0 {
         let _ = proxy.send_event(Event::EngineCleared {
             ticket,
@@ -267,5 +316,46 @@ pub fn clear(
                 Ok(())
             })),
         )
+    }
+}
+
+#[cfg(test)]
+mod form_tests {
+    use super::*;
+
+    fn request(history: bool, passwords: bool, autofill: bool) -> ClearRequest {
+        ClearRequest {
+            history,
+            passwords,
+            autofill,
+            confirmed: true,
+            ..ClearRequest::default()
+        }
+    }
+
+    #[test]
+    fn clearing_asks_webview2_for_exactly_the_chosen_kinds() {
+        let password = COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE.0;
+        let autofill = COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL.0;
+        let history = COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY.0;
+        assert_eq!(clear_kinds(&request(false, true, false)), password);
+        assert_eq!(clear_kinds(&request(false, false, true)), autofill);
+        assert_eq!(
+            clear_kinds(&request(false, true, true)),
+            password | autofill
+        );
+        // Clearing history alone never removes passwords or form data.
+        assert_eq!(clear_kinds(&request(true, false, false)), history);
+        let everything = ClearRequest {
+            history: true,
+            cookies: true,
+            cache: true,
+            session: true,
+            permissions: true,
+            passwords: false,
+            autofill: false,
+            confirmed: true,
+        };
+        assert_eq!(clear_kinds(&everything) & (password | autofill), 0);
     }
 }

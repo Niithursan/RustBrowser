@@ -1,4 +1,4 @@
-# Windows release readiness (v0.16 development)
+# Windows release readiness (v0.19 development)
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
@@ -7,6 +7,14 @@ repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
 ## Current milestone and exact prior-build owner results
+
+v0.19 branches from verified main `efd1a2a` (CI 43091111950 and security
+43091111977 passed). It adds opt-in password saving and form autofill through
+WebView2 (form autofill is now off by default), two clearing choices and bookmark
+import from an exported HTML file, and fixes silent loss of windows when the session
+is too large. All 39 local gates passed on `1336439` and 14 mutation checks were
+caught; see VALIDATION.md. Owner checklist steps 22 to 27 are new and not yet done.
+No release candidate is declared.
 
 v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
 42931608910 passed. It adds content-only native find, zoom and print, and toolbar
@@ -38,6 +46,16 @@ window; a second launch handed off with no second window; Ctrl+N did nothing
 unexpected; the address-field menu showed exactly Cut, Copy, Paste and Select all,
 and paste was one line. Firefox was restored as the default and the validation
 install was removed. These results cover that build only.
+
+Owner checklist on bundle `o-9ad95301`, version 0.18.0, built from PR #24 head
+`42e3f45` (EXE SHA-256
+`db97e72331f2ae708396eb7103ad5cf2e37e0e32f109424a322b3a758fc84a06`), 2026-11-11:
+steps 12, 13, 14, 17, 18, 19, 20 and 21 all passed by owner report. Steps 15 and 16
+were not re-run (they passed on 0.17 bundle `o-4349a481`; 0.17's step 15 checked
+that Ctrl+N did nothing, so the 0.18 New window step was not checked by hand, though
+steps 17 and 18 used Ctrl+N). Step 20 used two monitors at the same scale. Firefox
+was restored as the default and the validation install was removed. More > Exit is
+approved as named. These results cover that build only.
 
 ## Historical v0.15 technical evidence
 

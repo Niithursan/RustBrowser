@@ -1,5 +1,6 @@
 //! Several normal windows in one process: routing, limits, closing and reopening,
-//! hand-off, engine restart, toolbar recovery, clearing and session restore.
+//! hand-off, engine restart, toolbar recovery, clearing and session restore; and
+//! the password saving and autofill switches across windows and restarts.
 use super::*;
 use rust_browser::handoff::{Request, Status};
 use std::path::Path;
@@ -100,6 +101,8 @@ struct Probe {
     /// The answer to a hand-off sent through the event loop.
     reply: Option<std::sync::mpsc::Receiver<Status>>,
     steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
+    /// Start a private window instead of a normal one.
+    private: bool,
 }
 
 impl Probe {
@@ -142,7 +145,7 @@ impl ApplicationHandler<Event> for Probe {
         }
         let start = Start {
             profile: self.root.clone(),
-            private: false,
+            private: self.private,
             links: Vec::new(),
             lock: None,
         };
@@ -219,7 +222,11 @@ fn run(
         snapshot: Vec::new(),
         reply: None,
         steps,
+        private: false,
     };
+    if label.starts_with("private") {
+        probe.private = true;
+    }
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
     let done = probe.done;
@@ -789,5 +796,258 @@ fn native_multiple_windows_restore_and_exit() {
     assert_eq!(saved.other_windows.len(), 2);
     assert_eq!(saved.tabs.len(), 2);
     assert_eq!(saved.pinned, vec![true, false]);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Every content view's password and autofill settings, then every toolbar's.
+fn form_settings(s: &Session) -> Result<(Vec<Forms>, Vec<Forms>), String> {
+    let read = |view: &wry::WebView| {
+        native_security::forms(view).map_err(|e| format!("Settings unreadable: {e}"))
+    };
+    let mut pages = Vec::new();
+    let mut toolbars = Vec::new();
+    for window in &s.windows {
+        for tab in &window.tabs.items {
+            pages.push(read(&tab.content.engine.view)?);
+        }
+        toolbars.push(read(&window.toolbar)?);
+    }
+    Ok((pages, toolbars))
+}
+
+/// Every content view has `pages` and every toolbar has both off.
+fn expect_forms(s: &Session, pages: Forms, step: &str) -> Result<(), String> {
+    let (found, toolbars) = form_settings(s)?;
+    if found.is_empty() || found.iter().any(|f| *f != pages) {
+        return Err(format!("{step}: pages {found:?}, expected {pages:?}"));
+    }
+    if toolbars.iter().any(|f| *f != Forms::default()) {
+        return Err(format!(
+            "{step}: a toolbar may save passwords or fill forms: {toolbars:?}"
+        ));
+    }
+    Ok(())
+}
+
+use native_security::Forms;
+const BOTH: Forms = Forms {
+    passwords: true,
+    autofill: true,
+};
+
+/// The switches start off (WebView2's own default turns autofill on), apply at
+/// once to open views, reach new tabs, new windows and views rebuilt after an
+/// engine restart, and never reach a toolbar.
+fn forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.save_passwords || s.settings.autofill {
+                return Err("A new profile has a switch on".into());
+            }
+            expect_forms(s, Forms::default(), "new profile")?;
+            p.command(el, 0, Command::Navigate(format!("{url}?form")))?;
+            p.command(el, 0, Command::SetSavePasswords(true))?;
+            p.command(el, 0, Command::SetAutofill(true))?;
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.settings.save_passwords || !s.settings.autofill {
+                return Err("The switches were not saved in settings".into());
+            }
+            expect_forms(s, BOTH, "switched on")?;
+            p.command(el, 0, Command::NewTab)?;
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            expect_forms(s, BOTH, "new tab")?;
+            p.app
+                .proxy
+                .send_event(Event::Command(Command::NewWindow))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 if p.app.session.as_ref().is_some_and(|s| s.windows.len() == 2) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            expect_forms(s, BOTH, "new window")?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            p.marks = s
+                .windows
+                .iter()
+                .flat_map(|w| w.tabs.items.iter().map(|t| view(&t.content)))
+                .collect();
+            terminate_engine(s)?;
+            p.next();
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let restarted = s.windows.iter().all(|w| w.notice.contains("was restarted"));
+            if restarted && s.windows.iter().all(loaded) {
+                let views: Vec<usize> = s
+                    .windows
+                    .iter()
+                    .flat_map(|w| w.tabs.items.iter().map(|t| view(&t.content)))
+                    .collect();
+                if views.len() != p.marks.len()
+                    || views.iter().zip(&p.marks).any(|(new, old)| new == old)
+                {
+                    return Err("The engine restart did not rebuild every view".into());
+                }
+                expect_forms(s, BOTH, "after engine restart")?;
+                p.command(el, 1, Command::SetAutofill(false))?;
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                expect_forms(
+                    s,
+                    Forms {
+                        passwords: true,
+                        autofill: false,
+                    },
+                    "autofill switched off",
+                )?;
+                p.log
+                    .push("forms: switches apply live, to new tabs, windows and restarts".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(30) {
+                return Err("The engine restart did not finish".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; ends only the fixture's own engine process"]
+fn native_passwords_and_autofill_follow_the_switches() {
+    let (root, _) = run("forms", forms_steps, |_, _| {});
+    // The switches are saved with the other settings.
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert!(saved.settings.save_passwords);
+    assert!(!saved.settings.autofill);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A private window never saves passwords or fills forms, even when its
+/// in-memory settings say so, and refuses to change the switches.
+fn private_forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    if p.at.elapsed() < Duration::from_secs(1) {
+        return Ok(());
+    }
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if !s.private {
+        return Err("The fixture did not start a private window".into());
+    }
+    expect_forms(s, Forms::default(), "private window")?;
+    if s.command(Command::SetSavePasswords(true)).is_ok()
+        || s.command(Command::SetAutofill(true)).is_ok()
+    {
+        return Err("A private window accepted a password or autofill switch".into());
+    }
+    // Private windows never import bookmarks.
+    if s.command(Command::ImportBookmarks).is_ok()
+        || s.library_action(Action::ImportBookmarks(Default::default()))
+            .is_ok()
+    {
+        return Err("A private window accepted a bookmark import".into());
+    }
+    s.settings.save_passwords = true;
+    s.settings.autofill = true;
+    s.open_tab(navigation::HOME.into())
+        .map_err(|e| e.to_string())?;
+    expect_forms(s, Forms::default(), "private new tab")?;
+    p.log
+        .push("forms: private windows never save passwords or forms".into());
+    p.done = true;
+    el.exit();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real private window"]
+fn native_private_windows_never_save_passwords_or_forms() {
+    let (root, _) = run("private-forms", private_forms_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn bookmark_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bookmarks")
+            .join(name),
+    )
+    .unwrap()
+}
+
+/// A chosen file's bytes reach the library in one import with a summary; a file
+/// that is not an export is refused and changes nothing.
+fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let _ = el;
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.app
+                .proxy
+                .send_event(Event::BookmarkFile(Ok(Some(bookmark_fixture(
+                    "chrome.html",
+                )))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.notice.starts_with("Bookmarks imported") {
+                let found: Vec<&str> = s
+                    .library_data
+                    .bookmarks
+                    .iter()
+                    .map(|b| b.url.as_str())
+                    .collect();
+                if found.len() != 3
+                    || !s
+                        .notice
+                        .contains("3 added, 1 skipped as duplicates, 1 refused")
+                {
+                    return Err(format!("Import: {found:?}, notice {:?}", s.notice));
+                }
+                p.app
+                    .proxy
+                    .send_event(Event::BookmarkFile(Ok(Some(
+                        b"<html>not bookmarks</html>".to_vec(),
+                    ))))
+                    .map_err(|_| "proxy")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("The import never finished: {:?}", s.notice));
+            }
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.notice.contains("not an exported bookmarks file") {
+                if s.library_data.bookmarks.len() != 3 {
+                    return Err("A refused file changed bookmarks".into());
+                }
+                p.log.push(
+                    "import: file to library with summary; refused file changes nothing".into(),
+                );
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("A refused file was not explained: {:?}", s.notice));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_bookmark_import_reaches_the_library() {
+    let (root, _) = run("import", import_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

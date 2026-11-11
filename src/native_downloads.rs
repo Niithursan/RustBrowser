@@ -22,8 +22,8 @@ use windows::{
             CoTaskMemFree, CoUninitialize,
         },
         UI::Shell::{
-            FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS, FileOpenDialog,
-            IFileOpenDialog, SIGDN_FILESYSPATH,
+            Common::COMDLG_FILTERSPEC, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST,
+            FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH,
         },
     },
     core::{HSTRING, Interface, PWSTR},
@@ -470,6 +470,81 @@ pub fn choose_folder(owner: isize) -> Result<Option<PathBuf>, String> {
         CoTaskMemFree(Some(path.0 as *const _));
         Ok(Some(PathBuf::from(value?)))
     }
+}
+
+/// Ask for an exported bookmarks file and read it, refusing anything larger than
+/// the import limit before reading it all. Runs on its own STA thread like
+/// `choose_folder`. Returns `None` when the user cancels.
+pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
+    use std::io::Read;
+    let limit = rust_browser::bookmark_import::MAX_FILE_BYTES;
+    // SAFETY: as in `choose_folder`, the dialog and shell items stay on this STA
+    // thread; only an owned path leaves the block.
+    let path = unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            .ok()
+            .map_err(|_| "Could not open the file picker.".to_string())?;
+        struct Apartment;
+        impl Drop for Apartment {
+            fn drop(&mut self) {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+        let _apartment = Apartment;
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+            .map_err(|_| "Could not open the file picker.".to_string())?;
+        let html = HSTRING::from("Exported bookmarks (*.html; *.htm)");
+        let pattern = HSTRING::from("*.html;*.htm");
+        dialog
+            .SetFileTypes(&[COMDLG_FILTERSPEC {
+                pszName: windows::core::PCWSTR(html.as_ptr()),
+                pszSpec: windows::core::PCWSTR(pattern.as_ptr()),
+            }])
+            .and_then(|()| {
+                dialog.SetOptions(FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST)
+            })
+            .and_then(|()| {
+                dialog.SetTitle(&HSTRING::from(
+                    "Import bookmarks from an exported HTML file",
+                ))
+            })
+            .map_err(|_| "Could not configure the file picker.".to_string())?;
+        if let Err(error) = dialog.Show(Some(HWND(owner as *mut _))) {
+            if error.code().0 as u32 == 0x800704c7 {
+                return Ok(None);
+            }
+            return Err("Choosing the file failed.".into());
+        }
+        let item = dialog
+            .GetResult()
+            .map_err(|_| "No file was chosen.".to_string())?;
+        let name = item
+            .GetDisplayName(SIGDN_FILESYSPATH)
+            .map_err(|_| "Choose a file on this computer.".to_string())?;
+        let value = name
+            .to_string()
+            .map_err(|_| "Invalid file name.".to_string());
+        CoTaskMemFree(Some(name.0 as *const _));
+        PathBuf::from(value?)
+    };
+    let file =
+        std::fs::File::open(&path).map_err(|_| "The file could not be opened.".to_string())?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "The file could not be read.".to_string())?;
+    if !metadata.is_file() {
+        return Err("Choose a file, not a folder.".into());
+    }
+    if metadata.len() > limit {
+        return Err(rust_browser::bookmark_import::FileError::TooLarge.message());
+    }
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "The file could not be read.".to_string())?;
+    Ok(Some(bytes))
 }
 
 pub fn open_folder(path: &Path) -> std::io::Result<()> {

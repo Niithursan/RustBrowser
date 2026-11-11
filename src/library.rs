@@ -69,6 +69,10 @@ pub enum Action {
         title: String,
         timestamp: i64,
     },
+    /// Add bookmarks read from an exported file. Built only by the browser from a
+    /// file the user chose; the toolbar cannot send it.
+    #[serde(skip)]
+    ImportBookmarks(crate::bookmark_import::Parsed),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -295,6 +299,9 @@ impl Database {
                 self.connection
                     .execute("DELETE FROM folders WHERE id=?1", [id])?;
             }
+            Action::ImportBookmarks(parsed) => {
+                self.import_bookmarks(&parsed)?;
+            }
             Action::RemoveVisit { id } => {
                 self.connection
                     .execute("DELETE FROM visits WHERE id=?1", [id])?;
@@ -342,6 +349,80 @@ impl Database {
             }
         }
         Ok(())
+    }
+
+    /// Add a parsed bookmarks file in one transaction: if anything fails, or the
+    /// import would pass the 5,000 bookmark limit, nothing changes. Addresses
+    /// already saved (or repeated in the file) are skipped. Folders map onto the
+    /// flat folder list by name; an existing folder with the same name is reused.
+    pub fn import_bookmarks(
+        &mut self,
+        parsed: &crate::bookmark_import::Parsed,
+    ) -> Result<crate::bookmark_import::Summary> {
+        use std::collections::{HashMap, HashSet};
+        let tx = self.connection.transaction()?;
+        let mut known: HashSet<String> = tx
+            .prepare("SELECT url FROM bookmarks")?
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        let existing = known.len();
+        let mut folders: HashMap<String, i64> = tx
+            .prepare("SELECT id,name FROM folders")?
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(1)?.to_lowercase(), r.get(0)?))
+            })?
+            .collect::<std::result::Result<_, _>>()?;
+        let mut summary = crate::bookmark_import::Summary {
+            refused: parsed.refused.clone(),
+            nested: parsed.nested,
+            ..Default::default()
+        };
+        let new: Vec<_> = parsed
+            .entries
+            .iter()
+            .filter(|entry| {
+                let fresh = known.insert(entry.url.clone());
+                if !fresh {
+                    summary.duplicates += 1;
+                }
+                fresh
+            })
+            .collect();
+        if existing + new.len() > 5000 {
+            return Err(format!(
+                "Importing {} new bookmarks would pass the limit of 5000 (there are {existing}), so nothing was imported.",
+                new.len()
+            )
+            .into());
+        }
+        for entry in new {
+            let folder = match &entry.folder {
+                None => None,
+                Some(name) => match folders.get(&name.to_lowercase()) {
+                    Some(id) => Some(*id),
+                    None if folders.len() < 200 => {
+                        tx.execute("INSERT INTO folders(name) VALUES(?1)", [name])?;
+                        let id = tx.last_insert_rowid();
+                        folders.insert(name.to_lowercase(), id);
+                        summary.folders_created += 1;
+                        Some(id)
+                    }
+                    None => {
+                        summary.unfoldered += 1;
+                        None
+                    }
+                },
+            };
+            let title = text(&entry.title, 256)?;
+            let url = bookmark_url(&entry.url)?;
+            tx.execute(
+                "INSERT INTO bookmarks(title,url,folder) VALUES(?1,?2,?3)",
+                params![title, url, folder],
+            )?;
+            summary.imported += 1;
+        }
+        tx.commit()?;
+        Ok(summary)
     }
 
     pub fn query(&self, filter: &Filter) -> Result<Data> {

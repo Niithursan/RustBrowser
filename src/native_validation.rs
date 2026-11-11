@@ -228,6 +228,7 @@ impl ApplicationHandler<Event> for Harness {
                 crate::engine::Options {
                     private: false,
                     environment: None,
+                    forms: Default::default(),
                 },
             )?;
             let private = Engine::new(
@@ -240,6 +241,7 @@ impl ApplicationHandler<Event> for Harness {
                 crate::engine::Options {
                     private: true,
                     environment: None,
+                    forms: Default::default(),
                 },
             )?;
             self.permissions.borrow_mut().active = Some(1);

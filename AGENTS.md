@@ -340,6 +340,10 @@ The project aims to evolve through incremental releases:
 - v0.4: Privacy, permissions, profiles
 - v0.5: Performance and interface improvements
 - v0.6+: Potential Servo experimentation
+- v0.18: Multiple normal windows (done)
+- v0.19: Saved passwords, form autofill and bookmark import
+- v0.20: Ad blocking and the first tagged release
+- Then: daily use by the owner, followed by a v0.21 reliability pass
 - v1.0: Daily-use release candidate
 
 These milestones are planning targets, not guarantees of completed functionality.

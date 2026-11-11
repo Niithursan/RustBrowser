@@ -11,8 +11,8 @@ $repo=Split-Path $PSScriptRoot -Parent
 $version=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $Executable).Path)).ProductVersion
 $package=& (Join-Path $repo 'packaging/windows/build-installer.ps1') -Executable $Executable -OutputRoot $OutputRoot -Version $version -SourceCommit $SourceCommit -Compiler $Compiler
 $baselineVersion=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $BaselineExecutable).Path)).ProductVersion
-if($baselineVersion -cne '0.17.0'){throw 'Supply the actual verified v0.17 executable for upgrade checks.'}
-$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit '7a61d974a23859933e5c252d192f345b68e6a532'
+if($baselineVersion -cne '0.18.0'){throw 'Supply the actual verified v0.18 executable for upgrade checks.'}
+$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit 'efd1a2a1d36cde90ff7cb6a59d3d12a28369e8e2'
 $run=Join-Path ([IO.Path]::GetFullPath($OutputRoot)) ('install-validation-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $run -ErrorAction Stop | Out-Null
 Set-Content -LiteralPath (Join-Path $run '.rust-browser-install-validation') -Value 'Owned disposable installer validation'
@@ -99,12 +99,12 @@ try {
     & $Cargo test --locked --test installation_profile installer_profile_harness -- --ignored --test-threads=1
     if($LASTEXITCODE -ne 0){throw 'Could not prepare representative profile.'}
     $script:before=@(Hash-Profile)
-    # The baseline is built with the pinned v0.17 Setup script as well as its payload,
-    # so the upgrade starts from what 0.17 really installed (including registration).
+    # The baseline is built with the pinned v0.18 Setup script as well as its payload,
+    # so the upgrade starts from what 0.18 really installed (including registration).
     $oldScript=Join-Path $run 'baseline-script';New-Item -ItemType Directory -Path $oldScript | Out-Null
     foreach($name in @('installer.iss','installer-notice.txt')){
-        $text=git -C $repo show "7a61d974a23859933e5c252d192f345b68e6a532:packaging/windows/$name"
-        if($LASTEXITCODE -ne 0){throw "Fetch the pinned v0.17 commit before building the upgrade fixture ($name)."}
+        $text=git -C $repo show "efd1a2a1d36cde90ff7cb6a59d3d12a28369e8e2:packaging/windows/$name"
+        if($LASTEXITCODE -ne 0){throw "Fetch the pinned v0.18 commit before building the upgrade fixture ($name)."}
         [IO.File]::WriteAllText((Join-Path $oldScript $name),(($text -join "`r`n")+"`r`n"))
     }
     $old=Compile-Fixture $baseline.payload $baselineVersion 'baseline-installer' (Join-Path $oldScript 'installer.iss')
@@ -119,7 +119,7 @@ try {
     Assert-Preserved
     Invoke-Owned $old (Args-For 'fresh')
     $installed=$true;Assert-Preserved
-    # 0.17 registered itself as a browser choice; the upgrade below must keep it.
+    # 0.18 registered itself as a browser choice; the upgrade below must keep it.
     Assert-Registration $true;Assert-Real-Defaults
     if(-not(Test-Path -LiteralPath $link) -or -not(Test-Path -LiteralPath $registry)){throw 'Start Menu or per-user uninstall registration is missing.'}
     $entry=Get-ItemProperty -LiteralPath $registry
@@ -138,7 +138,7 @@ try {
         $null=$oldProcess.Handle
         $created=$oldProcess.StartTime.ToUniversalTime()
         Start-Sleep -Milliseconds 500
-        if($oldProcess.HasExited){throw 'Owned v0.17 process exited before the file-use check.'}
+        if($oldProcess.HasExited){throw 'Owned v0.18 process exited before the file-use check.'}
         Invoke-Owned $new (Args-For 'legacy-running-refusal') -Refuse
         Assert-Preserved
     } finally {
@@ -211,7 +211,7 @@ try {
     if(-not(Test-Path -LiteralPath $foreign) -or (Get-FileHash -LiteralPath $foreign).Hash -cne $foreignHash){throw 'Uninstall removed or changed an unowned file.'}
     if((Test-Path -LiteralPath $desktop) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $link)){throw 'Uninstall left registered integration.'}
     Assert-Registration $false;Assert-Real-Defaults
-    'Installer: fresh/0.17 upgrade/default-browser registration/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
+    'Installer: fresh/0.18 upgrade/default-browser registration/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
 } finally {
     try {
         if($installed -and (Test-Path -LiteralPath (Join-Path $app 'uninstall/unins000.exe'))){

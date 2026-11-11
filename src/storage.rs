@@ -120,9 +120,20 @@ impl Snapshot {
 }
 
 /// Whether a snapshot's saved file stays within the size every version accepts
-/// on load. A writer that would exceed it saves the main window only.
+/// on load. A writer that would exceed it leaves out windows with `trim_to_fit`.
 pub fn fits(snapshot: &Snapshot) -> bool {
     serde_json::to_vec_pretty(snapshot).is_ok_and(|bytes| bytes.len() as u64 <= MAX_FILE_BYTES)
+}
+
+/// Make `snapshot` fit the size limit by leaving out other windows one at a time,
+/// least recently focused first (`other_windows` is kept most recent first). The
+/// main window is never trimmed. Returns how many windows were left out.
+pub fn trim_to_fit(snapshot: &mut Snapshot) -> usize {
+    let mut dropped = 0;
+    while !fits(snapshot) && snapshot.other_windows.pop().is_some() {
+        dropped += 1;
+    }
+    dropped
 }
 
 pub fn load(path: &Path) -> io::Result<Snapshot> {
