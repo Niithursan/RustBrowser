@@ -156,6 +156,9 @@ fn build_toolbar(
             }
         })
         .build_as_child(window)?;
+    // The toolbar never saves passwords or fills in forms (WebView2 would offer
+    // autofill in the address field by default).
+    native_security::apply_forms(&toolbar, native_security::Forms::default())?;
     if private {
         native_security::verify_private(&toolbar)?;
     }
@@ -465,6 +468,35 @@ impl Session {
             None => false,
         }
     }
+    /// Password saving and autofill for new content views. Private windows never
+    /// have either.
+    fn forms(&self) -> native_security::Forms {
+        if self.private {
+            return native_security::Forms::default();
+        }
+        native_security::Forms {
+            passwords: self.settings.save_passwords,
+            autofill: self.settings.autofill,
+        }
+    }
+
+    /// Apply the switches to every open content view of every window, so a
+    /// change takes effect without a restart. Views created later get them from
+    /// `forms()`.
+    fn apply_forms_everywhere(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let forms = self.forms();
+        let mut failed = false;
+        for window in &self.windows {
+            for tab in &window.tabs.items {
+                failed |= native_security::apply_forms(&tab.content.engine.view, forms).is_err();
+            }
+        }
+        if failed {
+            return Err("The setting could not be applied to every open tab. Restart Rust Browser to apply it everywhere.".into());
+        }
+        Ok(())
+    }
+
     /// The most recently focused window, which receives links from other apps.
     fn focused_index(&self) -> usize {
         self.focus_order
@@ -1132,6 +1164,7 @@ impl Session {
             webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
         >,
     ) -> Result<Engine, Box<dyn std::error::Error>> {
+        let forms = self.forms();
         let engine = Engine::new(
             &self.windows[self.current].window,
             &mut self.content_context,
@@ -1142,6 +1175,7 @@ impl Session {
             engine::Options {
                 private: self.private,
                 environment,
+                forms,
             },
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
@@ -1894,6 +1928,20 @@ impl Session {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
                     .spawn()?;
+            }
+            Command::SetSavePasswords(value) => {
+                if self.private {
+                    return Err("Private windows never save passwords.".into());
+                }
+                self.settings.save_passwords = value;
+                self.apply_forms_everywhere()?;
+            }
+            Command::SetAutofill(value) => {
+                if self.private {
+                    return Err("Private windows never fill in forms.".into());
+                }
+                self.settings.autofill = value;
+                self.apply_forms_everywhere()?;
             }
             Command::SetRestoreSession(value) => {
                 if self.private {

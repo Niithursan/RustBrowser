@@ -34,6 +34,12 @@ pub struct Settings {
     pub theme: Theme,
     pub favorites: Vec<Favorite>,
     pub show_recent: bool,
+    /// Let WebView2 offer to save passwords and fill them in (v0.19, opt-in).
+    /// Missing from older files, so existing profiles start with it off.
+    pub save_passwords: bool,
+    /// Let WebView2 fill in forms (addresses and similar) automatically (v0.19,
+    /// opt-in). Off by default even though WebView2's own default is on.
+    pub autofill: bool,
 }
 
 impl Default for Settings {
@@ -47,6 +53,8 @@ impl Default for Settings {
             theme: Theme::Dark,
             favorites: Vec::new(),
             show_recent: false,
+            save_passwords: false,
+            autofill: false,
         }
     }
 }

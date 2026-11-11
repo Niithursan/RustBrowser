@@ -60,6 +60,10 @@ pub enum Command {
     /// Close every window and keep them all for the next start.
     ExitBrowser,
     SetRestoreSession(bool),
+    /// Privacy & security: "Offer to save passwords".
+    SetSavePasswords(bool),
+    /// Privacy & security: "Fill in forms automatically".
+    SetAutofill(bool),
     ClearData(rust_browser::privacy::ClearRequest),
     PermissionDecision {
         id: u64,

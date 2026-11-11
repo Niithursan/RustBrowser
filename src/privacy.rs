@@ -14,12 +14,22 @@ pub struct ClearRequest {
     pub cache: bool,
     pub session: bool,
     pub permissions: bool,
+    /// Passwords saved by WebView2. Never implied by clearing history.
+    pub passwords: bool,
+    /// Form data saved by WebView2 autofill. Never implied by clearing history.
+    pub autofill: bool,
     pub confirmed: bool,
 }
 impl ClearRequest {
     pub fn validate(&self) -> io::Result<()> {
         if !self.confirmed
-            || !(self.history || self.cookies || self.cache || self.session || self.permissions)
+            || !(self.history
+                || self.cookies
+                || self.cache
+                || self.session
+                || self.permissions
+                || self.passwords
+                || self.autofill)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

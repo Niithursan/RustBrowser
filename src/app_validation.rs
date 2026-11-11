@@ -91,6 +91,8 @@ impl Probe {
                                 cache: true,
                                 session: true,
                                 permissions: true,
+                                passwords: false,
+                                autofill: false,
                                 confirmed: true,
                             },
                             None,

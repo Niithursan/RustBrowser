@@ -27,6 +27,8 @@ pub struct Engine {
 pub struct Options {
     pub private: bool,
     pub environment: Option<ICoreWebView2Environment>,
+    /// Password saving and autofill for this view; forced off when private.
+    pub forms: crate::native_security::Forms,
 }
 
 /// Small bound for remembered superseded loads/rejected starts; only rapid
@@ -267,6 +269,13 @@ impl Engine {
         if private {
             crate::native_security::verify_private(&view)?;
         }
+        // Private windows never save passwords or form data, whatever the switches.
+        let forms = if private {
+            crate::native_security::Forms::default()
+        } else {
+            options.forms
+        };
+        crate::native_security::apply_forms(&view, forms)?;
         crate::native_security::install(&view, permissions, proxy.clone(), id)?;
         crate::native_downloads::install(&view, downloads, proxy.clone(), id)?;
         let progress = std::rc::Rc::new(NavigationProgress::default());
