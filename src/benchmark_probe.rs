@@ -264,7 +264,11 @@ impl ApplicationHandler<Event> for Probe {
         {
             self.metrics.navigation_errors.push(error.clone());
         }
-        if matches!(&event, Event::Command(Command::Ready)) {
+        // Toolbar IPC arrives routed to its window (Event::WindowCommand).
+        if matches!(
+            &event,
+            Event::Command(Command::Ready) | Event::WindowCommand(_, Command::Ready)
+        ) {
             self.toolbar_ready = true;
         }
         if let Event::Page(
