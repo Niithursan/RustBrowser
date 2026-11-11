@@ -15,6 +15,8 @@ pub struct Tabs<T> {
     pub items: Vec<Tab<T>>,
     active: usize,
     next_id: TabId,
+    /// Shared by every window of one process, so a tab ID names one tab anywhere.
+    ids: Option<std::rc::Rc<std::cell::Cell<TabId>>>,
 }
 
 impl<T> Default for Tabs<T> {
@@ -23,13 +25,21 @@ impl<T> Default for Tabs<T> {
             items: Vec::new(),
             active: 0,
             next_id: 1,
+            ids: None,
         }
     }
 }
 
 impl<T> Tabs<T> {
+    /// Tabs whose IDs come from `ids`, shared with other tab lists.
+    pub fn with_ids(ids: std::rc::Rc<std::cell::Cell<TabId>>) -> Self {
+        Self {
+            ids: Some(ids),
+            ..Self::default()
+        }
+    }
     pub fn next_id(&self) -> TabId {
-        self.next_id
+        self.ids.as_ref().map_or(self.next_id, |ids| ids.get())
     }
     pub fn active_index(&self) -> usize {
         self.active
@@ -47,8 +57,18 @@ impl<T> Tabs<T> {
         if self.items.len() >= MAX_TABS {
             return Err("The 64-tab limit has been reached.");
         }
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = match &self.ids {
+            Some(ids) => {
+                let id = ids.get();
+                ids.set(id + 1);
+                id
+            }
+            None => {
+                let id = self.next_id;
+                self.next_id += 1;
+                id
+            }
+        };
         self.items.push(Tab {
             id,
             url,
@@ -149,6 +169,18 @@ impl ClosedTabs {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shared_ids_are_unique_across_tab_lists() {
+        let ids = std::rc::Rc::new(std::cell::Cell::new(1));
+        let mut first: Tabs<()> = Tabs::with_ids(ids.clone());
+        let mut second: Tabs<()> = Tabs::with_ids(ids.clone());
+        let a = first.push("a".into(), ()).unwrap();
+        let b = second.push("b".into(), ()).unwrap();
+        let c = first.push("c".into(), ()).unwrap();
+        assert_eq!((a, b, c), (1, 2, 3));
+        assert_eq!(second.next_id(), 4);
+    }
+
     use super::*;
     #[test]
     fn closed_tabs_reopen_most_recent_first_and_are_bounded() {

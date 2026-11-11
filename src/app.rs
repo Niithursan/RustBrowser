@@ -54,7 +54,10 @@ pub enum Event {
         success: bool,
         ticket: u64,
     },
+    /// From a keyboard accelerator: for the window that has focus.
     Command(Command),
+    /// From a window's own toolbar.
+    WindowCommand(WindowId, Command),
     Page(TabId, PageEvent),
     PopupRequested(u64),
     PopupBlocked,
@@ -124,6 +127,7 @@ fn build_toolbar(
     source: u64,
 ) -> Result<WebView, Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
+    let window_id = window.id();
     let toolbar_url = format!(
         "data:text/html;charset=utf-8;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(ui::HTML)
@@ -145,7 +149,7 @@ fn build_toolbar(
             if request.body().len() <= 16384
                 && let Ok(command) = serde_json::from_str::<Command>(request.body())
             {
-                let _ = ipc_proxy.send_event(Event::Command(command));
+                let _ = ipc_proxy.send_event(Event::WindowCommand(window_id, command));
             }
         })
         .build_as_child(window)?;
@@ -234,6 +238,13 @@ fn launch_settings(uri: &str) -> bool {
     }
 }
 
+/// The tab with `id` in whichever window holds it (tab IDs are process-wide).
+fn tab_in(windows: &mut [WindowState], id: TabId) -> Option<&mut rust_browser::tabs::Tab<Page>> {
+    windows
+        .iter_mut()
+        .find_map(|window| window.tabs.get_mut(id))
+}
+
 /// Bound automatic restarts so a persistently crashing engine cannot loop.
 fn admit_engine_restart(history: &mut Vec<Instant>, now: Instant) -> bool {
     history.retain(|at| now.duration_since(*at) < ENGINE_RESTART_WINDOW);
@@ -277,7 +288,9 @@ struct Clearing {
 }
 
 // Drop views before contexts and the parent window. Store flushes and releases its lock last.
-struct Session {
+/// One normal (or private) browser window: its native window, trusted toolbar and
+/// tabs. Profile-wide services live in `Session`.
+struct WindowState {
     tabs: Tabs<Page>,
     /// Hidden views of closed tabs awaiting destruction, oldest first.
     retired: Vec<(Instant, Page)>,
@@ -291,13 +304,32 @@ struct Session {
     toolbar_alerts: usize,
     /// A failed toolbar view, hidden and kept for `RETIRE_DELAY` like a closed tab.
     retired_toolbar: Option<(Instant, WebView)>,
-    content_context: WebContext,
-    toolbar_context: WebContext,
+    toolbar_restarts: Vec<Instant>,
     window: Window,
-    proxy: EventLoopProxy<Event>,
-    settings: Settings,
     notice: String,
     panel: Option<Panel>,
+    fullscreen: Option<TabId>,
+    focus_pending: bool,
+    chrome_height: f64,
+    last_render: RefCell<String>,
+    last_title: RefCell<String>,
+}
+
+/// One browser profile in this process: its lock, store, services and windows.
+/// It dereferences to the window currently being handled (`current`), so window
+/// state is reached as before; events select their window first.
+struct Session {
+    // First field: window views drop before the contexts and workers below.
+    windows: Vec<WindowState>,
+    current: usize,
+    /// One allocator for every window, so a tab ID names one tab in one window.
+    /// Read when another window's tab list is created (multiple windows step).
+    #[allow(dead_code)]
+    tab_ids: Rc<std::cell::Cell<TabId>>,
+    content_context: WebContext,
+    toolbar_context: WebContext,
+    proxy: EventLoopProxy<Event>,
+    settings: Settings,
     library_data: Data,
     filter: Filter,
     revision: u64,
@@ -309,12 +341,9 @@ struct Session {
     store: Option<Store>,
     permissions: native_security::Shared,
     popups: native_popup::Shared,
-    fullscreen: Option<TabId>,
-    focus_pending: bool,
     /// The content browser process ended; views are rebuilt on the next idle turn.
     engine_lost: bool,
     engine_restarts: Vec<Instant>,
-    toolbar_restarts: Vec<Instant>,
     /// Receives links from later launches (normal windows only).
     handoff: Option<crate::native_handoff::Server>,
     /// Failed navigations not yet written to diagnostics. A navigation that becomes a
@@ -329,12 +358,86 @@ struct Session {
     started: Instant,
     next_background: Instant,
     last_background: Instant,
-    chrome_height: f64,
     last_snapshot: RefCell<Option<Snapshot>>,
-    last_render: RefCell<String>,
-    last_title: RefCell<String>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
+}
+
+impl Session {
+    /// Handle the next event for the window `id`. False if no such window.
+    fn select_window(&mut self, id: WindowId) -> bool {
+        match self.windows.iter().position(|w| w.window.id() == id) {
+            Some(index) => {
+                self.current = index;
+                true
+            }
+            None => false,
+        }
+    }
+    /// Handle the next event for the window that holds tab `id`.
+    fn select_tab(&mut self, id: TabId) -> bool {
+        match self
+            .windows
+            .iter()
+            .position(|w| w.tabs.items.iter().any(|t| t.id == id))
+        {
+            Some(index) => {
+                self.current = index;
+                true
+            }
+            None => false,
+        }
+    }
+    /// Handle the next event for the window whose toolbar build is `source`.
+    fn select_toolbar(&mut self, source: u64) -> bool {
+        match self.windows.iter().position(|w| w.toolbar_source == source) {
+            Some(index) => {
+                self.current = index;
+                true
+            }
+            None => false,
+        }
+    }
+    /// Choose the window an application event belongs to before it is handled.
+    /// Events for a tab or toolbar that no longer exists keep the current window.
+    fn route(&mut self, event: Event) -> Event {
+        match &event {
+            Event::WindowCommand(id, _) => {
+                self.select_window(*id);
+            }
+            Event::Page(tab, _)
+            | Event::NavigationBlocked(tab)
+            | Event::PageClose(tab)
+            | Event::Fullscreen(tab, _)
+            | Event::EngineProcess(tab, _)
+            | Event::ZoomChanged(tab)
+            | Event::FindResult(tab, _)
+            | Event::DownloadRequested(_, tab)
+            | Event::SuspensionResult { id: tab, .. } => {
+                self.select_tab(*tab);
+            }
+            Event::ToolbarProcess(source, _) | Event::ToolbarResponsive(source, _) => {
+                self.select_toolbar(*source);
+            }
+            _ => {}
+        }
+        match event {
+            Event::WindowCommand(_, command) => Event::Command(command),
+            other => other,
+        }
+    }
+}
+
+impl std::ops::Deref for Session {
+    type Target = WindowState;
+    fn deref(&self) -> &WindowState {
+        &self.windows[self.current]
+    }
+}
+impl std::ops::DerefMut for Session {
+    fn deref_mut(&mut self) -> &mut WindowState {
+        &mut self.windows[self.current]
+    }
 }
 
 impl Drop for Session {
@@ -545,8 +648,9 @@ impl Session {
             private,
             toolbar_source,
         )?;
-        let mut session = Self {
-            tabs: Tabs::default(),
+        let tab_ids = Rc::new(std::cell::Cell::new(1));
+        let first_window = WindowState {
+            tabs: Tabs::with_ids(tab_ids.clone()),
             retired: Vec::new(),
             closed: ClosedTabs::default(),
             toolbar,
@@ -557,17 +661,28 @@ impl Session {
             #[cfg(test)]
             toolbar_alerts: 0,
             retired_toolbar: None,
-            content_context,
-            toolbar_context,
+            toolbar_restarts: Vec::new(),
             window,
-            proxy,
-            settings: snapshot.settings,
             notice: if recovered {
                 "Session recovery performed. Invalid originals were preserved; the last valid snapshot was used when available.".into()
             } else {
                 String::new()
             },
             panel: None,
+            fullscreen: None,
+            focus_pending: false,
+            chrome_height: ui::HEIGHT,
+            last_render: RefCell::new(String::new()),
+            last_title: RefCell::new(String::new()),
+        };
+        let mut session = Self {
+            windows: vec![first_window],
+            current: 0,
+            tab_ids,
+            content_context,
+            toolbar_context,
+            proxy,
+            settings: snapshot.settings,
             library_data: Data::default(),
             filter: Filter::default(),
             revision: 0,
@@ -585,11 +700,8 @@ impl Session {
             private,
             permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
             popups: Rc::new(RefCell::new(native_popup::Manager::default())),
-            fullscreen: None,
-            focus_pending: false,
             engine_lost: false,
             engine_restarts: Vec::new(),
-            toolbar_restarts: Vec::new(),
             handoff: None,
             unrecorded_failures: Vec::new(),
             ready: false,
@@ -599,10 +711,7 @@ impl Session {
             started: Instant::now(),
             next_background: Instant::now(),
             last_background: Instant::now(),
-            chrome_height: ui::HEIGHT,
             last_snapshot: RefCell::new(None),
-            last_render: RefCell::new(String::new()),
-            last_title: RefCell::new(String::new()),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -699,7 +808,7 @@ impl Session {
         let state = State {
             url: url.into(),
             loading: true,
-            message: "Connecting…".into(),
+            message: "Connectingâ€¦".into(),
             ..State::default()
         };
         Ok(Page {
@@ -718,7 +827,7 @@ impl Session {
         >,
     ) -> Result<Engine, Box<dyn std::error::Error>> {
         let engine = Engine::new(
-            &self.window,
+            &self.windows[self.current].window,
             &mut self.content_context,
             self.proxy.clone(),
             id,
@@ -874,7 +983,7 @@ impl Session {
         }
         let next_source = next_toolbar_source();
         let toolbar = match build_toolbar(
-            &self.window,
+            &self.windows[self.current].window,
             &mut self.toolbar_context,
             &self.proxy,
             self.private,
@@ -935,7 +1044,7 @@ impl Session {
                             loading: loaded,
                             failed: !loaded,
                             message: if loaded {
-                                "Connecting…"
+                                "Connectingâ€¦"
                             } else {
                                 "Error: This tab could not be reloaded."
                             }
@@ -1042,7 +1151,8 @@ impl Session {
         let active = self.tabs.active_index();
         let panel = self.effective_panel();
         let now = self.started.elapsed();
-        for (index, tab) in self.tabs.items.iter_mut().enumerate() {
+        let window = &mut self.windows[self.current];
+        for (index, tab) in window.tabs.items.iter_mut().enumerate() {
             tab.content.lifecycle.visible(index == active, now);
             if index == active
                 && matches!(
@@ -1053,7 +1163,7 @@ impl Session {
                 let result = native_background::resume(&tab.content.engine.view);
                 tab.content.lifecycle.resumed(result.is_ok());
                 if result.is_err() {
-                    self.notice="This tab could not resume. Use Wake tab to retry; the page was kept intact.".into();
+                    window.notice="This tab could not resume. Use Wake tab to retry; the page was kept intact.".into();
                 }
             }
             tab.content
@@ -1193,9 +1303,9 @@ impl Session {
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
         let prefix = if self.private {
-            "Private — "
+            "Private â€” "
         } else if active.content.state.loading {
-            "Loading… — "
+            "Loadingâ€¦ â€” "
         } else {
             ""
         };
@@ -1338,7 +1448,8 @@ impl Session {
             Command::SetAutomaticSuspension(enabled) => {
                 self.settings.automatic_suspension = enabled;
                 if !enabled {
-                    for tab in &mut self.tabs.items {
+                    let window = &mut self.windows[self.current];
+                    for tab in &mut window.tabs.items {
                         if matches!(
                             tab.content.lifecycle.phase,
                             Phase::Sleeping | Phase::Pending
@@ -1346,7 +1457,7 @@ impl Session {
                             let result = native_background::resume(&tab.content.engine.view);
                             tab.content.lifecycle.resumed(result.is_ok());
                             if result.is_err() {
-                                self.notice="A sleeping tab could not resume. Select it and use Wake tab to retry.".into();
+                                window.notice="A sleeping tab could not resume. Select it and use Wake tab to retry.".into();
                             }
                         }
                     }
@@ -1573,7 +1684,7 @@ impl Session {
                     tab.content.engine.load(&LoadTarget::web(&url)?)?;
                     tab.url = url.clone();
                     tab.content.state.url = url;
-                    tab.content.state.message = "Connecting…".into();
+                    tab.content.state.message = "Connectingâ€¦".into();
                     tab.content.state.loading = true;
                     tab.content.state.failed = false;
                     tab.content.engine.focus()?;
@@ -1658,7 +1769,9 @@ impl Session {
             .tabs
             .active()
             .is_some_and(|tab| tab.url == navigation::HOME);
-        let Some(tab) = self.tabs.get_mut(id) else {
+        let current = self.current;
+        let mut library_notice = None;
+        let Some(tab) = self.windows[current].tabs.get_mut(id) else {
             return;
         };
         match event {
@@ -1674,7 +1787,7 @@ impl Session {
                 self.permissions.borrow_mut().cancel_tab(id);
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
-                tab.content.state.message = "Loading…".into();
+                tab.content.state.message = "Loadingâ€¦".into();
             }
             PageEvent::Cancelled => {
                 if tab.content.state.loading {
@@ -1724,7 +1837,7 @@ impl Session {
                         action,
                         filter: Filter::default(),
                     }) {
-                        self.notice = message.into();
+                        library_notice = Some(message);
                     }
                 }
                 tab.content.state.loading = false;
@@ -1733,7 +1846,8 @@ impl Session {
                     (Some(error), _) => format!("Error: {error}"),
                     (None, Some(code)) => http_status_message(code),
                     (None, None) => {
-                        "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
+                        "Ready Â· Ctrl+L address Â· Ctrl+T new tab Â· Ctrl+Tab switch Â· F7 page"
+                            .into()
                     }
                 };
             }
@@ -1752,6 +1866,9 @@ impl Session {
             tab.content.state.url = url;
         }
         (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
+        if let Some(message) = library_notice {
+            self.notice = message.into();
+        }
         let is_local = self
             .tabs
             .active()
@@ -1814,23 +1931,26 @@ impl Session {
         self.last_background = Instant::now();
         self.next_background = Instant::now() + Duration::from_secs(1);
         if gap {
-            let active = self.tabs.active().map(|t| t.id);
-            for tab in &mut self.tabs.items {
-                if matches!(
-                    tab.content.lifecycle.phase,
-                    Phase::Sleeping | Phase::Pending | Phase::ResumeFailed
-                ) {
-                    let success = native_background::resume(&tab.content.engine.view).is_ok();
-                    tab.content.lifecycle.resumed(success);
-                    if !success {
-                        self.notice="A tab did not resume after an event-loop pause. Select it and use Wake tab; the page was preserved.".into();
+            let started = self.started;
+            for window in &mut self.windows {
+                let active = window.tabs.active().map(|t| t.id);
+                for tab in &mut window.tabs.items {
+                    if matches!(
+                        tab.content.lifecycle.phase,
+                        Phase::Sleeping | Phase::Pending | Phase::ResumeFailed
+                    ) {
+                        let success = native_background::resume(&tab.content.engine.view).is_ok();
+                        tab.content.lifecycle.resumed(success);
+                        if !success {
+                            window.notice="A tab did not resume after an event-loop pause. Select it and use Wake tab; the page was preserved.".into();
+                        }
                     }
+                    tab.content.lifecycle.visible(true, started.elapsed());
+                    tab.content
+                        .lifecycle
+                        .visible(active == Some(tab.id), started.elapsed());
+                    tab.content.lifecycle.defer(started.elapsed());
                 }
-                tab.content.lifecycle.visible(true, self.started.elapsed());
-                tab.content
-                    .lifecycle
-                    .visible(active == Some(tab.id), self.started.elapsed());
-                tab.content.lifecycle.defer(self.started.elapsed());
             }
             return true;
         }
@@ -1883,7 +2003,7 @@ impl Session {
                 }
             };
             let protection = self.suspension_protection(id, audio);
-            if let Some(tab) = self.tabs.get_mut(id)
+            if let Some(tab) = tab_in(&mut self.windows, id)
                 && let Some(ticket) = tab.content.lifecycle.request(
                     now,
                     Duration::from_secs(self.settings.suspend_after_seconds),
@@ -1908,7 +2028,7 @@ impl Session {
     }
     fn suspension_result(&mut self, id: TabId, ticket: u64, success: bool) {
         let protection = self.suspension_protection(id, false);
-        if let Some(tab) = self.tabs.get_mut(id) {
+        if let Some(tab) = tab_in(&mut self.windows, id) {
             let eligible = self.settings.automatic_suspension && !protection.protected();
             if !eligible
                 || tab.content.lifecycle.generation != ticket
@@ -2008,11 +2128,12 @@ impl Session {
         let Some(clear) = &mut self.clearing else {
             return;
         };
-        // Documents of the closed tabs must be gone before their data is cleared.
-        if clear.started_native || !self.retired.is_empty() {
+        // Documents of the closed tabs, in every window, must be gone before their
+        // data is cleared.
+        if clear.started_native || self.windows.iter().any(|w| !w.retired.is_empty()) {
             return;
         }
-        let Some(tab) = self.tabs.active() else {
+        let Some(tab) = self.windows[self.current].tabs.active() else {
             return;
         };
         if tab.content.state.loading
@@ -2255,7 +2376,12 @@ impl ApplicationHandler<Event> for App {
             }
         }
     }
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if let Some(session) = &mut self.session
+            && !session.select_window(id)
+        {
+            return;
+        }
         match event {
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             // Child controllers handle focused-webpage input. This covers the native
@@ -2339,6 +2465,10 @@ impl ApplicationHandler<Event> for App {
         if self.closing.is_some() {
             return;
         }
+        let event = match &mut self.session {
+            Some(session) => session.route(event),
+            None => event,
+        };
         if self
             .session
             .as_ref()
@@ -2354,8 +2484,8 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
-            // Answered before the closing check above.
-            Event::HandOff(..) => {}
+            // Answered before the closing check above; routed to Command.
+            Event::HandOff(..) | Event::WindowCommand(..) => {}
             Event::DiagnosticsUpdated(report) => {
                 if report.previous_exit_unclean && !session.diagnostic_warning_shown {
                     session.diagnostic_warning_shown = true;
@@ -2414,7 +2544,7 @@ impl ApplicationHandler<Event> for App {
             Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
                 if startup {
-                    if success {session.diagnostics.record(DiagnosticCode::Started);session.permissions.borrow_mut().enabled=true;session.ready=true;for tab in &session.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){session.notice="A restored tab could not load.".into();}}}
+                    if success {session.diagnostics.record(DiagnosticCode::Started);session.permissions.borrow_mut().enabled=true;session.ready=true;for window in &mut session.windows {for tab in &window.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){window.notice="A restored tab could not load.".into();}}}}
                     else {session.diagnostics.record(DiagnosticCode::EngineClearFailed);session.notice="Security initialization failed. Websites remain unloaded; update WebView2 and restart.".into();}
                 } else if let Some(clear)=&mut session.clearing && clear.ticket==ticket {
                     clear.engine_done=true;clear.failed |= !success;
