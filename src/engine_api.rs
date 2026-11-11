@@ -101,6 +101,9 @@ pub enum PageEvent {
     },
     Error(String),
     Title(String),
+    /// The page's icon as a `data:image/png;base64,...` URL read from WebView2,
+    /// or empty when the page has none.
+    Favicon(String),
 }
 
 /// Views remain on their owning UI thread. Drop releases a view before its context

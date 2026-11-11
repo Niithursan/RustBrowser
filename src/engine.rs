@@ -10,9 +10,9 @@ use rust_browser::{
 };
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
-    AcceleratorKeyPressedEventHandler, HistoryChangedEventHandler,
-    LaunchingExternalUriSchemeEventHandler, NavigationCompletedEventHandler,
-    NavigationStartingEventHandler, SourceChangedEventHandler,
+    AcceleratorKeyPressedEventHandler, FaviconChangedEventHandler, GetFaviconCompletedHandler,
+    HistoryChangedEventHandler, LaunchingExternalUriSchemeEventHandler,
+    NavigationCompletedEventHandler, NavigationStartingEventHandler, SourceChangedEventHandler,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
 use windows::core::{BOOL, Interface};
@@ -223,6 +223,50 @@ fn http_error(status: COREWEBVIEW2_WEB_ERROR_STATUS, http: i32) -> Option<u16> {
         .then_some(http as u16)
 }
 
+/// Largest page icon passed to the toolbar.
+const MAX_FAVICON: usize = 32 * 1024;
+
+/// Read a PNG icon from WebView2's stream as a data URL, refusing anything that
+/// is not a PNG or is larger than `MAX_FAVICON`.
+fn favicon_data(stream: &windows::Win32::System::Com::IStream) -> Option<String> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let mut read = 0u32;
+        // SAFETY: reads into a local buffer from a stream WebView2 just handed us.
+        let result = unsafe {
+            stream.Read(
+                chunk.as_mut_ptr().cast(),
+                chunk.len() as u32,
+                Some(&mut read),
+            )
+        };
+        if result.is_err() {
+            return None;
+        }
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read as usize]);
+        if bytes.len() > MAX_FAVICON {
+            return None;
+        }
+    }
+    favicon_url(&bytes)
+}
+
+/// A data URL for PNG `bytes`, or `None` when they are empty, too large or not PNG.
+pub fn favicon_url(bytes: &[u8]) -> Option<String> {
+    use base64::Engine as _;
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    (!bytes.is_empty() && bytes.len() <= MAX_FAVICON && bytes.starts_with(PNG)).then(|| {
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    })
+}
+
 impl Engine {
     pub fn new(
         window: &Window,
@@ -330,6 +374,29 @@ impl Engine {
                 &SourceChangedEventHandler::create(Box::new(move |_, _| {
                     let _ = p.send_event(Event::Page(id, PageEvent::Changed));
                     Ok(())
+                })),
+                &mut token,
+            )?;
+            // Tab icons: WebView2 decodes the page's icon; only bounded PNG bytes
+            // reach the toolbar, which never loads anything from the website.
+            let p = proxy.clone();
+            core.cast::<ICoreWebView2_15>()?.add_FaviconChanged(
+                &FaviconChangedEventHandler::create(Box::new(move |sender, _| {
+                    let Some(sender) = sender else { return Ok(()) };
+                    let view: ICoreWebView2_15 = sender.cast()?;
+                    let p = p.clone();
+                    view.GetFavicon(
+                        COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
+                        &GetFaviconCompletedHandler::create(Box::new(move |result, stream| {
+                            let data = result
+                                .ok()
+                                .and(stream)
+                                .and_then(|stream| favicon_data(&stream))
+                                .unwrap_or_default();
+                            let _ = p.send_event(Event::Page(id, PageEvent::Favicon(data)));
+                            Ok(())
+                        })),
+                    )
                 })),
                 &mut token,
             )?;
@@ -863,5 +930,23 @@ mod tests {
         assert!(!progress.cancelled(1, COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID));
         progress.begin(2);
         assert!(!progress.cancelled(2, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED));
+    }
+}
+
+#[cfg(test)]
+mod favicon_tests {
+    use super::*;
+
+    #[test]
+    fn only_bounded_png_icons_reach_the_toolbar() {
+        let png = b"\x89PNG\r\n\x1a\nrest".to_vec();
+        let url = favicon_url(&png).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+        assert!(favicon_url(b"").is_none());
+        assert!(favicon_url(b"GIF89a....").is_none());
+        assert!(favicon_url(b"<svg onload=alert(1)>").is_none());
+        let mut big = png.clone();
+        big.resize(MAX_FAVICON + 1, 0);
+        assert!(favicon_url(&big).is_none());
     }
 }

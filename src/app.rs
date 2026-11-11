@@ -1895,6 +1895,7 @@ impl Session {
                     keep_awake: tab.keep_awake,
                     phase: tab.content.lifecycle.phase,
                     loading: tab.content.state.loading,
+                    favicon: &tab.content.state.favicon,
                 })
                 .collect(),
         };
@@ -2505,6 +2506,9 @@ impl Session {
                 }
             }
             PageEvent::Changed => {}
+            PageEvent::Favicon(data) => {
+                tab.content.state.favicon = data;
+            }
             PageEvent::Title(title) => {
                 tab.title = if tab.url == navigation::HOME {
                     "New tab".into()

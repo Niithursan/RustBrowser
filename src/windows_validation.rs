@@ -1604,3 +1604,68 @@ fn layout_screenshots() {
     let (root, _) = run("shots", screenshot_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Send one DevTools protocol call to the first window's toolbar.
+fn toolbar_cdp(s: &Session, method: &str, params: serde_json::Value) -> Result<(), String> {
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    // SAFETY: UI-thread call on this fixture's own toolbar view.
+    unsafe {
+        s.windows[0].toolbar.webview().CallDevToolsProtocolMethod(
+            &windows::core::HSTRING::from(method),
+            &windows::core::HSTRING::from(params.to_string()),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),
+        )
+    }
+    .map_err(|_| format!("DevTools call {method} failed"))
+}
+
+/// The layout has no Go button: pressing Enter in the address field still
+/// navigates (the form's implicit submission, through Chromium's own key input).
+fn enter_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows[0].toolbar.evaluate_script(&format!(
+                "(()=>{{if(document.querySelector('#nav button[type=submit]'))throw 'Go button present';const a=document.getElementById('address');a.focus();a.value={};}})()",
+                serde_json::to_string(&format!("{url}?entered")).unwrap()
+            )).is_err() {
+                return Err("Address field script failed".into());
+            }
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_millis(300) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for kind in ["keyDown", "keyUp"] {
+                toolbar_cdp(
+                    s,
+                    "Input.dispatchKeyEvent",
+                    serde_json::json!({ "type": kind, "key": "Enter", "code": "Enter",
+                        "text": if kind == "keyDown" { "\r" } else { "" },
+                        "windowsVirtualKeyCode": 13 }),
+                )?;
+            }
+            p.next();
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].url.ends_with("?entered") {
+                p.log
+                    .push("layout: Enter in the address field navigates".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("Enter did not navigate: {}", s.tabs.items[0].url));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_address_enter_navigates_without_a_go_button() {
+    let (root, _) = run("enter", enter_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
