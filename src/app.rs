@@ -1274,6 +1274,20 @@ impl Session {
             }
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
             Command::OpenDefaultApps => self.open_default_apps(),
+            Command::CopyText(text) => {
+                // Only a selection of the address field, so bounded like an address.
+                if text.chars().count() > navigation::MAX_ADDRESS {
+                    return Err("The selection is too long to copy.".into());
+                }
+                crate::native_clipboard::write_text(&text)?;
+            }
+            Command::PasteAddress => {
+                let text = navigation::paste_text(&crate::native_clipboard::read_text()?);
+                self.toolbar.evaluate_script(&format!(
+                    "window.pasteAddress&&window.pasteAddress({})",
+                    serde_json::to_string(&text)?
+                ))?;
+            }
             Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
@@ -2157,6 +2171,10 @@ mod toolbar_validation;
 #[cfg(test)]
 #[path = "keyboard_validation.rs"]
 mod keyboard_validation;
+
+#[cfg(test)]
+#[path = "edit_menu_validation.rs"]
+mod edit_menu_validation;
 
 #[cfg(test)]
 #[path = "basics_validation.rs"]

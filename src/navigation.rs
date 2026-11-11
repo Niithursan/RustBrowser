@@ -41,6 +41,20 @@ pub fn resolve(input: &str, engine: crate::settings::SearchEngine) -> Result<Str
     Ok(destination)
 }
 
+/// Clipboard text pasted into the single-line address field: line breaks and tabs
+/// become spaces, other control characters are dropped, and the result is cut to
+/// `MAX_ADDRESS` characters.
+pub fn paste_text(raw: &str) -> String {
+    raw.chars()
+        .filter_map(|c| match c {
+            '\r' | '\n' | '\t' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .take(MAX_ADDRESS)
+        .collect()
+}
+
 /// Longest address accepted anywhere (address bar, session, command line, hand-off).
 pub const MAX_ADDRESS: usize = 8192;
 

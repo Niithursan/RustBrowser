@@ -14,6 +14,8 @@ mod native_activity;
 #[cfg(windows)]
 mod native_background;
 #[cfg(windows)]
+mod native_clipboard;
+#[cfg(windows)]
 mod native_downloads;
 #[cfg(windows)]
 mod native_handoff;
