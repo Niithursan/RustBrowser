@@ -21,8 +21,32 @@ Done:
   loop (`storage::lock`, `Store::open_locked`, `App.start`). Tests: 6 unit tests,
   `tests/command_line.rs` (spawned exe, raw_arg).
 
-Decisions recorded for the owner: extra features of the existing `windows`
-crate enabled (no new crate, Cargo.lock unchanged).
+- `e58d507` item 2 hand-off (`src/handoff.rs` pure format/limits/trust,
+  `src/native_handoff.rs` pipe server/client, UI answers via `Event::HandOff`,
+  `main.rs` `start_or_hand_off` retries 6 s and explains every outcome, exit 3).
+  8 transport tests + 5 mutants caught; `4bdd7a2` two-process suite
+  `tests/single_instance.rs` (hand-off, new window, refused link, crash takeover;
+  2 mutants caught; drop guard stops leaked test browsers). SECURITY.md threat
+  model written.
+- Item 3 (uncommitted while tests ran): HKCU registration in installer.iss
+  (validation identity has its own ProgID `RustBrowserV.<16 hex>`, client key and
+  RegisteredApplications name, and an `installation.ini` Profile used only for
+  `RustBrowser.Validation.*`), "Make default browser" button opening
+  `ms-settings:defaultapps?registeredAppUser=<name>` (verified in Microsoft docs:
+  value name under HKCU\Software\RegisteredApplications; Windows 11 21H2/22H2 with
+  2023-04 update or later), lifecycle checks of registration and of the real
+  UserChoice/production registration, version 0.17.0, upgrade fixture pinned
+  v0.16 `96a70a2` (cache key installer-fixture-v5, first CI run cold).
+
+Decisions recorded for the owner:
+- Extra features of the existing `windows` crate enabled (no new crate,
+  Cargo.lock unchanged).
+- Hand-off reply is one status byte; read as "returns no data".
+- "New window" request opens a new tab while multiple windows are not shipped.
+- A second launch during the first window's startup is answered "busy" and the
+  launcher retries; after 6 s it explains instead.
+- Two different copies (portable and installed) on one profile do not hand off to
+  each other (executable path must match); the user is told.
 
 ## v0.16: everyday browsing and toolbar follow-ups
 
