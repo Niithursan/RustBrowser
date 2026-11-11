@@ -1,5 +1,71 @@
 # Development checkpoint
 
+## v0.16: everyday browsing and toolbar follow-ups
+
+Active branch `feat/v0.16-everyday-basics`, created from verified origin/main
+`cb3d81dc4e5f7fca883fc561ff6216523a21dd2d`. Baseline Windows CI 42931608985
+and dependency security 42931608910 passed. PR #21 merged at 6e83426; PRs #20
+(1101e0a) and #4 (cb3d81d) had also already merged before this branch. Preserve
+them; no further dependency change is authorized. Git uses the GitHub noreply
+address. Main, real profiles/installations, Windows settings, tags and releases
+are untouched. Static CRT remains opt-in. RC and acceptance criteria are unapproved.
+
+Implemented and pushed once for draft PR #22:
+- Monotonic toolbar source IDs, stale-failure rejection, a once-per-window terminal
+  alert, and five-second health grace for reported Unresponsive. Real hang detection
+  was not observed in 30 seconds; the bounded recovery test injects the report into
+  a genuinely hung fixture. Responsive probes do not spend the restart budget.
+- Content-only native Find/print and per-controller zoom, live percentage/reset,
+  keyboard and More commands. Local panels reject these commands; trusted chrome
+  disables native browser accelerators, context menus and zoom. Ctrl+Shift+P and
+  AltGr remain. Package 0.16.0, no persistence format or dependency version change.
+- Reproduced print-from-More focus failure by GUI and native assertion. Transferring
+  focus to content fixes the native assertion. A 0.16 GUI recheck passed More and
+  Ctrl+P preview/Escape, keyboard zoom, More reset and disposable-session restoration.
+- Native content-tools suite passes; the same workload passes in private mode.
+  Added normal/private suites to CI and release validation, each in its own process.
+  Eight compiled mutants were rejected; raw pointer `work/v16/mutations.json`.
+- Recorded the owner's eight prior passes exactly for bundle o-d8ee96f5, source
+  062c93dc7688ef296345f20ac7b1e39fd7c06fae, static EXE bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58.
+  These do not transfer to modified v0.16 bytes or approve an RC.
+- #20 review recommends retaining its already merged immutable pins. New artifact
+  direct-upload mode is not enabled. #4's deferred status in older notes is historical.
+  Whole-PR classification means this code PR cannot verify the docs-only hosted skip.
+
+Initial qualified head ed90da2a06711a9adeebb40c36350e28e69c33bd passed all 31
+local gates: fmt, strict Clippy, 81 regular tests, debug/release, 12 separate native
+suites, three daily runs, fixtures/Python, imports, portable/installer/metadata,
+owner and audit. Audit: 368 dependencies / 1,446 advisories, same exceptions.
+First artifact SHA-256 1036cb448c83ca7144966f0faba02d9698a2cfa741e7dcba6f8d09b34ea94597.
+Raw pointer `work/v16/production-gates.json`, first-qualified.json and gates-first logs.
+The full runner uses `work/v16/dynamic`; earlier focused work uses `work/v16/target`.
+Both are isolated; do not overwrite target/release or use the real profile.
+
+Draft https://github.com/Niithursan/RustBrowser/pull/22 is open. Initial head CI
+42941163150 was running and security 42941163324 passed when this final evidence
+update was prepared. These are initial-head results, not a final CI claim.
+Final qualification (Claude Code, 2026-11-10): repeating the gates after d6df29f
+failed once in native_toolbar_keyboard_reachability_and_scaled_layout ("Control list
+unreadable"): a late focus-probe response was parsed as the next query. afa8fb4
+fixes the fixtures only (one outstanding query, ordered responses, fixed 120 ms
+focus-response delay; ticketed responses in the page-tools fixture). After it:
+keyboard 5/5, normal page tools 3/3, private page tools 3/3, then all 31 local gates
+passed on afa8fb4508098ca9ee74de716baaa13ed22286eb (81 regular tests, 12 native
+suites, three daily runs, package/installer/metadata/owner/audit). Release EXE
+SHA-256 3db516901dd655c0621bd4e53f099ece6d2744072df83fc1aa9bae3bdd1a6941. The
+following commit changes only this unpackaged file, which no build or test reads.
+Final hosted results are recorded in PR #22, not here.
+No merge/tag/publication or RC declaration is authorized.
+See validation/V016.md for baseline, reproduction, API research and evidence limits.
+
+Focused local commits before full qualification: 71038eb (toolbar recovery),
+8f17e0a (content tools/native regressions), c0504a5 (separate CI processes),
+4137f8f (version). All use 129026028+Niithursan@users.noreply.github.com.
+An additional private-workload mutation also rejected disabled zoom, making nine
+compiled mutation runs across the three workloads. Sources were restored.
+
+## Historical v0.15 checkpoint
+
 ## Post-merge v0.15: static CRT and owner acceptance investigation
 
 Owner direction after PR #19: continue qualification without declaring or publishing

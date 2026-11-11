@@ -32,6 +32,23 @@ creating a tag, running a publication workflow or publishing a release. Those ne
 explicit owner approval after acceptance review. A separately approved publication
 must use the reviewed `main` commit and `release.yml`; existing safeguards remain.
 
+### A6 historical owner evidence, not candidate approval
+
+Owner report dated 2026-11-10: checklist items 1 to 8 all PASS on bundle
+`o-d8ee96f5`, source `062c93dc7688ef296345f20ac7b1e39fd7c06fae`, opt-in static
+CRT experiment, executable SHA-256
+`bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+Installed validation identity, launched only through `Launch.ps1 -Installed`
+using the bundle's disposable profile. Installer, taskbar/window identity,
+Narrator, contrast theme, IME, real sign-in/restart, video-call page and mixed-scale
+monitor checks are owner-reported for this exact build only.
+
+A6 for v0.16 or any later candidate remains open until its exact build is checked,
+including the added find/zoom/print items. These results do not approve this
+baseline, the proposed risk dispositions, static CRT adoption, a clean-machine
+test, RC declaration, a tag or publication. Static CRT stays opt-in; Windows
+feature/VM changes remain unapproved.
+
 ## B. Disposition of every "Not established" item
 
 Each item from RELEASE_READINESS.md is sorted into one of three groups:

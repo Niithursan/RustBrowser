@@ -1,9 +1,16 @@
-# Rust Browser 0.15.0
+# Rust Browser 0.16.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.16 adds native find, per-tab zoom with a live percentage/reset, and print
+preview through keyboard shortcuts and More. Toolbar recovery ignores stale
+view events, limits its terminal alert to once per window and gives a reported
+hang a bounded health check before recovery. It does not detect every hang.
+See [v0.16 evidence and limits](https://github.com/Niithursan/RustBrowser/blob/main/validation/V016.md).
+This is not a release candidate.
 
 v0.15 prepares release criteria; it does not declare a release candidate. The
 toolbar now recovers if its separate WebView2 process or renderer fails, and Setup
@@ -104,6 +111,10 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
 | Stop | × button or Escape |
+| Find in the visible website | Ctrl+F or More (⋯) → Find in page; uses WebView2's native find bar |
+| Zoom in / out | Ctrl+plus (or Ctrl+equals) / Ctrl+minus, Ctrl+wheel over content, or More (⋯) → Zoom + / Zoom - |
+| Reset zoom | Ctrl+0, More (⋯) → Reset zoom (100%), or the percentage/reset button shown away from 100% |
+| Print preview | Ctrl+P or More (⋯) → Print; choose output and confirm in WebView2's preview, or cancel |
 | Home | Home button or Alt+Home → local new-tab page |
 | New tab | + button or Ctrl+T |
 | Close active tab | Ctrl+W or Ctrl+F4 (last normal tab opens Home; last private tab closes its window) |
@@ -124,6 +135,14 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | New private window | More (⋯) → Private window, or Ctrl+Shift+N |
 | Privacy and security | Connection word at the start of the address line, More (⋯) → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
+
+Find, zoom and print apply to the visible website, including in a private window,
+and do not operate on local browser panels. Zoom is held by each open tab's
+WebView2 controller, with no Rust Browser session/database persistence; new and
+recreated controllers start at 100%. WebView2 navigation may change its factor,
+and the toolbar always reads the current value. Older runtimes missing the
+Find/print APIs show an update/retry error. Printing can create lasting output
+even from private browsing. Actual printer/PDF output is not part of validation.
 
 Bare domains receive `https://`. Explicit `http://` supports local development.
 Words and phrases are searched with the selected provider. The toolbar selector

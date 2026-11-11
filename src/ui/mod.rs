@@ -63,6 +63,11 @@ pub enum Command {
     FocusTabs,
     FocusPage,
     Home,
+    FindInPage,
+    PrintPage,
+    ZoomIn,
+    ZoomOut,
+    ResetZoom,
     Ready,
     NewTab,
     CloseActive,
@@ -110,6 +115,8 @@ pub struct TabState<'a> {
 
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
+    pub zoom_percent: Option<u32>,
+    pub page_tools: bool,
     pub diagnostics: Option<rust_browser::diagnostics::Report>,
     pub settings: &'a rust_browser::settings::Settings,
     pub private: bool,
@@ -147,6 +154,11 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
         (0x73, true, _) => Some(Command::CloseActive),
         (0x24, _, true) => Some(Command::Home),
         (0x50, true, _) if shift => Some(Command::PinActive),
+        (0x46, true, _) => Some(Command::FindInPage),
+        (0x50, true, _) => Some(Command::PrintPage),
+        (0xbb | 0x6b, true, _) => Some(Command::ZoomIn),
+        (0xbd | 0x6d, true, _) => Some(Command::ZoomOut),
+        (0x30 | 0x60, true, _) if !shift => Some(Command::ResetZoom),
         (0x4e, true, _) if shift => Some(Command::NewPrivateWindow),
         (0x44, true, _) => Some(Command::BookmarkCurrent),
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
@@ -168,7 +180,12 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
 pub fn repeatable(command: &Command) -> bool {
     matches!(
         command,
-        Command::CycleTab(_) | Command::FocusAddress | Command::FocusPage | Command::FocusTabs
+        Command::CycleTab(_)
+            | Command::FocusAddress
+            | Command::FocusPage
+            | Command::FocusTabs
+            | Command::ZoomIn
+            | Command::ZoomOut
     )
 }
 
@@ -286,7 +303,47 @@ mod tests {
             shortcut(0x09, true, false, true),
             Some(Command::CycleTab(true))
         ));
-        assert!(shortcut(0x46, true, false, false).is_none());
+        assert!(matches!(
+            shortcut(0x46, true, false, false),
+            Some(Command::FindInPage)
+        ));
+    }
+    #[test]
+    fn everyday_shortcuts_preserve_pin_altgr_and_text_input() {
+        assert!(matches!(
+            shortcut(0x50, true, false, false),
+            Some(Command::PrintPage)
+        ));
+        assert!(matches!(
+            shortcut(0x50, true, false, true),
+            Some(Command::PinActive)
+        ));
+        for key in [0xbb, 0x6b] {
+            assert!(matches!(
+                shortcut(key, true, false, false),
+                Some(Command::ZoomIn)
+            ));
+        }
+        for key in [0xbd, 0x6d] {
+            assert!(matches!(
+                shortcut(key, true, false, false),
+                Some(Command::ZoomOut)
+            ));
+        }
+        for key in [0x30, 0x60] {
+            assert!(matches!(
+                shortcut(key, true, false, false),
+                Some(Command::ResetZoom)
+            ));
+        }
+        for key in [0x46, 0x50, 0xbb, 0xbd, 0x30, 0x6b, 0x6d] {
+            assert!(shortcut(key, false, false, false).is_none());
+            assert!(shortcut(key, true, true, false).is_none());
+        }
+        assert!(!repeatable(&Command::PrintPage));
+        assert!(!repeatable(&Command::FindInPage));
+        assert!(repeatable(&Command::ZoomIn));
+        assert!(repeatable(&Command::ZoomOut));
     }
     #[test]
     fn standard_tab_shortcuts_match_other_windows_browsers() {

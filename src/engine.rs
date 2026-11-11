@@ -244,6 +244,7 @@ impl Engine {
             // Preserve WebView2 security defaults instead of Wry's default browser arguments.
             .with_additional_browser_args("")
             .with_autoplay(false)
+            .with_hotkeys_zoom(true)
             .with_clipboard(false)
             .with_incognito(private)
             .with_focused(false)
@@ -416,11 +417,109 @@ impl Engine {
         if !related {
             crate::native_activity::watch_resources(&view, activity.clone())?;
         }
+        // Observe user zoom and engine navigation changes. Programmatic changes
+        // render through the command handler instead of receiving this event.
+        let zoom_proxy = proxy.clone();
+        // SAFETY: registration and callbacks run in this content view's UI apartment.
+        unsafe {
+            let mut token = 0;
+            view.controller().add_ZoomFactorChanged(
+                &webview2_com::ZoomFactorChangedEventHandler::create(Box::new(move |_, _| {
+                    let _ = zoom_proxy.send_event(Event::ZoomChanged(id));
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+        }
         Ok(Self {
             view,
             activity,
             progress,
         })
+    }
+}
+
+/// Page operations are methods of a content engine, never of the trusted toolbar.
+impl Engine {
+    pub fn zoom_factor(&self) -> windows::core::Result<f64> {
+        let mut factor = 1.0;
+        // SAFETY: property of this content controller in its owning apartment.
+        unsafe {
+            self.view.controller().ZoomFactor(&mut factor)?;
+        }
+        Ok(factor)
+    }
+
+    pub fn zoom_step(&self, increase: bool) -> Result<(), Box<dyn std::error::Error>> {
+        self.view.zoom(next_zoom(self.zoom_factor()?, increase))?;
+        Ok(())
+    }
+
+    pub fn find_in_page(
+        &self,
+        term: &str,
+        proxy: EventLoopProxy<Event>,
+        id: TabId,
+    ) -> windows::core::Result<()> {
+        // SAFETY: content-only, UI-thread COM calls. The UI passes an empty term to open the
+        // engine's own dialog; no page script, bridge or host object is introduced.
+        unsafe {
+            let core = self.view.webview();
+            let find = core.cast::<ICoreWebView2_28>()?.Find()?;
+            let environment = core.cast::<ICoreWebView2_2>()?.Environment()?;
+            let options = environment
+                .cast::<ICoreWebView2Environment15>()?
+                .CreateFindOptions()?;
+            options.SetFindTerm(&windows::core::HSTRING::from(term))?;
+            options.SetSuppressDefaultFindDialog(false)?;
+            self.view
+                .controller()
+                .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)?;
+            find.Start(
+                &options,
+                &webview2_com::FindStartCompletedHandler::create(Box::new(move |result| {
+                    let _ = proxy.send_event(Event::FindResult(id, result.is_ok()));
+                    Ok(())
+                })),
+            )
+        }
+    }
+
+    pub fn print_preview(&self) -> windows::core::Result<()> {
+        // SAFETY: only this live content view, using the engine's browser preview.
+        // The user chooses output and confirms it; no shell, file write or silent print.
+        unsafe {
+            // More starts in the toolbar. Give the page ownership of keyboard
+            // input so the native preview, including Escape, is controllable.
+            self.view
+                .controller()
+                .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)?;
+            self.view
+                .webview()
+                .cast::<ICoreWebView2_16>()?
+                .ShowPrintUI(COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER)
+        }
+    }
+}
+
+fn next_zoom(current: f64, increase: bool) -> f64 {
+    const LEVELS: [f64; 17] = [
+        0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
+    ];
+    if !current.is_finite() || current <= 0.0 {
+        return 1.0;
+    }
+    if increase {
+        LEVELS
+            .into_iter()
+            .find(|level| *level > current + 0.001)
+            .unwrap_or(5.0)
+    } else {
+        LEVELS
+            .into_iter()
+            .rev()
+            .find(|level| *level < current - 0.001)
+            .unwrap_or(0.25)
     }
 }
 
@@ -531,6 +630,18 @@ pub fn accelerators(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::co
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn zoom_steps_bound_and_normalize_wheel_values() {
+        assert_eq!(next_zoom(1.0, true), 1.1);
+        assert_eq!(next_zoom(1.0, false), 0.9);
+        assert_eq!(next_zoom(1.37, true), 1.5);
+        assert_eq!(next_zoom(1.37, false), 1.25);
+        assert_eq!(next_zoom(5.0, true), 5.0);
+        assert_eq!(next_zoom(0.25, false), 0.25);
+        for invalid in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+            assert_eq!(next_zoom(invalid, true), 1.0);
+        }
+    }
     #[test]
     fn deferred_initial_blank_is_not_the_replacement_document() {
         let progress = NavigationProgress::default();

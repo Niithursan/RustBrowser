@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.16.0 (unreleased)
+
+- Add WebView2 find and print preview to the keyboard and More menu. Transfer
+  focus to content before preview so it can receive keyboard input.
+- Enable content zoom, show the live percentage/reset away from 100%, and add
+  keyboard/menu controls. Keep zoom out of session format 1 and SQLite schema 3.
+- Keep native browser tools disabled on the trusted toolbar and reject page
+  operations on local browser panels. Preserve AltGr and the pin shortcut.
+- Tag toolbar failure events by view, ignore retired views, and admit its terminal
+  alert once per window. A reported hang gets a five-second local health grace
+  and the existing bounded recovery; arbitrary hang detection is not established.
+- Add native tool/boundary coverage and extend toolbar regressions, with eight
+  compiled mutations rejected. Preserve the existing production checks.
+- Record the owner's eight passes for the exact PR #21 acceptance build only.
+  Keep static CRT opt-in and release-candidate status unapproved.
+- Preserve the already merged #20 Actions pins and #4 base64 baseline without
+  further dependency changes. Document why the hosted docs-only skip remains
+  unverified on a PR containing code.
+
 ## 0.15.0 (unreleased, release candidate preparation)
 
 - Add an opt-in static CRT investigation and direct/delay import inspection;

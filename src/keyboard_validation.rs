@@ -81,7 +81,8 @@ struct Probe {
     step: Step,
     started: Instant,
     at: Instant,
-    result: Arc<Mutex<Option<String>>>,
+    result: Arc<Mutex<std::collections::VecDeque<(Instant, String)>>>,
+    eval_pending: std::cell::Cell<Option<&'static str>>,
     cdp_done: Arc<AtomicBool>,
     failure: Option<String>,
     expected: Vec<String>,
@@ -99,14 +100,28 @@ fn decode(value: &str) -> String {
 }
 
 impl Probe {
-    fn eval(&self, script: &str) -> Result<(), String> {
+    fn eval(&self, script: &'static str) -> Result<(), String> {
+        if let Some(pending) = self.eval_pending.get() {
+            if pending == script {
+                return Ok(());
+            }
+            return Err("Keyboard fixture changed query before consuming its response".into());
+        }
+        self.eval_pending.set(Some(script));
         let session = self.app.session.as_ref().ok_or("No session")?;
         let result = self.result.clone();
+        // Controlled response latency reproduces duplicate in-flight focus probes.
+        // Do not block the renderer or UI thread to emulate it.
+        let delay = if script.ends_with("'ok'") {
+            Duration::from_millis(120)
+        } else {
+            Duration::ZERO
+        };
         session
             .toolbar
             .evaluate_script_with_callback(script, move |value| {
                 if let Ok(mut slot) = result.lock() {
-                    *slot = Some(value)
+                    slot.push_back((Instant::now() + delay, value));
                 }
             })
             .map_err(|_| "Toolbar evaluation failed".into())
@@ -169,7 +184,17 @@ impl Probe {
         if !self.app.session.as_ref().is_some_and(|s| s.ready) {
             return Ok(());
         }
-        let value = self.result.lock().map_err(|_| "Result lock failed")?.take();
+        let value = {
+            let mut queue = self.result.lock().map_err(|_| "Result lock failed")?;
+            if queue.front().is_some_and(|(at, _)| Instant::now() >= *at) {
+                queue.pop_front().map(|(_, value)| value)
+            } else {
+                None
+            }
+        };
+        if value.is_some() {
+            self.eval_pending.set(None);
+        }
         let ready = self.ready();
         match self.step {
             Step::Start => {
@@ -416,7 +441,8 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         step: Step::Start,
         started: Instant::now(),
         at: Instant::now(),
-        result: Arc::new(Mutex::new(None)),
+        result: Arc::new(Mutex::new(std::collections::VecDeque::new())),
+        eval_pending: std::cell::Cell::new(None),
         cdp_done: Arc::new(AtomicBool::new(true)),
         failure: None,
         expected: Vec::new(),

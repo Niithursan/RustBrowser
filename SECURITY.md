@@ -1,5 +1,27 @@
 # Security
 
+## v0.16 content tools and recovery
+
+Find, zoom and print target a visible website content controller. They are refused
+on the local new-tab/library/settings panels. Native browser accelerators, zoom
+and context menus are disabled on the trusted toolbar; custom shortcuts route to
+content. No privileged IPC, host object, permission grant or TLS bypass is added
+to websites. Printing uses WebView2 browser preview with normal user confirmation,
+without a shell, silent output or elevation. Print/PDF output remains outside
+private-profile cleanup and can contain sensitive page data.
+
+Toolbar failure and health-response events identify their source and probe so
+retired views cannot replace a healthy toolbar or cancel its current health check.
+A reported hang gets a five-second grace and shares the existing restart budget;
+the native watchdog did not report the deliberately hung fixture within 30 seconds.
+This is bounded recovery for a reported condition, not universal hang detection.
+The terminal native alert is admitted once per window. Tests and limitations:
+[v0.16 validation](https://github.com/Niithursan/RustBrowser/blob/main/validation/V016.md).
+
+Profile formats, private-window isolation, dynamic production CRT, permission and
+installer safeguards are retained. Owner acceptance from an older exact build does
+not qualify this modified build or authorize an RC, tag or publication.
+
 ## Post-v0.15 candidate investigation
 
 Static CRT linking is an opt-in validation experiment, not the production default.

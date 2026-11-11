@@ -38,7 +38,11 @@ pub struct Activity {
 /// Report failures of the toolbar view's own engine processes. The toolbar runs in a
 /// separate WebView2 environment (profile/toolbar), so the content engine's handlers
 /// never see them.
-pub fn watch_toolbar(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::core::Result<()> {
+pub fn watch_toolbar(
+    view: &WebView,
+    proxy: EventLoopProxy<Event>,
+    source: u64,
+) -> windows::core::Result<()> {
     // SAFETY: the handler and its proxy remain in the view's UI apartment.
     unsafe {
         let mut token = 0;
@@ -47,7 +51,7 @@ pub fn watch_toolbar(view: &WebView, proxy: EventLoopProxy<Event>) -> windows::c
                 if let Some(args) = args {
                     let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
                     args.ProcessFailedKind(&mut kind)?;
-                    let _ = proxy.send_event(Event::ToolbarProcess(classify(kind)));
+                    let _ = proxy.send_event(Event::ToolbarProcess(source, classify(kind)));
                 }
                 Ok(())
             })),

@@ -121,9 +121,45 @@ available, mark this item not tested. Record each original scale before changing
 **Pass:** on each display the toolbar is sharp (not blurry), correctly sized, and
 the page area starts directly below it with no gap or overlap.
 
+## 9. Find in a website (2 minutes)
+
+Use a public documentation page or controlled fixture without sensitive text.
+Press Ctrl+F, enter a word present several times, and use the native find arrows
+or Enter to move between matches. Close its bar with Escape. Repeat using
+**More > Find in page** while the toolbar has focus.
+
+**Pass:** the native find bar appears over the website, highlights the expected
+matches, accepts text and closes. Browser controls are not searched or changed.
+
+## 10. Zoom (2 minutes)
+
+1. On the website press Ctrl+plus, Ctrl+minus and Ctrl+0. Try Ctrl+wheel with the
+   pointer over content. Use **More > Zoom + / Zoom - / Reset zoom (100%)** too.
+2. Away from 100%, use the toolbar percentage/reset button. Open a second tab
+   to the same website and switch between them.
+
+**Pass:** page size and the percentage agree; the reset returns to 100% and hides
+the percentage row. The toolbar's own text size stays unchanged. Each open tab
+keeps its controller's zoom, and a new tab starts at 100%. Zoom is not restored
+from Rust Browser's session after closing/recreating a controller.
+
+## 11. Print preview and cancellation (2 minutes)
+
+On the same nonsensitive page press Ctrl+P, inspect preview, then cancel with
+Escape. Repeat using **More > Print**, starting with toolbar focus. Inspect the
+selected output without changing system printer settings. No paper print or PDF
+save is required by this checklist; report actual output separately if you test it.
+
+**Pass:** preview contains the selected website, no browser controls or profile
+contents, and Escape/Cancel returns to the usable page. Opening preview does not
+silently print, save output, execute a file or request elevation. Output explicitly
+created by a person can remain on disk, including from private browsing.
+
 ## Reporting
 
-Report items 1 to 8 as pass, fail or not tested, with the exact version/commit.
+Report items 1 to 11 as pass, fail or not tested, with the exact version/commit
+and executable SHA-256. The historical 2026-11-10 report covered only items 1 to 8
+on bundle o-d8ee96f5, not the new items or a later candidate.
 For a failure, include one sentence about what happened. Share only screenshots
 without credentials, private messages, meeting links or other sensitive data.
 Leave unavailable IME/monitor/device checks as not tested. These owner checks have

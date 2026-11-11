@@ -1,5 +1,69 @@
 # Validation
 
+## v0.16 everyday browsing and toolbar follow-ups
+
+Baseline `cb3d81dc4e5f7fca883fc561ff6216523a21dd2d` includes merged PRs #21,
+#20 and #4. Windows CI 42931608985 and security 42931608910 passed before
+branching. Branch: `feat/v0.16-everyday-basics`. The application is 0.16.0;
+profile path, session format 1, SQLite schema 3 and dynamic CRT are unchanged.
+RC status remains **unapproved**. See the
+[reproductions, native tests, GUI checks, mutation results and Actions review](https://github.com/Niithursan/RustBrowser/blob/main/validation/V016.md).
+
+Focused native toolbar/content tests pass in development. Eight compiled mutants
+were rejected by their intended semantic assertions, including the old stale-event,
+repeated-alert and ignored-hang behaviors. Native find requires a real query to
+verify completion/matches; blank-dialog visibility is checked separately in the GUI.
+All **31 local gates passed** on initial qualified head
+`ed90da2a06711a9adeebb40c36350e28e69c33bd` before the first push:
+
+- Formatting, strict Clippy, **81 regular tests**, debug and release builds.
+- All **12 native suites** in separate processes, including normal/private page
+  tools and extended toolbar recovery; **three independent daily-driver runs**.
+- Process sampler and experimental launcher PowerShell fixtures; **18 production
+  Python tests** (13 scope, 3 TLS, 2 icon) and **2 experimental Python tests**.
+- Dynamic import inspection, portable package, v0.14 installer lifecycle/profile
+  preservation, release metadata verifier, failed-static-build flag restoration,
+  and owner-bundle identity/hash/path/startup/shutdown safety tests.
+- `cargo audit --deny warnings`: **368 dependencies, 1,446 advisories**, with
+  the unchanged three unsupported-platform exceptions.
+
+The initial production EXE SHA-256 is
+`1036cb448c83ca7144966f0faba02d9698a2cfa741e7dcba6f8d09b34ea94597`.
+Raw local evidence: `<workspace>/work/v16/production-gates.json`, first-qualified.json
+and gates-first.out/err. These artifacts are outside Git. The final evidence-only
+head must run the same complete local gates before the second push; its exact
+source/hash/hosted results belong in [PR #22](https://github.com/Niithursan/RustBrowser/pull/22)
+and the delivery report after verification, without a third documentation push.
+An earlier head's CI is never substituted for the final head.
+
+Real Windows GUI checks on the 0.16 debug build confirmed disposable-session
+restoration, correct page preview from More and Ctrl+P, Escape cancellation after
+the reproduced focus fix, keyboard zoom and More reset, and normal window exit.
+The broader development find/zoom checks and API limitations are in V016.md.
+No actual paper/PDF output, new human/device acceptance, Windows 10 or clean-host
+test is claimed. Neither this local result nor hosted success approves an RC.
+
+The hosted docs-only skip remains unverified: this PR contains code and packaged
+Markdown. The whole-PR classifier must run the Windows jobs even when its final
+commit only updates evidence. No additional push is made just to test skipping.
+
+### Owner report for the exact PR #21 build
+
+On 2026-11-10 the owner reported **PASS for checklist items 1 to 8**: installer,
+taskbar/window identity, Narrator, contrast theme, IME entry, real sign-in with
+restart, video-call page, and two monitors with different scale. These are owner
+results, not automated observations. Bundle `o-d8ee96f5`, source
+`062c93dc7688ef296345f20ac7b1e39fd7c06fae`, static CRT experiment, executable
+SHA-256 `bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+It used the validation installation identity and only `Launch.ps1 -Installed`
+with that bundle's disposable profile. The results apply only to those bytes.
+
+They do not transfer to v0.16 or another candidate. Repeat the existing checklist
+and its new find/zoom/print steps on the exact proposed candidate. A6 for that
+candidate, clean-machine testing, risk-disposition approval and RC authorization
+remain open. Static CRT remains opt-in. No Windows setting, real profile or
+production installation was changed by this milestone.
+
 ## Post-merge v0.15 qualification investigation
 
 PR #19 was squash-merged at `13ff603b84ba2b0c0429dc61bc338de738e9025b`.

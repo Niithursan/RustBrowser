@@ -17,8 +17,9 @@ use wry::{WebView, WebViewExtWindows};
 enum Kill {
     Browser,
     Renderer,
+    Hang,
 }
-const KILLS: [Kill; 2] = [Kill::Browser, Kill::Renderer];
+const KILLS: [Kill; 3] = [Kill::Browser, Kill::Renderer, Kill::Hang];
 const ADDRESS_PROBE: &str = "document.getElementById('address') ? 'toolbar' : 'missing'";
 const NOTICE_PROBE: &str = "document.getElementById('notice').textContent";
 
@@ -103,6 +104,7 @@ struct Probe {
     tabs: Vec<TabId>,
     content_views: Vec<usize>,
     toolbar: usize,
+    toolbar_source: u64,
     killed_browser: u32,
     log: Vec<String>,
 }
@@ -174,8 +176,60 @@ impl Probe {
                     .iter()
                     .map(|t| identity(&t.content.engine.view))
                     .collect();
+                self.toolbar = identity(&s.toolbar);
+                s.toolbar_failed(
+                    s.toolbar_source,
+                    crate::native_activity::Failure::Unresponsive,
+                );
+                let deadline = s.toolbar_probe.ok_or("No health grace scheduled")?;
+                s.toolbar_failed(
+                    s.toolbar_source,
+                    crate::native_activity::Failure::Unresponsive,
+                );
+                if s.toolbar_probe != Some(deadline) {
+                    return Err("Repeated hang reports extended the health grace".into());
+                }
+                self.step = Instant::now();
+                self.phase = 20;
+            }
+            20 if s.toolbar_probe.is_none() => {
+                if identity(&s.toolbar) != self.toolbar || !s.toolbar_restarts.is_empty() {
+                    return Err("Responsive toolbar was unnecessarily restarted".into());
+                }
+                self.log
+                    .push("Responsive toolbar answered health probe without restart".into());
+                // Characterize the actual controller settings and accelerator map,
+                // alongside the separate real-keyboard GUI baseline.
+                unsafe {
+                    let settings = s
+                        .tabs
+                        .active()
+                        .ok_or("No content")?
+                        .content
+                        .engine
+                        .view
+                        .webview()
+                        .Settings()
+                        .map_err(|_| "No content settings")?;
+                    let mut zoom = windows::core::BOOL::default();
+                    let mut browser = windows::core::BOOL::default();
+                    settings
+                        .IsZoomControlEnabled(&mut zoom)
+                        .map_err(|_| "No zoom setting")?;
+                    settings
+                        .cast::<ICoreWebView2Settings3>()
+                        .map_err(|_| "No accelerator settings")?
+                        .AreBrowserAcceleratorKeysEnabled(&mut browser)
+                        .map_err(|_| "No accelerator setting")?;
+                    self.log.push(format!("Content baseline: browser accelerators={}, zoom control={}, custom Ctrl+F={}, Ctrl+P={}, Ctrl+plus={}",
+                        browser.as_bool(), zoom.as_bool(), ui::shortcut(0x46, true, false, false).is_some(),
+                        ui::shortcut(0x50, true, false, false).is_some(),ui::shortcut(0xbb,true,false,true).is_some()));
+                }
                 self.eval_toolbar(ADDRESS_PROBE)?;
                 self.phase = 2;
+            }
+            20 if self.step.elapsed() > Duration::from_secs(10) => {
+                return Err("Responsive toolbar did not answer its health probe".into());
             }
             2 if value.is_some() => {
                 if value.as_deref() != Some("\"toolbar\"") {
@@ -189,6 +243,7 @@ impl Probe {
                 }
                 let renderers = renderer_processes(&s.toolbar)?;
                 self.toolbar = identity(&s.toolbar);
+                self.toolbar_source = s.toolbar_source;
                 self.killed_browser = toolbar;
                 match kill {
                     Kill::Browser => terminate(toolbar)?,
@@ -197,6 +252,21 @@ impl Probe {
                             return Err(format!("Expected one toolbar renderer: {renderers:?}"));
                         };
                         terminate(renderer)?
+                    }
+                    Kill::Hang => {
+                        s.toolbar
+                            .evaluate_script("while (true) {}")
+                            .map_err(|_| "Could not hang fixture renderer")?;
+                        // No native watchdog notification arrived in the 30-second
+                        // baseline. Inject the classified event to test its response,
+                        // while keeping the renderer genuinely unable to answer.
+                        self.app
+                            .proxy
+                            .send_event(Event::ToolbarProcess(
+                                s.toolbar_source,
+                                crate::native_activity::Failure::Unresponsive,
+                            ))
+                            .map_err(|_| "Hang report delivery failed")?;
                     }
                 }
                 self.log.push(format!(
@@ -208,6 +278,15 @@ impl Probe {
             }
             3 => {
                 if identity(&s.toolbar) != self.toolbar && s.retired_toolbar.is_some() {
+                    // Deliver a deterministic late failure while the old view is retained.
+                    // Native scheduling of this race is nondeterministic; the event is not.
+                    self.app
+                        .proxy
+                        .send_event(Event::ToolbarProcess(
+                            self.toolbar_source,
+                            crate::native_activity::Failure::Renderer,
+                        ))
+                        .map_err(|_| "Late event delivery failed")?;
                     self.log.push(format!(
                         "round {}: toolbar replaced after {} ms",
                         self.round,
@@ -215,7 +294,7 @@ impl Probe {
                     ));
                     self.step = Instant::now();
                     self.phase = 4;
-                } else if self.step.elapsed() > Duration::from_secs(10) {
+                } else if self.step.elapsed() > Duration::from_secs(30) {
                     return Err(format!(
                         "The toolbar was not replaced after its {kill:?} process ended"
                     ));
@@ -292,6 +371,17 @@ impl Probe {
                             self.content_events
                         ));
                     }
+                    // Exhaust the budget without killing another renderer. A burst
+                    // of terminal notifications must admit only one native alert.
+                    s.toolbar_restarts = vec![Instant::now(); MAX_ENGINE_RESTARTS];
+                    s.toolbar_failed(s.toolbar_source, crate::native_activity::Failure::Renderer);
+                    s.toolbar_failed(s.toolbar_source, crate::native_activity::Failure::Browser);
+                    if s.toolbar_alerts != 1 {
+                        return Err(format!(
+                            "Expected one terminal alert, got {}",
+                            s.toolbar_alerts
+                        ));
+                    }
                     let id = s.window.id();
                     self.app.window_event(el, id, WindowEvent::CloseRequested);
                     self.step = Instant::now();
@@ -321,6 +411,11 @@ impl ApplicationHandler<Event> for Probe {
         self.app.window_event(el, id, event)
     }
     fn user_event(&mut self, el: &ActiveEventLoop, event: Event) {
+        if let Event::ToolbarProcess(_, crate::native_activity::Failure::Unresponsive) = &event {
+            self.log.push(
+                "Classified toolbar Unresponsive event received (injected by fixture)".into(),
+            );
+        }
         if let Event::EngineProcess(_, failure) = &event
             && self.content_events.len() < 8
         {
@@ -331,6 +426,14 @@ impl ApplicationHandler<Event> for Probe {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.app.about_to_wait(el);
         if let Err(error) = self.poll(el) {
+            // A deliberately hung fixture renderer must be ended before COM teardown.
+            if let Some(s) = &self.app.session
+                && let Ok(processes) = renderer_processes(&s.toolbar)
+            {
+                for process in processes {
+                    let _ = terminate(process);
+                }
+            }
             self.failure = Some(error);
             el.exit();
             return;
@@ -381,6 +484,7 @@ fn native_toolbar_engine_failure_is_recovered() {
         tabs: Vec::new(),
         content_views: Vec::new(),
         toolbar: 0,
+        toolbar_source: 0,
         killed_browser: 0,
         log: Vec::new(),
     };
