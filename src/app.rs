@@ -37,6 +37,12 @@ use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 pub use rust_browser::engine_api::PageEvent;
 #[derive(Debug)]
 pub enum Event {
+    /// A second launch handed over links or asked for a new window. The UI thread
+    /// answers on the channel; the hand-off server waits at most `UI_TIMEOUT`.
+    HandOff(
+        rust_browser::handoff::Request,
+        std::sync::mpsc::SyncSender<rust_browser::handoff::Status>,
+    ),
     SuspensionResult {
         id: TabId,
         ticket: u64,
@@ -264,6 +270,8 @@ struct Session {
     engine_lost: bool,
     engine_restarts: Vec<Instant>,
     toolbar_restarts: Vec<Instant>,
+    /// Receives links from later launches (normal windows only).
+    handoff: Option<crate::native_handoff::Server>,
     /// Failed navigations not yet written to diagnostics. A navigation that becomes a
     /// download ends as "aborted" shortly before its download request arrives.
     unrecorded_failures: Vec<(Instant, TabId)>,
@@ -299,14 +307,92 @@ impl Session {
         proxy: EventLoopProxy<Event>,
         start: Start,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::create_full(
+        let private = start.private;
+        let mut session = Self::create_full(
             event_loop,
             proxy,
             start.profile,
             start.private,
             start.links,
             start.lock,
-        )
+        )?;
+        if !private {
+            session.start_handoff();
+        }
+        Ok(session)
+    }
+
+    /// Listen for later launches of this profile. If anything else already owns
+    /// the endpoint, keep browsing and say that links cannot be handed over.
+    fn start_handoff(&mut self) {
+        use crate::native_handoff::{Server, ServerError, UI_TIMEOUT};
+        use rust_browser::handoff::Status;
+        let Some(name) = crate::native_handoff::endpoint(&self.profile) else {
+            return;
+        };
+        let proxy = self.proxy.clone();
+        let dispatch: crate::native_handoff::Dispatch = std::sync::Arc::new(move |request| {
+            let (reply, answer) = std::sync::mpsc::sync_channel(1);
+            if proxy.send_event(Event::HandOff(request, reply)).is_err() {
+                return Status::Closing;
+            }
+            answer
+                .recv_timeout(UI_TIMEOUT)
+                .unwrap_or(Status::NotResponding)
+        });
+        match Server::start(&name, dispatch) {
+            Ok(server) => self.handoff = Some(server),
+            Err(ServerError::Taken) => {
+                self.notice = "Links from other apps cannot reach this window: another program already uses its link channel. Close other copies of Rust Browser, then restart it.".into();
+            }
+            Err(ServerError::Failed) => {}
+        }
+    }
+
+    /// Open what a later launch handed over, then bring this window forward.
+    fn hand_off(
+        &mut self,
+        request: rust_browser::handoff::Request,
+    ) -> rust_browser::handoff::Status {
+        use rust_browser::handoff::{Request, Status};
+        if !self.ready || self.clearing.is_some() {
+            return Status::Busy;
+        }
+        let opened = match request {
+            Request::Open(links) => {
+                let mut opened = 0;
+                for link in links {
+                    // Checked again with the command-line policy.
+                    match navigation::external(&link)
+                        .map_err(|e| e.to_string())
+                        .and_then(|url| self.open_tab(url).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => opened += 1,
+                        Err(error) => self.notice = error,
+                    }
+                }
+                opened
+            }
+            Request::NewWindow => match self.open_tab(navigation::HOME.into()) {
+                Ok(()) => 1,
+                Err(error) => {
+                    self.notice = error.to_string();
+                    0
+                }
+            },
+        };
+        if opened == 0 {
+            return Status::Refused;
+        }
+        if self.activate().is_err() {
+            return Status::Refused;
+        }
+        self.persist();
+        self.render();
+        // The launching process allowed this one to take the foreground.
+        self.window.set_minimized(false);
+        self.window.focus_window();
+        Status::Accepted
     }
     /// Fixtures: a session on an explicit profile without a pre-taken lock.
     #[cfg(test)]
@@ -436,6 +522,7 @@ impl Session {
             engine_lost: false,
             engine_restarts: Vec::new(),
             toolbar_restarts: Vec::new(),
+            handoff: None,
             unrecorded_failures: Vec::new(),
             ready: false,
             clearing: None,
@@ -2028,6 +2115,8 @@ impl App {
             return;
         }
         if let Some(session) = &mut self.session {
+            // Later launches then wait for the lock instead of being answered.
+            session.handoff = None;
             session.record_navigation_failures(true);
             session.persist();
             session.window.set_visible(false);
@@ -2127,6 +2216,19 @@ impl ApplicationHandler<Event> for App {
         }
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        let event = match event {
+            Event::HandOff(request, reply) => {
+                use rust_browser::handoff::Status;
+                let status = match &mut self.session {
+                    _ if self.closing.is_some() => Status::Closing,
+                    Some(session) => session.hand_off(request),
+                    None => Status::Busy,
+                };
+                let _ = reply.send(status);
+                return;
+            }
+            other => other,
+        };
         if self.closing.is_some() {
             return;
         }
@@ -2145,6 +2247,8 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            // Answered before the closing check above.
+            Event::HandOff(..) => {}
             Event::DiagnosticsUpdated(report) => {
                 if report.previous_exit_unclean && !session.diagnostic_warning_shown {
                     session.diagnostic_warning_shown = true;

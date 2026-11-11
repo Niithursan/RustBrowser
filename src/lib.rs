@@ -3,6 +3,7 @@ pub mod diagnostics;
 pub mod download_recovery;
 pub mod downloads;
 pub mod engine_api;
+pub mod handoff;
 pub mod launch;
 pub mod library;
 pub mod navigation;
