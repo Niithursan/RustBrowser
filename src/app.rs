@@ -1323,7 +1323,7 @@ impl Session {
         let state = State {
             url: url.into(),
             loading: true,
-            message: "Connectingâ€¦".into(),
+            message: "Connecting…".into(),
             ..State::default()
         };
         Ok(Page {
@@ -1601,7 +1601,7 @@ impl Session {
                             loading: loaded,
                             failed: !loaded,
                             message: if loaded {
-                                "Connectingâ€¦"
+                                "Connecting…"
                             } else {
                                 "Error: This tab could not be reloaded."
                             }
@@ -1915,9 +1915,9 @@ impl Session {
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
         let prefix = if self.private {
-            "Private â€” "
+            "Private — "
         } else if active.content.state.loading {
-            "Loadingâ€¦ â€” "
+            "Loading… — "
         } else {
             ""
         };
@@ -2388,7 +2388,7 @@ impl Session {
                     tab.content.engine.load(&LoadTarget::web(&url)?)?;
                     tab.url = url.clone();
                     tab.content.state.url = url;
-                    tab.content.state.message = "Connectingâ€¦".into();
+                    tab.content.state.message = "Connecting…".into();
                     tab.content.state.loading = true;
                     tab.content.state.failed = false;
                 }
@@ -2494,7 +2494,7 @@ impl Session {
                 self.permissions.borrow_mut().cancel_tab(id);
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
-                tab.content.state.message = "Loadingâ€¦".into();
+                tab.content.state.message = "Loading…".into();
             }
             PageEvent::Cancelled => {
                 if tab.content.state.loading {
@@ -2553,8 +2553,7 @@ impl Session {
                     (Some(error), _) => format!("Error: {error}"),
                     (None, Some(code)) => http_status_message(code),
                     (None, None) => {
-                        "Ready Â· Ctrl+L address Â· Ctrl+T new tab Â· Ctrl+Tab switch Â· F7 page"
-                            .into()
+                        "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
                     }
                 };
             }
