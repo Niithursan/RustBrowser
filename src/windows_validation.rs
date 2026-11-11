@@ -949,6 +949,13 @@ fn private_forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
     {
         return Err("A private window accepted a password or autofill switch".into());
     }
+    // Private windows never import bookmarks.
+    if s.command(Command::ImportBookmarks).is_ok()
+        || s.library_action(Action::ImportBookmarks(Default::default()))
+            .is_ok()
+    {
+        return Err("A private window accepted a bookmark import".into());
+    }
     s.settings.save_passwords = true;
     s.settings.autofill = true;
     s.open_tab(navigation::HOME.into())
@@ -965,5 +972,82 @@ fn private_forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
 #[ignore = "Requires Windows/WebView2; opens a real private window"]
 fn native_private_windows_never_save_passwords_or_forms() {
     let (root, _) = run("private-forms", private_forms_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn bookmark_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bookmarks")
+            .join(name),
+    )
+    .unwrap()
+}
+
+/// A chosen file's bytes reach the library in one import with a summary; a file
+/// that is not an export is refused and changes nothing.
+fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let _ = el;
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.app
+                .proxy
+                .send_event(Event::BookmarkFile(Ok(Some(bookmark_fixture(
+                    "chrome.html",
+                )))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.notice.starts_with("Bookmarks imported") {
+                let found: Vec<&str> = s
+                    .library_data
+                    .bookmarks
+                    .iter()
+                    .map(|b| b.url.as_str())
+                    .collect();
+                if found.len() != 3
+                    || !s
+                        .notice
+                        .contains("3 added, 1 skipped as duplicates, 1 refused")
+                {
+                    return Err(format!("Import: {found:?}, notice {:?}", s.notice));
+                }
+                p.app
+                    .proxy
+                    .send_event(Event::BookmarkFile(Ok(Some(
+                        b"<html>not bookmarks</html>".to_vec(),
+                    ))))
+                    .map_err(|_| "proxy")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("The import never finished: {:?}", s.notice));
+            }
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.notice.contains("not an exported bookmarks file") {
+                if s.library_data.bookmarks.len() != 3 {
+                    return Err("A refused file changed bookmarks".into());
+                }
+                p.log.push(
+                    "import: file to library with summary; refused file changes nothing".into(),
+                );
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("A refused file was not explained: {:?}", s.notice));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_bookmark_import_reaches_the_library() {
+    let (root, _) = run("import", import_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

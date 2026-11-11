@@ -79,6 +79,9 @@ pub enum Event {
     DownloadTick,
     DownloadRejected,
     DownloadDestination(u64, Result<Option<PathBuf>, String>),
+    /// An exported bookmarks file was chosen and read (or why not). `None` when
+    /// the user cancelled.
+    BookmarkFile(Result<Option<Vec<u8>>, String>),
     DownloadFinished(u64, Result<PathBuf, String>),
     DownloadRecovery(String),
 }
@@ -1929,6 +1932,27 @@ impl Session {
                     .arg("--private")
                     .spawn()?;
             }
+            Command::ImportBookmarks => {
+                if self.private {
+                    return Err("Import bookmarks from a normal window; private windows do not write bookmarks.".into());
+                }
+                let owner = match self.window.window_handle().map(|handle| handle.as_raw()) {
+                    Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
+                    _ => {
+                        return Err(
+                            "Could not identify the browser window for the file picker.".into()
+                        );
+                    }
+                };
+                let proxy = self.proxy.clone();
+                std::thread::Builder::new()
+                    .name("bookmark-file-picker".into())
+                    .spawn(move || {
+                        let result = native_downloads::choose_bookmarks_file(owner);
+                        let _ = proxy.send_event(Event::BookmarkFile(result));
+                    })
+                    .map_err(|_| "Could not open the file picker.")?;
+            }
             Command::SetSavePasswords(value) => {
                 if self.private {
                     return Err("Private windows never save passwords.".into());
@@ -2335,6 +2359,7 @@ impl Session {
             && matches!(
                 action,
                 Action::SaveBookmark { .. }
+                    | Action::ImportBookmarks(_)
                     | Action::RemoveBookmark { .. }
                     | Action::SaveFolder { .. }
                     | Action::RemoveFolder { .. }
@@ -3112,6 +3137,9 @@ impl ApplicationHandler<Event> for App {
                     session.diagnostics.record(DiagnosticCode::LibraryFailed);
                     session.notice = message;
                 }
+                if let Some(summary) = reply.summary {
+                    session.notice = summary;
+                }
                 if reply.revision == session.revision
                     && let Some(data) = reply.data
                 {
@@ -3161,6 +3189,18 @@ impl ApplicationHandler<Event> for App {
                 session.panel = Some(Panel::Downloads);
                 let _ = session.activate();
             }
+            Event::BookmarkFile(result) => match result {
+                Ok(None) => {}
+                Ok(Some(bytes)) => match rust_browser::bookmark_import::parse(&bytes) {
+                    Ok(parsed) => {
+                        if let Err(error) = session.library_action(Action::ImportBookmarks(parsed)) {
+                            session.notice = error.to_string();
+                        }
+                    }
+                    Err(error) => session.notice = error.message(),
+                },
+                Err(message) => session.notice = message,
+            },
             Event::DownloadDestination(id, result) => {
                 session.downloads.borrow_mut().destination(id, result)
             }
