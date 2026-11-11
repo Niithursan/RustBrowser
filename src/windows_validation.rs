@@ -748,6 +748,9 @@ fn restore_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 ));
             }
             p.app.user_event(el, Event::Command(Command::ExitBrowser));
+            // Hiding the windows lets Windows activate another one, as it does on
+            // a foreground desktop. That must not change what Exit saved.
+            p.window_event(el, 2, WindowEvent::Focused(true))?;
             p.next();
         }
         1 if p.app.session.is_none() => {

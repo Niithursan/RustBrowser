@@ -2802,6 +2802,9 @@ impl ApplicationHandler<Event> for App {
                     self.user_event(event_loop, Event::Command(command));
                 }
             }
+            // While shutting down, Windows activates the next window as each is
+            // hidden; that must not change which window was saved as the main one.
+            WindowEvent::Focused(true) if self.closing.is_some() => {}
             WindowEvent::Focused(true) => {
                 if let Some(session) = &mut self.session {
                     let id = session.window.id();
