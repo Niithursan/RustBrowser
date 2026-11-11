@@ -342,6 +342,7 @@ fn native_public_site_survey() {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         engine_exits: 0,

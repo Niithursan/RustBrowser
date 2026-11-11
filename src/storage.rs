@@ -140,14 +140,16 @@ impl Store {
         profile: &Path,
         on_error: impl Fn() + Send + 'static,
     ) -> io::Result<(Self, Snapshot, bool)> {
-        fs::create_dir_all(profile)?;
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(profile.join("session.lock"))?;
-        lock.try_lock().map_err(|_| io::Error::new(io::ErrorKind::WouldBlock, "This profile is already open. Close the other browser or use RUST_BROWSER_PROFILE."))?;
+        let lock = lock(profile)?;
+        Self::open_locked(profile, lock, on_error)
+    }
+
+    /// Open with a profile lock already taken by `lock` (before the event loop).
+    pub fn open_locked(
+        profile: &Path,
+        lock: File,
+        on_error: impl Fn() + Send + 'static,
+    ) -> io::Result<(Self, Snapshot, bool)> {
         let path = profile.join("session.json");
         let temporary = path.with_extension("json.tmp");
         let missing = !path.try_exists()?;
@@ -297,9 +299,66 @@ impl Drop for Store {
     }
 }
 
+/// Take the profile's exclusive lock. `WouldBlock` means a normal window of this
+/// profile is running. The operating system releases the lock when its holder
+/// exits for any reason, so a crash cannot leave a stale lock behind.
+pub fn lock(profile: &Path) -> io::Result<File> {
+    fs::create_dir_all(profile)?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(profile.join("session.lock"))?;
+    lock.try_lock().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "This profile is already open. Close the other browser or use RUST_BROWSER_PROFILE.",
+        )
+    })?;
+    Ok(lock)
+}
+
+/// One value from `installation.ini` next to the running executable, which Setup
+/// writes; a portable copy has none.
+pub fn installation_value(key: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let text = fs::read_to_string(exe.parent()?.join("installation.ini")).ok()?;
+    if text.len() > 16 * 1024 {
+        return None;
+    }
+    let mut section = "";
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line;
+        } else if section == "[Installation]"
+            && let Some((name, value)) = line.split_once('=')
+            && name.trim() == key
+        {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+/// A validation install (never the production identity) records its own
+/// disposable profile, because links Windows starts through its registration get
+/// no environment.
+fn validation_profile() -> Option<PathBuf> {
+    let identity = installation_value("Identity")?;
+    if !identity.starts_with("RustBrowser.Validation.") {
+        return None;
+    }
+    let profile = PathBuf::from(installation_value("Profile")?);
+    profile.is_absolute().then_some(profile)
+}
+
 pub fn profile_dir() -> io::Result<PathBuf> {
     if let Some(value) = std::env::var_os("RUST_BROWSER_PROFILE") {
         return Ok(value.into());
+    }
+    if let Some(profile) = validation_profile() {
+        return Ok(profile);
     }
     // Keep the v0.1 location so upgrading preserves existing cookies and site storage.
     Ok(PathBuf::from(

@@ -1,9 +1,15 @@
-# Rust Browser 0.16.0
+# Rust Browser 0.17.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
+
+v0.17 can be chosen as the Windows default browser: links from other apps open in
+it, and starting it again while it runs hands the link to the open window instead
+of showing "already running". The address field has Cut, Copy, Paste and Select
+all. A second normal window is not available yet; see
+[the proposal](https://github.com/Niithursan/RustBrowser/blob/main/MULTI_WINDOW_PROPOSAL.md).
 
 v0.16 adds native find, per-tab zoom with a live percentage/reset, and print
 preview through keyboard shortcuts and More. Toolbar recovery ignores stale
@@ -133,6 +139,8 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Browsing history | More (⋯) → History, or Ctrl+H |
 | Download manager | More (⋯) → Downloads, or Ctrl+J |
 | New private window | More (⋯) → Private window, or Ctrl+Shift+N |
+| Cut, copy, paste or select all in the address field | Right-click the address field, or the menu key |
+| Choose Rust Browser as the default browser | More (⋯) → Privacy & security → Make default browser (opens Windows Settings) |
 | Privacy and security | Connection word at the start of the address line, More (⋯) → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
 
@@ -173,6 +181,24 @@ The toolbar has its own `toolbar` profile folder. The existing v0.1 folder is re
 to preserve normal cookies and data on upgrade. There is no password manager or
 general profile manager. Private windows use separate temporary storage.
 Close every instance before manually removing a profile folder.
+
+### Links from other apps and a second launch
+
+Other apps and Windows pass links on the command line. Rust Browser opens only
+explicit `http://` and `https://` links from them, never searches, guesses hosts,
+user names or passwords, `file:`, `javascript:` or `data:` addresses, and never
+local `.htm` or `.html` files. Links from other apps open in a normal window. A
+command line with an unknown option or text that is not valid is refused with a
+message before anything opens.
+
+If a normal window is already running, a second launch hands its links to that
+window, which opens them as tabs and comes to the front; started with no link, it
+asks the window for a new tab. Nothing else can be requested, and no second window
+is opened on the same profile. If the running window is starting, closing, busy or
+not responding, the second launch waits up to six seconds and then explains what
+happened. After a crash the next launch simply takes over the profile. The channel
+is private to your user account and Windows session; see SECURITY.md for its
+protections.
 
 `session.json` stores tab URLs, bounded titles, order, pinned/keep-awake state,
 active tab, favorites, theme and search/performance settings in **plain text**
@@ -325,8 +351,9 @@ such restarts within two minutes a message asks you to close and reopen the brow
 Closing a tab hides its view immediately and destroys it one second later, and
 closing the window hides it and exits one second later. Destroying a view that was
 visible a moment earlier crashed the WebView2 browser process on some pages.
-Starting Rust Browser while a normal window already uses the same profile shows an
-"already running" message; a second normal window is not supported.
+Starting Rust Browser while a normal window already uses the same profile hands
+any link to that window (see "Links from other apps" above). A second normal window
+is not supported yet.
 After a long event-loop pause the browser resumes pending/sleeping views and delays
 new sleep attempts. This guard was tested with an injected timing gap; physical
 Windows sleep/wake remains a separate validation task.

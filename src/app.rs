@@ -37,6 +37,12 @@ use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 pub use rust_browser::engine_api::PageEvent;
 #[derive(Debug)]
 pub enum Event {
+    /// A second launch handed over links or asked for a new window. The UI thread
+    /// answers on the channel; the hand-off server waits at most `UI_TIMEOUT`.
+    HandOff(
+        rust_browser::handoff::Request,
+        std::sync::mpsc::SyncSender<rust_browser::handoff::Status>,
+    ),
     SuspensionResult {
         id: TabId,
         ticket: u64,
@@ -183,6 +189,51 @@ fn toolbar_unrecoverable(window: &Window) {
     let _ = window;
 }
 
+/// Percent-encode a URI query component (RFC 3986 unreserved characters kept).
+fn escape_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Settings URIs the browser asked to open, instead of opening them in tests.
+    pub(crate) static OPENED_SETTINGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Ask Windows to open an `ms-settings:` page. Only fixed Settings URIs reach here.
+fn launch_settings(uri: &str) -> bool {
+    if !uri.starts_with("ms-settings:defaultapps") {
+        return false;
+    }
+    #[cfg(test)]
+    {
+        OPENED_SETTINGS.with(|opened| opened.borrow_mut().push(uri.to_string()));
+        true
+    }
+    #[cfg(not(test))]
+    // SAFETY: owned wide strings; no window handle is needed for a URI.
+    unsafe {
+        use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let result = ShellExecuteW(
+            None,
+            &windows::core::HSTRING::from("open"),
+            &windows::core::HSTRING::from(uri),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        );
+        result.0 as isize > 32
+    }
+}
+
 /// Bound automatic restarts so a persistently crashing engine cannot loop.
 fn admit_engine_restart(history: &mut Vec<Instant>, now: Instant) -> bool {
     history.retain(|at| now.duration_since(*at) < ENGINE_RESTART_WINDOW);
@@ -264,6 +315,8 @@ struct Session {
     engine_lost: bool,
     engine_restarts: Vec<Instant>,
     toolbar_restarts: Vec<Instant>,
+    /// Receives links from later launches (normal windows only).
+    handoff: Option<crate::native_handoff::Server>,
     /// Failed navigations not yet written to diagnostics. A navigation that becomes a
     /// download ends as "aborted" shortly before its download request arrives.
     unrecorded_failures: Vec<(Instant, TabId)>,
@@ -293,24 +346,140 @@ impl Drop for Session {
 }
 
 impl Session {
+    /// The first window of a process, from the parsed command line.
     fn create(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
+        start: Start,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::create_at(
+        let private = start.private;
+        let mut session = Self::create_full(
             event_loop,
             proxy,
-            storage::profile_dir()?,
-            std::env::args().any(|arg| arg == "--private"),
-            std::env::args().skip(1).find(|arg| arg != "--private"),
-        )
+            start.profile,
+            start.private,
+            start.links,
+            start.lock,
+        )?;
+        if !private {
+            session.start_handoff();
+        }
+        Ok(session)
     }
+
+    /// Listen for later launches of this profile. If anything else already owns
+    /// the endpoint, keep browsing and say that links cannot be handed over.
+    fn start_handoff(&mut self) {
+        use crate::native_handoff::{Server, ServerError, UI_TIMEOUT};
+        use rust_browser::handoff::Status;
+        let Some(name) = crate::native_handoff::endpoint(&self.profile) else {
+            return;
+        };
+        let proxy = self.proxy.clone();
+        let dispatch: crate::native_handoff::Dispatch = std::sync::Arc::new(move |request| {
+            let (reply, answer) = std::sync::mpsc::sync_channel(1);
+            if proxy.send_event(Event::HandOff(request, reply)).is_err() {
+                return Status::Closing;
+            }
+            answer
+                .recv_timeout(UI_TIMEOUT)
+                .unwrap_or(Status::NotResponding)
+        });
+        match Server::start(&name, dispatch) {
+            Ok(server) => self.handoff = Some(server),
+            Err(ServerError::Taken) => {
+                self.notice = "Links from other apps cannot reach this window: another program already uses its link channel. Close other copies of Rust Browser, then restart it.".into();
+            }
+            Err(ServerError::Failed) => {}
+        }
+    }
+
+    /// Open Windows Default apps, at this browser's page when Setup registered it.
+    /// Windows 11 requires the user to choose the default; nothing is changed here.
+    fn open_default_apps(&mut self) {
+        let name = storage::installation_value("RegisteredName").filter(|name| {
+            !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control)
+        });
+        let uri = match &name {
+            Some(name) => format!(
+                "ms-settings:defaultapps?registeredAppUser={}",
+                escape_component(name)
+            ),
+            None => "ms-settings:defaultapps".to_string(),
+        };
+        self.notice = if !launch_settings(&uri) {
+            "Windows Settings could not be opened. Open Settings, then Apps, then Default apps."
+                .into()
+        } else if name.is_some() {
+            "Windows Settings opened at Default apps. Windows asks you to choose: select Rust Browser there and set it for HTTP and HTTPS. Rust Browser cannot change this for you.".into()
+        } else {
+            "Windows Settings opened at Default apps. This copy was not installed with Setup, so Windows does not list it as a browser. Install Rust Browser with Setup to choose it as your default.".into()
+        };
+    }
+
+    /// Open what a later launch handed over, then bring this window forward.
+    fn hand_off(
+        &mut self,
+        request: rust_browser::handoff::Request,
+    ) -> rust_browser::handoff::Status {
+        use rust_browser::handoff::{Request, Status};
+        if !self.ready || self.clearing.is_some() {
+            return Status::Busy;
+        }
+        let opened = match request {
+            Request::Open(links) => {
+                let mut opened = 0;
+                for link in links {
+                    // Checked again with the command-line policy.
+                    match navigation::external(&link)
+                        .map_err(|e| e.to_string())
+                        .and_then(|url| self.open_tab(url).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => opened += 1,
+                        Err(error) => self.notice = error,
+                    }
+                }
+                opened
+            }
+            Request::NewWindow => match self.open_tab(navigation::HOME.into()) {
+                Ok(()) => 1,
+                Err(error) => {
+                    self.notice = error.to_string();
+                    0
+                }
+            },
+        };
+        if opened == 0 {
+            return Status::Refused;
+        }
+        if self.activate().is_err() {
+            return Status::Refused;
+        }
+        self.persist();
+        self.render();
+        // The launching process allowed this one to take the foreground.
+        self.window.set_minimized(false);
+        self.window.focus_window();
+        Status::Accepted
+    }
+    /// Fixtures: a session on an explicit profile without a pre-taken lock.
+    #[cfg(test)]
     fn create_at(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         normal_profile: PathBuf,
         private: bool,
-        launch_url: Option<String>,
+        launch: impl IntoIterator<Item = String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::create_full(event_loop, proxy, normal_profile, private, launch, None)
+    }
+    fn create_full(
+        event_loop: &ActiveEventLoop,
+        proxy: EventLoopProxy<Event>,
+        normal_profile: PathBuf,
+        private: bool,
+        launch: impl IntoIterator<Item = String>,
+        lock: Option<std::fs::File>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Sweep only dead, recognized leases; live private windows retain their locks.
         let sweep_profile = normal_profile.clone();
@@ -332,9 +501,13 @@ impl Session {
         let (store, snapshot, recovered) = if private {
             (None, Snapshot::default(), false)
         } else {
-            let (store, snapshot, recovered) = Store::open(&profile, move || {
+            let on_error = move || {
                 let _ = error_proxy.send_event(Event::StorageError);
-            })?;
+            };
+            let (store, snapshot, recovered) = match lock {
+                Some(lock) => Store::open_locked(&profile, lock, on_error)?,
+                None => Store::open(&profile, on_error)?,
+            };
             (Some(store), snapshot, recovered)
         };
         let diagnostic_proxy = proxy.clone();
@@ -417,6 +590,7 @@ impl Session {
             engine_lost: false,
             engine_restarts: Vec::new(),
             toolbar_restarts: Vec::new(),
+            handoff: None,
             unrecorded_failures: Vec::new(),
             ready: false,
             clearing: None,
@@ -450,9 +624,10 @@ impl Session {
             let id = tab.id;
             session.tabs.select(id);
         }
-        // An explicit launch address opens an additional tab rather than discarding restoration.
-        if let Some(input) = launch_url {
-            match navigation::resolve(&input, session.settings.search_engine) {
+        // Links from the command line open additional tabs rather than discarding
+        // restoration. They were validated by the parser and are checked again here.
+        for input in launch {
+            match navigation::external(&input) {
                 Ok(url) => {
                     if let Err(error) = session.open_tab(url) {
                         session.notice = error.to_string();
@@ -1098,6 +1273,21 @@ impl Session {
                 }
             }
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
+            Command::OpenDefaultApps => self.open_default_apps(),
+            Command::CopyText(text) => {
+                // Only a selection of the address field, so bounded like an address.
+                if text.chars().count() > navigation::MAX_ADDRESS {
+                    return Err("The selection is too long to copy.".into());
+                }
+                crate::native_clipboard::write_text(&text)?;
+            }
+            Command::PasteAddress => {
+                let text = navigation::paste_text(&crate::native_clipboard::read_text()?);
+                self.toolbar.evaluate_script(&format!(
+                    "window.pasteAddress&&window.pasteAddress({})",
+                    serde_json::to_string(&text)?
+                ))?;
+            }
             Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
@@ -1896,6 +2086,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
     #[test]
+    fn default_apps_uri_is_escaped_and_only_default_apps_can_be_opened() {
+        assert_eq!(
+            escape_component("Rust Browser validation 01ab"),
+            "Rust%20Browser%20validation%2001ab"
+        );
+        assert_eq!(escape_component("a&b=c?d#e/f"), "a%26b%3Dc%3Fd%23e%2Ff");
+        assert!(!launch_settings("https://example.com/"));
+        assert!(!launch_settings("ms-settings:privacy-webcam"));
+        assert!(launch_settings(
+            "ms-settings:defaultapps?registeredAppUser=Rust%20Browser"
+        ));
+        OPENED_SETTINGS.with(|opened| {
+            assert_eq!(
+                *opened.borrow(),
+                vec!["ms-settings:defaultapps?registeredAppUser=Rust%20Browser".to_string()]
+            )
+        });
+    }
+
+    #[test]
     fn engine_restarts_are_bounded_within_the_window_and_allowed_again_after_it() {
         let start = Instant::now();
         let mut history = Vec::new();
@@ -1963,6 +2173,10 @@ mod toolbar_validation;
 mod keyboard_validation;
 
 #[cfg(test)]
+#[path = "edit_menu_validation.rs"]
+mod edit_menu_validation;
+
+#[cfg(test)]
 #[path = "basics_validation.rs"]
 mod basics_validation;
 
@@ -1980,8 +2194,19 @@ fn start_failure(error: &(dyn std::error::Error + 'static)) -> StartFailure {
     }
 }
 
+/// What the first window of this process starts with.
+struct Start {
+    profile: PathBuf,
+    private: bool,
+    links: Vec<String>,
+    /// The normal profile's lock, taken before the event loop existed.
+    lock: Option<std::fs::File>,
+}
+
 struct App {
     session: Option<Session>,
+    /// Consumed by the first `resumed`.
+    start: Option<Start>,
     proxy: EventLoopProxy<Event>,
     failure: Option<StartFailure>,
     modifiers: ModifiersState,
@@ -1997,6 +2222,8 @@ impl App {
             return;
         }
         if let Some(session) = &mut self.session {
+            // Later launches then wait for the lock instead of being answered.
+            session.handoff = None;
             session.record_navigation_failures(true);
             session.persist();
             session.window.set_visible(false);
@@ -2013,7 +2240,11 @@ impl ApplicationHandler<Event> for App {
         if self.session.is_some() {
             return;
         }
-        match Session::create(event_loop, self.proxy.clone()) {
+        let Some(start) = self.start.take() else {
+            event_loop.exit();
+            return;
+        };
+        match Session::create(event_loop, self.proxy.clone(), start) {
             Ok(session) => {
                 session.render();
                 self.session = Some(session);
@@ -2092,6 +2323,19 @@ impl ApplicationHandler<Event> for App {
         }
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        let event = match event {
+            Event::HandOff(request, reply) => {
+                use rust_browser::handoff::Status;
+                let status = match &mut self.session {
+                    _ if self.closing.is_some() => Status::Closing,
+                    Some(session) => session.hand_off(request),
+                    None => Status::Busy,
+                };
+                let _ = reply.send(status);
+                return;
+            }
+            other => other,
+        };
         if self.closing.is_some() {
             return;
         }
@@ -2110,6 +2354,8 @@ impl ApplicationHandler<Event> for App {
             return;
         };
         match event {
+            // Answered before the closing check above.
+            Event::HandOff(..) => {}
             Event::DiagnosticsUpdated(report) => {
                 if report.previous_exit_unclean && !session.diagnostic_warning_shown {
                     session.diagnostic_warning_shown = true;
@@ -2340,12 +2586,27 @@ impl ApplicationHandler<Event> for App {
     }
 }
 
-pub fn run() -> Result<(), StartFailure> {
+/// Run the browser. A normal launch takes the profile lock before any window or
+/// event loop exists: when another normal window holds it this returns
+/// `ProfileInUse` at once, so the caller can hand its links over instead.
+pub fn run(private: bool, links: Vec<String>) -> Result<(), StartFailure> {
+    let profile = storage::profile_dir().map_err(|_| StartFailure::Other)?;
+    let lock = if private {
+        None
+    } else {
+        Some(storage::lock(&profile).map_err(|error| start_failure(&error))?)
+    };
     let event_loop = EventLoop::<Event>::with_user_event()
         .build()
         .map_err(|_| StartFailure::Other)?;
     let mut app = App {
         session: None,
+        start: Some(Start {
+            profile,
+            private,
+            links,
+            lock,
+        }),
         proxy: event_loop.create_proxy(),
         failure: None,
         modifiers: ModifiersState::default(),

@@ -526,6 +526,7 @@ fn native_failure_reporting_tab_retirement_and_engine_restart() {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         url: server.url.clone(),

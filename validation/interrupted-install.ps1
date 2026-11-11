@@ -98,10 +98,18 @@ function Uninstall-Owned([string]$Step, [switch]$KeepLeftovers) {
 # this validation run only.
 function Remove-Owned {
     # The uninstaller's cleanup can remove the empty folder at the same moment.
-    if ((Test-Path -LiteralPath $app) -and $app.StartsWith($run + '\')) { Remove-Item -LiteralPath $app -Recurse -Force -ErrorAction SilentlyContinue }
+    # That error is terminating even with SilentlyContinue, so catch it.
+    if ((Test-Path -LiteralPath $app) -and $app.StartsWith($run + '\')) {
+        try { Remove-Item -LiteralPath $app -Recurse -Force } catch { if (Test-Path -LiteralPath $app) { throw } }
+    }
     if (Test-Path -LiteralPath $registry) { Remove-Item -LiteralPath $registry -Force }
     $menu = Join-Path ([Environment]::GetFolderPath('Programs')) "Rust Browser validation $identity"
     if (Test-Path -LiteralPath $menu) { Remove-Item -LiteralPath $menu -Recurse -Force }
+    # This validation identity's own default-browser registration, nothing else.
+    foreach ($key in @("HKCU:\Software\Classes\RustBrowserV.$($identity.Substring(0, 16))", "HKCU:\Software\Clients\StartMenuInternet\RustBrowser.Validation.$identity")) {
+        if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
+    }
+    Remove-ItemProperty -LiteralPath 'HKCU:\Software\RegisteredApplications' -Name "Rust Browser validation $identity" -ErrorAction SilentlyContinue
 }
 function Hash-Profile {
     @('profile', 'downloads') | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $run $_) -File -Recurse } | Sort-Object FullName |

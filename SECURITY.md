@@ -1,5 +1,49 @@
 # Security
 
+## v0.17 links from other apps and single-instance hand-off
+
+### Command-line links
+
+Windows and other apps pass links on the command line. Every argument is
+untrusted. The raw command line is parsed by one function (`src/launch.rs`):
+
+- The registered form is `rust-browser.exe --single-argument %1`. Everything
+  after the marker is one link, taken verbatim, so quotes, spaces or dashes in a
+  link cannot become options or further links.
+- Other forms accept only `--private`, `--new-window`, `--version` and `--`. Any
+  other option, text that is not valid UTF-16, more than 16 links or a command
+  line over 32,768 characters refuses the whole launch (exit code 2, with a
+  message) before any window or profile is opened.
+- A link must be an explicit `http://` or `https://` address with a valid host
+  and no user name or password. Nothing becomes a search and no host is guessed.
+  `file:`, `javascript:`, `data:` and app schemes are refused. Local `.htm` and
+  `.html` files are not accepted, because the address bar refuses `file:` too.
+- Links from other apps always open in a normal window.
+
+### Hand-off channel
+
+When a normal window already holds the profile, a later launch sends its links,
+or a new-window request, to that window and exits. The profile lock is an
+operating-system file lock, released when its holder exits for any reason, so a
+crash cannot leave a stale lock; the next launch then takes over the profile.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| Remote client | `PIPE_REJECT_REMOTE_CLIENTS` | Flag only; no remote machine here |
+| Another Windows user connects | Protected DACL with one entry: this user's SID. The server also requires the client process to be this user in this Windows session | DACL inspected in `the_endpoint_allows_only_this_user`; user rule unit-tested. A second account could not be created here |
+| Another program owns the name first (squatting) | The first instance uses `FILE_FLAG_FIRST_PIPE_INSTANCE`; if the name is taken the server does not start and the window says so. A new instance is created before each client is served, so the name never lapses | `an_endpoint_owned_by_anything_else_is_not_used` (same name, and a PowerShell squatter) |
+| Fake server receives links | The client opens the pipe at identification level (the server cannot impersonate it) and requires the server process to be this user, in this session, running this same executable | `a_fake_server_is_not_sent_the_request` (PowerShell server, same user); mutant without the executable check caught |
+| Malformed, wrong version, oversized or hostile message | Fixed format: magic, version 1, kind, at most 16 links of at most 8,192 bytes, no trailing bytes. Every link is checked again with the command-line policy. Oversized messages are drained and refused | `malformed_messages_are_refused_before_dispatch` and library tests |
+| Flood | At most 8 accepted requests per 10 seconds and 4 clients at once; the rest are told the browser is busy | `a_flood_is_rate_limited` |
+| Hung or closing browser | The UI thread answers; after 5 seconds the client is told the browser is not responding. A closing window stops listening; a later launch waits up to 6 seconds and then takes over the profile or explains | `a_hung_browser_is_reported_not_accepted`, two-process suite |
+| Channel abuse | It carries only "open these links" or "open a new window". It never runs commands, reads files or returns data: the only reply is one status byte (accepted, refused, busy, closing, not responding) | Format tests |
+
+A process that runs as the same user in the same session can already do
+anything the user can, including starting the browser with a link, so it is
+outside this boundary. The second launch grants the running browser permission to
+take the foreground (`AllowSetForegroundWindow`); no focus-stealing workaround is
+used.
+
 ## v0.16 content tools and recovery
 
 Find, zoom and print target a visible website content controller. They are refused

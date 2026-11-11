@@ -485,6 +485,7 @@ fn native_daily_navigation_diagnostics_and_modern_sites() {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         urls: [first.url.clone(), second.url.clone()],

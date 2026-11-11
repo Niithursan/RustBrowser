@@ -1,5 +1,63 @@
 # Development checkpoint
 
+## v0.17: link handling (Claude Code, in progress, owner away)
+
+Branch `feat/v0.17-link-handling` from verified origin/main `96a70a2` (PR #22; CI
+42945393777 and security 42945393781 passed). Scratch `<workspace>/work/v17`.
+No PR yet: branch pushes start no workflow; open the draft PR once, then push
+once more for the final head. Do not rerun or dispatch workflows.
+
+Plan and order (advisor-reviewed): 1 command line, 2 hand-off, 3 installer
+registration, 5 address-field menu, then 4 multiple windows (may not land; if
+its refactor is not green, deliver the design and session-format proposal).
+
+Done:
+- `a2aa270` item 1. Reproduced first: invalid UTF-16 argument panicked (exit 101)
+  and unknown options were ignored. Pure parser `src/launch.rs` over the raw
+  GetCommandLineW text; `--single-argument` takes the rest verbatim as one link;
+  `navigation::external` requires explicit http(s). Decision: local .htm/.html
+  are NOT accepted (typed file: is refused today), so registration is http/https
+  only. Refusals exit 2 with a message. Profile lock now taken before the event
+  loop (`storage::lock`, `Store::open_locked`, `App.start`). Tests: 6 unit tests,
+  `tests/command_line.rs` (spawned exe, raw_arg).
+
+- `e58d507` item 2 hand-off (`src/handoff.rs` pure format/limits/trust,
+  `src/native_handoff.rs` pipe server/client, UI answers via `Event::HandOff`,
+  `main.rs` `start_or_hand_off` retries 6 s and explains every outcome, exit 3).
+  8 transport tests + 5 mutants caught; `4bdd7a2` two-process suite
+  `tests/single_instance.rs` (hand-off, new window, refused link, crash takeover;
+  2 mutants caught; drop guard stops leaked test browsers). SECURITY.md threat
+  model written.
+- Item 3 committed (`b19fc27` registration and button, `61302ef` lifecycle and
+  real-defaults guard, `6ed244b` 0.17.0, `0a8df20` v0.16 fixture, cache key
+  installer-fixture-v5, first CI run cold). Lifecycle passed from a real 0.16
+  install (baseline built with the pinned 0.16 installer.iss); interrupted sweep
+  16/16; real UserChoice and RegisteredApplications unchanged; 1 mutant caught (its
+  leftover validation value was removed by hand afterwards).
+- `d145a28` item 5 address-field menu (`src/native_clipboard.rs`, test build uses
+  an in-memory clipboard; `native_address_field_edit_menu`, 3 mutants caught).
+- Item 4 NOT implemented: evidence and design in `MULTI_WINDOW_PROPOSAL.md`
+  (options A/B/C, B recommended). Ctrl+N stays unbound; a "new window" hand-off
+  opens a tab. Owner approval needed before any refactor.
+- Docs: README, INSTALL_WINDOWS, CHANGELOG, SECURITY (threat model), VALIDATION,
+  OWNER_CHECKLIST steps 12 to 16; owner bundle Setup now records its profile.
+- Gate script: `work/v17/gates.ps1` (adds edit-menu and single-instance suites,
+  v0.16 baseline in `work/v17/install/baseline`).
+
+Next: full local gates on `d7b8e93`, then open ONE draft PR (first push that
+starts CI), verify CI on that head, fix only reproduced failures, final push,
+verify CI on the final head. Do not merge, tag or mark ready.
+
+Decisions recorded for the owner:
+- Extra features of the existing `windows` crate enabled (no new crate,
+  Cargo.lock unchanged).
+- Hand-off reply is one status byte; read as "returns no data".
+- "New window" request opens a new tab while multiple windows are not shipped.
+- A second launch during the first window's startup is answered "busy" and the
+  launcher retries; after 6 s it explains instead.
+- Two different copies (portable and installed) on one profile do not hand off to
+  each other (executable path must match); the user is told.
+
 ## v0.16: everyday browsing and toolbar follow-ups
 
 Active branch `feat/v0.16-everyday-basics`, created from verified origin/main

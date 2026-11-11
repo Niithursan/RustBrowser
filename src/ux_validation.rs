@@ -455,6 +455,7 @@ fn run(private: bool) {
             failure: None,
             modifiers: ModifiersState::default(),
             closing: None,
+            start: None,
         },
         root: root.clone(),
         private,

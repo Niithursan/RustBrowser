@@ -19,6 +19,12 @@ pub const HTML: &str = include_str!("toolbar.html");
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
     RefreshDiagnostics,
+    /// Open Windows Default apps for this browser. Windows asks the user to choose.
+    OpenDefaultApps,
+    /// Address-field menu: put this selected text on the clipboard.
+    CopyText(String),
+    /// Address-field menu: insert the clipboard's text at the selection.
+    PasteAddress,
     DismissNotice,
     ClearDiagnostics {
         confirmed: bool,

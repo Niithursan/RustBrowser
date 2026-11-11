@@ -11,8 +11,8 @@ $repo=Split-Path $PSScriptRoot -Parent
 $version=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $Executable).Path)).ProductVersion
 $package=& (Join-Path $repo 'packaging/windows/build-installer.ps1') -Executable $Executable -OutputRoot $OutputRoot -Version $version -SourceCommit $SourceCommit -Compiler $Compiler
 $baselineVersion=([Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $BaselineExecutable).Path)).ProductVersion
-if($baselineVersion -cne '0.14.0'){throw 'Supply the actual verified v0.14 executable for upgrade checks.'}
-$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit 'b4f0c2388a80853110baa9d43a8cec56a796d220'
+if($baselineVersion -cne '0.16.0'){throw 'Supply the actual verified v0.16 executable for upgrade checks.'}
+$baseline=& (Join-Path $repo 'packaging/windows/package.ps1') -Executable $BaselineExecutable -OutputRoot $OutputRoot -Version $baselineVersion -SourceCommit '96a70a20db2b03e0de8699672c3e5aa1ab615287'
 $run=Join-Path ([IO.Path]::GetFullPath($OutputRoot)) ('install-validation-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $run -ErrorAction Stop | Out-Null
 Set-Content -LiteralPath (Join-Path $run '.rust-browser-install-validation') -Value 'Owned disposable installer validation'
@@ -20,9 +20,9 @@ $identity=[guid]::NewGuid().ToString('N')
 $app=Join-Path $run 'application'
 $registry='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RustBrowser.Validation.'+$identity+'_is1'
 $link=Join-Path ([Environment]::GetFolderPath('Programs')) ("Rust Browser validation $identity/Rust Browser.lnk")
-function Compile-Fixture($Payload,[string]$Version,[string]$Suffix) {
+function Compile-Fixture($Payload,[string]$Version,[string]$Suffix,[string]$Script=(Join-Path $repo 'packaging/windows/installer.iss')) {
     $directory=Join-Path $run $Suffix;New-Item -ItemType Directory -Path $directory | Out-Null
-    & $Compiler '/Q' ("/DAppVersion=$Version") ("/DPayloadRoot=$Payload") ("/DIconFile="+(Join-Path $repo 'packaging/windows/rust-browser.ico')) ("/DValidationId=$identity") ("/DValidationRoot=$app") ("/O$directory") (Join-Path $repo 'packaging/windows/installer.iss')
+    & $Compiler '/Q' ("/DAppVersion=$Version") ("/DPayloadRoot=$Payload") ("/DIconFile="+(Join-Path $repo 'packaging/windows/rust-browser.ico')) ("/DValidationId=$identity") ("/DValidationRoot=$app") ("/O$directory") $Script
     if($LASTEXITCODE -ne 0){throw 'Validation installer did not compile.'}
     Join-Path $directory "rust-browser-v$Version-windows-x64-setup.exe"
 }
@@ -41,6 +41,44 @@ function Hash-Profile {
 }
 function Assert-Preserved {
     if(((Hash-Profile) -join '|') -cne ($script:before -join '|')){throw 'Installer operation changed disposable browsing/download data.'}
+}
+# The user's real default-browser choices and the production registration. Read
+# only; every Setup run below must leave them exactly as they were.
+function Real-Defaults {
+    $choices = foreach ($kind in @('UrlAssociations\http', 'UrlAssociations\https', 'FileExts\.htm', 'FileExts\.html')) {
+        $key = if ($kind -like 'Url*') { "HKCU:\Software\Microsoft\Windows\Shell\Associations\$kind\UserChoice" } else { "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\$kind\UserChoice" }
+        $value = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+        "${kind}=$($value.ProgId)/$($value.Hash)"
+    }
+    $registered = (Get-ItemProperty -LiteralPath 'HKCU:\Software\RegisteredApplications' -ErrorAction SilentlyContinue).'Rust Browser'
+    @($choices) + @(
+        "prog=$(Test-Path -LiteralPath 'HKCU:\Software\Classes\RustBrowserHTML')",
+        "client=$(Test-Path -LiteralPath 'HKCU:\Software\Clients\StartMenuInternet\RustBrowser')",
+        "registered=$registered")
+}
+$script:realDefaults = (Real-Defaults) -join '|'
+$progId = 'RustBrowserV.' + $identity.Substring(0, 16)
+$clientKey = "HKCU:\Software\Clients\StartMenuInternet\RustBrowser.Validation.$identity"
+$registeredName = "Rust Browser validation $identity"
+function Assert-Registration([bool]$Expected) {
+    $prog = "HKCU:\Software\Classes\$progId"
+    $value = (Get-ItemProperty -LiteralPath 'HKCU:\Software\RegisteredApplications' -ErrorAction SilentlyContinue).$registeredName
+    if (-not $Expected) {
+        if ((Test-Path -LiteralPath $prog) -or (Test-Path -LiteralPath $clientKey) -or $value) { throw 'Default-browser registration is present when it should not be.' }
+        if (-not (Test-Path -LiteralPath 'HKCU:\Software\RegisteredApplications')) { throw 'The RegisteredApplications key itself was removed.' }
+        return
+    }
+    $command = (Get-ItemProperty -LiteralPath "$prog\shell\open\command").'(default)'
+    if ($command -cne ('"' + (Join-Path $app 'rust-browser.exe') + '" --single-argument %1')) { throw "Registered link command is wrong: $command" }
+    $urls = Get-ItemProperty -LiteralPath "$clientKey\Capabilities\URLAssociations"
+    if ($urls.http -cne $progId -or $urls.https -cne $progId) { throw 'http/https are not associated with the validation ProgID.' }
+    if (@($urls.PSObject.Properties.Name | Where-Object { $_ -notlike 'PS*' }).Count -ne 2) { throw 'Only http and https may be registered.' }
+    if ($value -cne "Software\Clients\StartMenuInternet\RustBrowser.Validation.$identity\Capabilities") { throw "RegisteredApplications value is wrong: $value" }
+    $ini = Get-Content -LiteralPath (Join-Path $app 'installation.ini') -Raw
+    if ($ini -notmatch [regex]::Escape("RegisteredName=$registeredName") -or $ini -notmatch 'Profile=') { throw 'installation.ini lacks the registered name or validation profile.' }
+}
+function Assert-Real-Defaults {
+    if (((Real-Defaults) -join '|') -cne $script:realDefaults) { throw 'The real default browser, associations or production registration changed.' }
 }
 function Wait-Uninstalled {
     # The original uninstaller process exits before its cleanup child. Do not
@@ -61,7 +99,15 @@ try {
     & $Cargo test --locked --test installation_profile installer_profile_harness -- --ignored --test-threads=1
     if($LASTEXITCODE -ne 0){throw 'Could not prepare representative profile.'}
     $script:before=@(Hash-Profile)
-    $old=Compile-Fixture $baseline.payload $baselineVersion 'baseline-installer'
+    # The baseline is built with the pinned v0.16 Setup script as well as its payload,
+    # so the upgrade starts from what 0.16 really installed (no registration).
+    $oldScript=Join-Path $run 'baseline-script';New-Item -ItemType Directory -Path $oldScript | Out-Null
+    foreach($name in @('installer.iss','installer-notice.txt')){
+        $text=git -C $repo show "96a70a20db2b03e0de8699672c3e5aa1ab615287:packaging/windows/$name"
+        if($LASTEXITCODE -ne 0){throw "Fetch the pinned v0.16 commit before building the upgrade fixture ($name)."}
+        [IO.File]::WriteAllText((Join-Path $oldScript $name),(($text -join "`r`n")+"`r`n"))
+    }
+    $old=Compile-Fixture $baseline.payload $baselineVersion 'baseline-installer' (Join-Path $oldScript 'installer.iss')
     $new=Compile-Fixture $package.payload $version 'candidate-installer'
     New-Item -ItemType Directory -Path $app | Out-Null
     $foreign=Join-Path $app 'unowned.txt';[IO.File]::WriteAllText($foreign,'Synthetic file that must not be overwritten')
@@ -73,6 +119,8 @@ try {
     Assert-Preserved
     Invoke-Owned $old (Args-For 'fresh')
     $installed=$true;Assert-Preserved
+    # 0.16 registered nothing; the upgrade below must add it.
+    Assert-Registration $false;Assert-Real-Defaults
     if(-not(Test-Path -LiteralPath $link) -or -not(Test-Path -LiteralPath $registry)){throw 'Start Menu or per-user uninstall registration is missing.'}
     $entry=Get-ItemProperty -LiteralPath $registry
     if($entry.DisplayVersion -cne $baselineVersion -or $entry.InstallLocation.TrimEnd('\') -ine $app){throw 'Installed registration metadata is wrong.'}
@@ -90,7 +138,7 @@ try {
         $null=$oldProcess.Handle
         $created=$oldProcess.StartTime.ToUniversalTime()
         Start-Sleep -Milliseconds 500
-        if($oldProcess.HasExited){throw 'Owned v0.14 process exited before the file-use check.'}
+        if($oldProcess.HasExited){throw 'Owned v0.16 process exited before the file-use check.'}
         Invoke-Owned $new (Args-For 'legacy-running-refusal') -Refuse
         Assert-Preserved
     } finally {
@@ -108,6 +156,7 @@ try {
         }
     }
     Invoke-Owned $new (Args-For 'upgrade');Assert-Preserved
+    Assert-Registration $true;Assert-Real-Defaults
     $expectedFiles=@((Get-ChildItem -LiteralPath $package.payload -File).Name)+@('installation.ini')
     if(((@(Get-ChildItem -LiteralPath $app -File).Name | Sort-Object) -join '|') -cne (($expectedFiles | Sort-Object) -join '|')){throw 'Installed file allowlist mismatch.'}
     foreach($file in (Get-ChildItem -LiteralPath $package.payload -File)){
@@ -146,7 +195,9 @@ try {
     $installed=$false;Assert-Preserved
     if(Test-Path -LiteralPath (Join-Path $app 'rust-browser.exe')){throw 'Uninstall left the application executable.'}
     if((Test-Path -LiteralPath $link) -or (Test-Path -LiteralPath $registry)){throw 'Uninstall left shortcuts/registration.'}
+    Assert-Registration $false;Assert-Real-Defaults
     Invoke-Owned $new ((Args-For 'reinstall')+'/TASKS=desktopicon');$installed=$true;Assert-Preserved
+    Assert-Registration $true
     if(-not(Test-Path -LiteralPath $desktop)){throw 'Requested desktop shortcut is missing.'}
     $env:RUST_BROWSER_INSTALL_STAGE='verify'
     & $Cargo test --locked --test installation_profile installer_profile_harness -- --ignored --test-threads=1
@@ -159,7 +210,8 @@ try {
     Wait-Uninstalled;$installed=$false;Assert-Preserved
     if(-not(Test-Path -LiteralPath $foreign) -or (Get-FileHash -LiteralPath $foreign).Hash -cne $foreignHash){throw 'Uninstall removed or changed an unowned file.'}
     if((Test-Path -LiteralPath $desktop) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $link)){throw 'Uninstall left registered integration.'}
-    'Installer: fresh/0.14 upgrade/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
+    Assert-Registration $false;Assert-Real-Defaults
+    'Installer: fresh/0.16 upgrade/default-browser registration/full allowlist/CLI launch/downgrade/invalid version/running/reparse/profile refusal/uninstall/reinstall/optional shortcut and user-data preservation passed.'
 } finally {
     try {
         if($installed -and (Test-Path -LiteralPath (Join-Path $app 'uninstall/unins000.exe'))){
@@ -170,4 +222,5 @@ try {
         $env:RUST_BROWSER_INSTALL_FIXTURE=$previousRoot;$env:RUST_BROWSER_INSTALL_STAGE=$previousStage
     }
 }
+Assert-Real-Defaults
 $package

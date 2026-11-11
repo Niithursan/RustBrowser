@@ -1,4 +1,4 @@
-# Owner checklist (about 20 minutes)
+# Owner checklist (about 30 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -154,6 +154,59 @@ save is required by this checklist; report actual output separately if you test 
 contents, and Escape/Cancel returns to the usable page. Opening preview does not
 silently print, save output, execute a file or request elevation. Output explicitly
 created by a person can remain on disk, including from private browsing.
+
+## 12. Make the validation build your default browser (3 minutes)
+
+Use the bundle's validation-only Setup (`Launch.ps1 -Installed` flow). Its links
+open the bundle's own disposable profile, never your daily one.
+
+1. Start it with `.\Launch.ps1 -Installed`, open More (⋯) → Privacy & security,
+   and select **Make default browser**.
+2. In the Windows Settings page that opens, choose the entry named
+   "Rust Browser validation ..." for HTTP and HTTPS.
+3. Afterwards, set your usual browser back the same way in Settings → Apps →
+   Default apps.
+
+**Pass:** the button says Windows asks you to choose and opens Default apps on the
+validation entry's page (or the general page on older Windows 11 builds); Rust
+Browser changed nothing by itself; your usual browser can be chosen back.
+
+## 13. Links from two other apps (3 minutes)
+
+While the validation build is the default:
+
+1. Click an https link in a chat app (for example Teams or Discord).
+2. Click an https link in a mail app or a PDF reader.
+
+**Pass:** each link opens as a new tab in the running validation window, which comes
+to the front; no second window appears; no "already running" message.
+
+## 14. Launch it twice (1 minute)
+
+1. With the window open, run `.\Launch.ps1 -Installed` again.
+
+**Pass:** no second window and no error; the running window gets a new tab and comes
+to the front.
+
+## 15. Second window (1 minute)
+
+Multiple normal windows are not in this build (see MULTI_WINDOW_PROPOSAL.md).
+
+1. Press Ctrl+N.
+
+**Pass:** nothing unexpected happens (no window, no error). Report if you expected a
+new window here; that decision is open.
+
+## 16. Right-click paste in the address field (1 minute)
+
+1. Copy two lines of text from Notepad.
+2. Right-click the address field and choose Paste. Then try Cut, Copy and Select all.
+
+**Pass:** the menu shows exactly Cut, Copy, Paste and Select all; the pasted text is
+on one line; right-clicking elsewhere in the toolbar shows no menu.
+
+When you finish, set your usual default browser back (step 12.3) and uninstall the
+validation entry from Apps & Features.
 
 ## Reporting
 

@@ -1,5 +1,69 @@
 # Validation
 
+## v0.17 links from other apps, hand-off and default-browser registration
+
+Baseline `96a70a2` (PR #22); CI 42945393777 and security 42945393781 passed before
+branching. Branch `feat/v0.17-link-handling`. Version 0.17.0; profile path, session
+format 1, SQLite schema 3 and dynamic CRT unchanged. One Windows 11 Pro x64 machine,
+WebView2 157, non-elevated session. Local results only in this section; hosted
+results for the final head are recorded in the pull request.
+
+### Reproduced defects and fixes
+
+| Defect | Before | After |
+| --- | --- | --- |
+| An argument that is not valid UTF-16 | Startup panicked (exit 101, "internal error") | Refused with a message, exit 2, no window or session |
+| Unknown options such as `--disable-web-security` | Ignored; the browser started | Refused with a message, exit 2 |
+| A bare word on the command line | Became a search | Only explicit http(s) links are accepted |
+| Address field right-click | No menu at all (toolbar menus are disabled) | Cut, Copy, Paste and Select all for the address field only |
+
+### Automated evidence
+
+- Command line: 6 parser unit tests (registered form taken verbatim, quotes,
+  backslashes, leading dashes, `javascript:`, `data:`, `file:`, UNC and drive paths,
+  credential and deceptive user-info URLs, 16-link and 32,768-character bounds,
+  invalid UTF-16) and `tests/command_line.rs`, which starts the real executable with
+  hostile raw command lines and requires exit 2, the reason, and no session file.
+- Hand-off library: 6 unit tests (format round trip, every malformed case, link
+  re-validation, rate limit, trust rules, endpoint names).
+- Hand-off transport: 8 tests on real pipes (accepted, malformed and wrong version,
+  oversized, flood, hung browser, missing endpoint, squatted name by this process
+  and by PowerShell, fake PowerShell server of the same user, DACL with exactly one
+  entry for this user). Five mutants were caught: trusting a server without the
+  executable check, no first-instance flag, no rate limit, accepting malformed
+  messages, a DACL that also allows Everyone.
+- Two real processes (`tests/single_instance.rs`, 3 of 3 runs): a second launch hands
+  over a link and a new-tab request, a `javascript:` launch is refused before any
+  contact, and the saved session is exactly the start tab, the link and the new tab;
+  after the first browser is killed, the next launch takes over the profile and
+  opens its link. Two mutants caught (no server; accepted without opening).
+- Address-field menu (`native_address_field_edit_menu`, in-memory test clipboard):
+  menu role and items, Cut and Copy disabled without a selection, keyboard focus and
+  Escape, Copy, Cut, Paste of a hostile multi-line 9,000-character clipboard (one
+  line, control characters removed, 8,192 characters), Select all, and WebView2
+  default menus still off on the toolbar. Three mutants caught.
+- Installer: lifecycle from a real 0.16 installation (baseline built with the pinned
+  0.16 Setup script) checks no registration before the upgrade, the exact link
+  command, http/https only, the RegisteredApplications value, nothing left after
+  uninstall (the RegisteredApplications key kept) and the same after reinstall. The
+  user's real http, https, .htm and .html choices, all RegisteredApplications values
+  and the production registration were recorded before every Setup run and were
+  unchanged after. A mutant that keeps the RegisteredApplications value was caught.
+  The interrupted-installation sweep (16 cases) still repairs every case with no
+  leftovers; the real profile (306 files) was unchanged.
+- Settings deep link: `ms-settings:defaultapps?registeredAppUser=` with the
+  RegisteredApplications value name, as Microsoft documents; covered by a unit test
+  that also refuses any other URI. Automated runs never open Settings.
+
+### Not tested here
+
+- A second Windows user account (cannot be created here): the user rule is unit
+  tested and the DACL is inspected.
+- Remote pipe clients: protected by `PIPE_REJECT_REMOTE_CLIENTS` only.
+- Choosing the default in Windows Settings, links from real chat, mail or PDF apps,
+  the real clipboard and Narrator on the new menu: owner checklist steps 12 to 16.
+- Multiple normal windows did not ship; see MULTI_WINDOW_PROPOSAL.md.
+
 ## v0.16 everyday browsing and toolbar follow-ups
 
 Baseline `cb3d81dc4e5f7fca883fc561ff6216523a21dd2d` includes merged PRs #21,
