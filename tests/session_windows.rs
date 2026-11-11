@@ -223,3 +223,53 @@ fn a_file_written_by_0_18_restores_the_focused_window_in_0_17() {
     assert_eq!(as_017.tabs, written.tabs);
     assert_eq!(as_017.active, written.active);
 }
+
+/// A window of 64 tabs whose addresses are `length` bytes long.
+fn large_window(marker: char, length: usize) -> WindowSnapshot {
+    let base = "https://example.test/";
+    WindowSnapshot {
+        tabs: (0..64)
+            .map(|i| {
+                format!(
+                    "{base}{marker}{i:02}{}",
+                    "a".repeat(length - base.len() - 3)
+                )
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn an_oversized_session_drops_only_the_least_recently_focused_windows() {
+    // Three other windows of about 450 KB each: the main window and the two most
+    // recently focused others fit in 1 MiB; the third (least recent) does not.
+    let others = vec![
+        large_window('x', 7000),
+        large_window('y', 7000),
+        large_window('z', 7000),
+    ];
+    let mut snapshot = Snapshot {
+        tabs: vec!["https://example.test/main".into()],
+        other_windows: others.clone(),
+        ..Snapshot::default()
+    };
+    assert!(!storage::fits(&snapshot));
+    assert_eq!(storage::trim_to_fit(&mut snapshot), 1);
+    assert!(storage::fits(&snapshot));
+    assert_eq!(snapshot.other_windows, others[..2].to_vec());
+    assert_eq!(snapshot.tabs, vec!["https://example.test/main".to_string()]);
+    snapshot.validate().unwrap();
+}
+
+#[test]
+fn a_session_that_fits_is_left_unchanged() {
+    let mut snapshot = Snapshot {
+        tabs: vec!["https://example.test/main".into()],
+        other_windows: vec![large_window('x', 7000)],
+        ..Snapshot::default()
+    };
+    let before = snapshot.clone();
+    assert_eq!(storage::trim_to_fit(&mut snapshot), 0);
+    assert_eq!(snapshot, before);
+}

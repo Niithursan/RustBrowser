@@ -261,6 +261,39 @@ fn new_native_window(
     )
 }
 
+/// How a window is named in notices: its selected tab's title or address.
+fn window_label(window: &WindowState) -> String {
+    let name = window
+        .tabs
+        .active()
+        .map(|tab| {
+            if tab.title.trim().is_empty() {
+                tab.url.as_str()
+            } else {
+                tab.title.as_str()
+            }
+        })
+        .unwrap_or("New tab");
+    let mut label: String = name.chars().filter(|c| !c.is_control()).take(40).collect();
+    if name.chars().count() > 40 {
+        label.push('…');
+    }
+    format!("\"{label}\"")
+}
+
+/// The notice shown when windows are left out of the saved session.
+fn unsaved_notice(labels: &[String]) -> String {
+    let (count, them) = if labels.len() == 1 {
+        ("1 window".to_string(), "It stays")
+    } else {
+        (format!("{} windows", labels.len()), "They stay")
+    };
+    format!(
+        "{count} will not be restored next time because the saved session would be larger than 1 MiB: {}. {them} open now; close some tabs to save every window.",
+        labels.join(", ")
+    )
+}
+
 /// The tab with `id` in whichever window holds it (tab IDs are process-wide).
 fn tab_in(windows: &mut [WindowState], id: TabId) -> Option<&mut rust_browser::tabs::Tab<Page>> {
     windows
@@ -390,6 +423,9 @@ struct Session {
     next_background: Instant,
     last_background: Instant,
     last_snapshot: RefCell<Option<Snapshot>>,
+    /// Windows left out of the last save because of the size limit, already
+    /// announced to the user (so the notice is shown once).
+    unsaved_windows: Vec<WindowId>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
 }
@@ -975,6 +1011,7 @@ impl Session {
             next_background: Instant::now(),
             last_background: Instant::now(),
             last_snapshot: RefCell::new(None),
+            unsaved_windows: Vec::new(),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -1531,7 +1568,7 @@ impl Session {
     /// Save every normal window: the most recently focused one in the format 1
     /// fields (what 0.17 restores), the others in `other_windows`, which is left
     /// out if it would make the file larger than every version accepts.
-    fn persist(&self) {
+    fn persist(&mut self) {
         if self.private || self.clearing.is_some() {
             return;
         }
@@ -1558,14 +1595,27 @@ impl Session {
             titles: first.titles,
             keep_awake: first.keep_awake,
             other_windows: others
-                .into_iter()
+                .iter()
                 .take(storage::MAX_WINDOWS - 1)
-                .map(|index| Self::window_snapshot(&self.windows[index]))
+                .map(|index| Self::window_snapshot(&self.windows[*index]))
                 .collect(),
         };
-        if !storage::fits(&snapshot) {
-            snapshot.other_windows.clear();
+        // Least recently focused windows are left out first; say once which.
+        let dropped = storage::trim_to_fit(&mut snapshot);
+        let kept = snapshot.other_windows.len();
+        let unsaved: Vec<usize> = others.iter().copied().skip(kept).take(dropped).collect();
+        let ids: Vec<WindowId> = unsaved
+            .iter()
+            .map(|i| self.windows[*i].window.id())
+            .collect();
+        if ids.iter().any(|id| !self.unsaved_windows.contains(id)) {
+            let labels: Vec<String> = unsaved
+                .iter()
+                .map(|i| window_label(&self.windows[*i]))
+                .collect();
+            self.windows[main].notice = unsaved_notice(&labels);
         }
+        self.unsaved_windows = ids;
         if let Some(snapshot) = privacy::persistent_snapshot(snapshot, self.private) {
             let mut last = self.last_snapshot.borrow_mut();
             if last.as_ref() != Some(&snapshot) {
@@ -2560,6 +2610,23 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_unsaved_window_notice_names_each_window() {
+        let one = unsaved_notice(&["\"Mail\"".into()]);
+        assert!(
+            one.starts_with("1 window will not be restored next time"),
+            "{one}"
+        );
+        assert!(one.contains("\"Mail\""), "{one}");
+        assert!(one.contains("It stays open now"), "{one}");
+        let two = unsaved_notice(&["\"Mail\"".into(), "\"News\"".into()]);
+        assert!(
+            two.starts_with("2 windows will not be restored next time"),
+            "{two}"
+        );
+        assert!(two.contains("\"Mail\", \"News\""), "{two}");
+        assert!(two.contains("They stay open now"), "{two}");
+    }
     #[test]
     fn a_profile_held_by_another_window_is_distinguished_from_startup_faults() {
         // Store::open reports the held session lock as WouldBlock.
