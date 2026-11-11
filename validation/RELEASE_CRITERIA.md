@@ -1,7 +1,9 @@
 # v1.0 release candidate criteria (proposed)
 
-**Status: proposal for the owner to approve, change or reject.** Nothing here is
-agreed yet. Written in v0.15 (2026-11-10) from the state recorded in
+**Status: proposed acceptance baseline, not RC approval.** Owner direction after
+PR #19 adopts this as the baseline for investigation, prioritizing Windows 11 x64.
+Individual risk dispositions and acceptance results still require review.
+Written in v0.15 (2026-11-10) from the state recorded in
 [RELEASE_READINESS.md](RELEASE_READINESS.md) and [VALIDATION.md](../VALIDATION.md).
 
 A release candidate is a build the owner would install on their own daily machine
@@ -22,7 +24,13 @@ These are checked again on the exact candidate commit.
 | A6 | The owner checklist ([OWNER_CHECKLIST.md](OWNER_CHECKLIST.md)) passes on the candidate | Owner's report |
 | A7 | Every item in section B has the disposition the owner approved | This file, updated |
 | A8 | README, CHANGELOG, VALIDATION and INSTALL_WINDOWS describe the candidate as it is, including known limitations | Review |
-| A9 | The candidate is built by `release.yml` from a reviewed tag on `main` and published only after explicit approval | Release workflow |
+| A9 | Candidate evidence identifies immutable source, toolchain, build flags and executable hashes | Local qualification manifest, exact-head CI and reviewed evidence; no tag is needed to investigate or technically qualify a build |
+
+Technical qualification and publication authorization are separate. Passing A1 to
+A9 supports a technical recommendation; it does not authorize declaring an RC,
+creating a tag, running a publication workflow or publishing a release. Those need
+explicit owner approval after acceptance review. A separately approved publication
+must use the reviewed `main` commit and `release.yml`; existing safeguards remain.
 
 ## B. Disposition of every "Not established" item
 
@@ -40,7 +48,7 @@ Each item from RELEASE_READINESS.md is sorted into one of three groups:
 | Installer wizard pages used by a person | **Owner check** | All automated runs are silent. The wizard (licence, notice, shortcut task, ready, finish) needs one person to click through it. The per-user folder is fixed. Checklist item. |
 | Application icon and taskbar identity appearance | **Owner check** | Resources are verified by script; how they look is not. Checklist item. |
 | Standard-user account without administrator membership | **Owner check**, or accepted risk if no such account exists | Setup is per-user and requests no elevation, and the local v0.15 installer runs used a non-elevated token from an administrator account (hosted CI runners are administrators). That is partial evidence; it is not the same as an account outside the Administrators group. |
-| Windows 10 x64 | **Proposed scope:** Windows 11 x64 only for 1.0 | No Windows 10 machine is available. This is a proposed support-scope decision, not an implemented change to the current Windows 10/11 target. If the owner retains Windows 10 support, verification becomes an owner check. |
+| Windows 10 x64 | **Deferred validation**; prioritize Windows 11 x64 for initial v1.0 consideration | Owner direction after PR #19 prioritizes Windows 11. No Windows 10 test is claimed and existing build minimums are unchanged. Wider support needs separate evidence. |
 | Missing WebView2 Runtime | **Proposed accepted risk**, subject to owner approval | Runtime availability must not be assumed for every Windows installation. Setup checks registration and refuses if absent; the browser has a startup message, reviewed in code but not tested on a missing-runtime machine. No runtime is downloaded or installed. Documented in INSTALL_WINDOWS.md. |
 | Interrupted installation | **Accepted risk** for power loss and a full disk only; the kill case is now tested | v0.15 killed Setup at 16 points during a fresh install and 16 during an upgrade from 0.14 (`validation/interrupted-install.ps1`). Before the v0.15 installer fixes, a kill during the copy left a folder that Setup and the uninstaller both refused (6 of 6 fresh cases), and later leftovers made the next installation refuse. After them, re-running Setup repaired every case, uninstall left nothing, and the profile was unchanged (see VALIDATION.md). Power loss and a full disk cannot be produced safely here. The profile lives outside the installation folder and Setup never deletes it. |
 | Code signing and SmartScreen reputation | **Accepted risk** for the candidate (owner decision: no signing identity exists) | Users see an unknown-publisher warning. SHA-256 sidecars and reviewed metadata detect corruption but do not identify the publisher. Documented in INSTALL_WINDOWS.md and packaging/windows/UPDATE_SECURITY.md. Revisit before a wider public 1.0. |
@@ -62,5 +70,6 @@ These are not in RELEASE_READINESS.md "Not established" but matter for daily use
 
 ## D. Approval
 
-The owner marks each row in B and C as approved or changed, then this file stops
-being a proposal. Until then a release candidate cannot be declared.
+The owner reviews each disposition in B and C and the actual acceptance results.
+Until that review is complete the build remains unapproved. Qualification evidence
+is not permission to declare, tag or publish a release candidate.

@@ -1,5 +1,97 @@
 # Validation
 
+## Post-merge v0.15 qualification investigation
+
+PR #19 was squash-merged at `13ff603b84ba2b0c0429dc61bc338de738e9025b`.
+Post-merge Windows CI 42898120216 and dependency security 42898120222 passed.
+Work is isolated on `feat/rc-static-crt-validation`; main remains unchanged.
+Windows 11 x64 is the initial qualification priority. RC status is **unapproved**;
+technical acceptance is separate from declaration, tagging and publication.
+
+Pinned static experiment: source `da054bf2b390b4df6dfd609b543a3ce6ff218962`,
+Rust 1.99.1 x64 MSVC, `-C target-feature=+crt-static`, shipping EXE SHA-256
+`bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+Its application sources/Cargo files/toolchain equal the merged baseline. Production
+linking stays dynamic. The initial feasibility build is a different artifact;
+gates were repeated on the pinned configuration rather than assuming equal hashes.
+PE timestamps/CodeView GUIDs differ; reproducible executable builds are not claimed.
+
+Pinned static gates passed: format, strict Clippy, 79 regular tests, debug/release,
+ten native suites in separate processes, three independent daily runs, portable
+packaging, v0.14 installer lifecycle and metadata verification. Owner-bundle tests
+passed portable and validation-installed GUI startup/shutdown, exact identity/hash
+refusal, foreign-profile/production-path refusal and caller environment restoration.
+These are automated GUI checks, not human owner acceptance.
+
+Default production verification also passed **29 local gates**: format, strict
+Clippy, 79 regular tests, both builds, ten native suites, three daily runs, process
+sampler/launcher fixtures, 2 experimental and 18 production Python tests (13 scope,
+3 TLS, 2 icon), dynamic imports, portable/installer/metadata checks, failed-build
+flag restoration, owner bundle and dependency audit. Audit scanned 369 crates and
+1,446 advisories with the same three unsupported-platform exceptions.
+
+The first production owner test read `Process.Path` before loader initialization.
+A controlled suspended-start reproduction returned no path before resume and the
+correct path about 520 ms later. `9dcff76` waits within the existing startup budget,
+still rejects a wrong nonempty path, and adds deterministic cold-start, wrong-path
+and exited-process checks. Fixed tests passed for static and dynamic builds. The
+27 earlier gates on unchanged application source were retained; owner/audit passed
+after the fix. Raw source records: `production-gates.json` (initial `84c81ad`,
+follow-up `9dcff76`) and its saved pre-fix failure record. Final documentation-only
+changes are packaged again; exact final-head hosted results belong in the PR.
+
+MSVC import inspection reports 16 system DLL imports and no direct/delay external
+CRT imports for the static EXE, versus 27 total/11 CRT imports for the dynamic
+control. Static size is 4,443,648 bytes versus 4,311,552 dynamic. No installed DLL
+was removed/hidden, and a missing-runtime host remains untested. Setup retains its
+existing VC Runtime check; static production adoption has not been approved.
+
+A fresh public survey completed: 41 visits, zero engine/renderer exits, crash dumps
+or timeouts; three deliberate DNS/TLS failures diagnosed. A nine-site burst with
+20 filler tabs also passed. OpenStreetMap returned HTTP 429; no bypass was added.
+One contained download initiation was observed, not a verified completed transfer.
+
+The fresh exact-source release-probe soak completed on 2026-11-10, 17:22 to 17:53
+Toronto time. It ran the configured 1800-second soak with 20 stable tabs, at most
+one scratch tab, suspension after 15 seconds and history disabled. Result: **178
+churn cycles, zero navigation errors**, all 20 final switch responses successful,
+normal root exit and exit of observed children. Diagnostics contain only starting,
+started and clean_shutdown; no running marker remains.
+
+| Observation | Value / limit |
+| --- | --- |
+| Soak sample span | 1798.489 s, 1792 samples; configured soak is 1800 s |
+| Unavailable process readings | 24 soak samples; excluded from full-memory and CPU summaries |
+| Aggregate working set | 930.23 to 1117.80 MiB during fully observed soak samples |
+| Aggregate private bytes | 837.15 to 909.52 MiB |
+| First/last five-minute private medians | 868.345 / 883.940 MiB; finite increase, not leak freedom |
+| Observed CPU estimate | 0.8269% of 12-logical-processor capacity over 1748.682 valid seconds |
+| After closing to one tab | 770.96 MiB working-set median / 432.805 MiB private median, 16 complete readings |
+| Final switch response range | 20.645 to 28.607 ms, test callback endpoint |
+
+Hardware: Ryzen 5 5600, 12 logical processors, 31.93 GiB RAM, Windows 11 Pro
+10.0.26200 x64. Ordinary user browser activity stayed outside the sampled tree.
+Working sets can double-count shared pages; private bytes are committed memory,
+not physical RAM. CPU is an observed-process estimate, excludes unavailable
+intervals and is not a GPU or whole-host measurement. This one controlled,
+sleeping-tab run is not human browsing, sustained media/download testing, a leak
+proof or a static-versus-dynamic performance comparison.
+
+An earlier run stopped at 667.684 seconds/62 cycles when its process and exec
+session disappeared; cause not established, no final shutdown result. It is
+retained and excluded. One child-shell module conflict prevented a restart before
+any profile/measurement began; the current PowerShell host resolved it without a
+system/policy change. Only the completed fresh run is counted.
+
+Sanitized numbers: `benchmarks/rc15-static-soak.json`. Raw evidence stays outside Git
+in `work/rc15`, with source/flags/hashes in the pinned manifest. Final exact-head
+production CI results belong in the PR delivery record; no extra workflow dispatch
+or rerun is planned. The [investigation](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md)
+and [separate #4 review](https://github.com/Niithursan/RustBrowser/blob/main/validation/BASE64_REVIEW.md)
+describe reproducible commands and limitations. No dependency changed; closed #2/#3
+were left alone. Human owner checks, clean-machine/runtime tests and risk acceptance
+remain open. No release candidate, merge, tag or publication is authorized.
+
 ## Version 0.15.0: release candidate preparation
 
 Baseline: PR #18 squash `b4f0c2388a80853110baa9d43a8cec56a796d220`, version
@@ -12,8 +104,9 @@ installed, 2026-11-10. Raw evidence is in workspace `work/v15`, outside Git.
 Inherited results below were checked against the saved logs/JSON, not assumed
 from the handoff. All **26 local gates passed** on source commit `5c8822e`;
 the subsequent changes only record results and clarify the owner checklist.
-Hosted v0.15 checks have not run because no PR is open yet. Exact final-head
-hosted status belongs in the PR delivery record, separately from local results.
+Historical delivery: PR #19 at `c967735` passed CI 42896025986 and security
+42896026042 before being squash-merged to `13ff603`. Those checks belong to the
+v0.15 preparation delivery, not to this newer investigation branch.
 
 ### Final local gates (2026-11-10)
 
@@ -25,7 +118,7 @@ hosted status belongs in the PR delivery record, separately from local results.
 | Native WebView2 | All 10 standalone suites passed, each in its own process, including toolbar recovery and keyboard/layout |
 | Daily-driver fixtures | Three independent fresh-profile runs passed, not retries |
 | PowerShell fixtures | Process-tree sampler and experimental launcher safety passed; no Servo build/download/launch |
-| Python | 2 experimental fixture tests and 18 production CI-scope tests passed |
+| Python | 2 experimental tests and 18 production tests passed: 13 CI-scope, 3 TLS-handshake and 2 icon tests |
 | Portable package | Deterministic contents, hashes, metadata, offline links and unsafe-input refusal passed |
 | Installer lifecycle | Fresh install, pinned v0.14 upgrade, repair/removal/reinstall, refusal cases, shortcuts and disposable profile preservation passed |
 | Release metadata | Positive integrity/pin/repair checks and 36 malformed/downgrade/tampered/missing-input refusals passed |
@@ -98,7 +191,7 @@ and [accessibility](https://github.com/Niithursan/RustBrowser/blob/main/validati
 ### CI and release status
 
 Whole-PR, no-renames classification protects packaged documents and runs full
-Windows checks for code, ambiguity or errors. Eighteen Python scope tests and two
+Windows checks for code, ambiguity or errors. Thirteen Python scope tests and two
 caught mutations support it; the hosted docs-only skip path is **not exercised**
 by this code-changing milestone and no saving is claimed. Dependabot version
 updates are grouped/monthly with no automatic rebase; owner review of #2 to #4

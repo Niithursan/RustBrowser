@@ -1,5 +1,19 @@
 # Continuous integration
 
+Post-v0.15 qualification also tests the owner acceptance bundle in the existing
+Windows release/package job. It verifies dynamic CRT remains the production build,
+then exercises hash/identity/path refusals, caller environment restoration and
+portable/validation-installed GUI startup/shutdown with disposable data. Generated
+profiles and validation installers are excluded from the fixed review upload.
+Static CRT gates and the 30-minute soak are local opt-in investigation workloads;
+no new recurring Windows job or publication trigger is added. The additional step's
+hosted overhead is recorded in the final review PR, not assumed in advance.
+
+After PR #19, owner direction leaves closed Dependabot #2/#3 alone. The separate
+[#4 review](validation/BASE64_REVIEW.md) recommends deferring that update during
+qualification, including explicit review of its API/SIMD features. This supersedes
+the earlier merge recommendations in the historical v0.15 cost assessment below.
+
 v0.15 adds Actions cost controls without removing required coverage. A small Linux job,
 **Change scope**, runs first and skips the two Windows jobs only when every file the
 pull request changes is Markdown that no build, test or package reads. Dependabot
@@ -230,7 +244,7 @@ all-zero base commit, an empty diff or any classification error runs everything.
 and either both Windows jobs succeeded (full run) or both were skipped (documentation
 only).
 
-Evidence: 18 Python tests in `validation/test_ci_scope.py` (run in the CI quality job)
+Evidence: 13 Python tests in `validation/test_ci_scope.py` (run in the CI quality job)
 cover the rules, the verdict, real git diffs in a temporary repository, and that the
 packaged list matches `package.ps1`, `installer.iss` and `windows_package.ps1`. Two
 mutations (dropping `--no-renames`, ignoring packaged documents) were each caught.

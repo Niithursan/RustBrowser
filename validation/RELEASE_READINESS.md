@@ -2,8 +2,24 @@
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
-are proposals awaiting the owner; [owner checks](OWNER_CHECKLIST.md) remain open.
+are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) remain open.
 WebView2 stays production and Servo remains experimental/fixture-only.
+
+After PR #19 merged at `13ff603`, Windows 11 x64 is the initial qualification
+priority. Technical qualification is separate from declaring/tagging/publishing
+an RC, which remains unapproved. The [static CRT investigation](STATIC_CRT.md)
+is opt-in; production linking and Setup's prerequisite checks remain unchanged.
+A safe owner bundle now supplies an explicit profile launcher as well as a
+validation installer identity. Neither passing automation nor preparing the bundle
+marks human acceptance as passed.
+
+The pinned static experiment completed a fresh 1800-second controlled soak:
+178 churn cycles, zero navigation errors, responsive final switches, clean
+shutdown and exit of observed children. The earlier interrupted run is excluded.
+Its 41-visit survey and nine-site burst were clean except three deliberate DNS/TLS
+failures; OpenStreetMap's HTTP 429 remains a known response. Memory/CPU details and
+unavailable samples are in VALIDATION.md. This is not a matched dynamic comparison
+or a human/device acceptance pass. Qualification and RC approval remain open.
 
 ## Recorded local evidence
 
@@ -32,12 +48,12 @@ not recurring CI workloads. Their raw data stays outside Git.
 | Windows 10 | Not tested; a Windows-11-only 1.0 scope is proposed, not approved or implemented |
 | Standard user outside Administrators | Not separately tested; non-elevated local token is only partial evidence |
 | Missing WebView2 | No missing-runtime host test; existing checks/instructions remain; no automatic runtime installation |
-| Missing Visual C++ runtime | EXE imports both VCRUNTIME140 DLLs; Setup checks them, portable loader can fail before application code. Static CRT is proposed and requires approval |
+| Missing Visual C++ runtime | Production EXE remains dynamic; Setup checks both VCRUNTIME140 DLLs. The opt-in static EXE has no direct/delay CRT imports, but clean-host/runtime-chain verification and adoption approval remain open |
 | Human installer wizard / icon / taskbar review | Owner checklist, not established by silent installation or resource checks |
 | Narrator / contrast themes / physical IME / native mixed DPI | Still owner checks; renderer emulation and UIA do not replace them |
 | Real sign-in / camera / microphone / video call | Owner-controlled test-account/device checks outstanding |
 | Power loss / full disk / every interruption timing | Unverified; controlled process termination is only a tested subset |
-| 30-minute v0.15 soak | Not repeated in this continuation; the existing v0.14 soak is historical evidence, not a pass for a new candidate |
+| 30-minute v0.15 soak | Pinned static experiment completed one fresh controlled run; dynamic v0.15 was not measured in a matched soak. Finite results do not establish leak freedom or human/media/device behavior |
 | Signing / authenticated updates | No identity/root/service; no signing, updater or invented key added |
 | Second-launch address hand-off | Not approved; existing already-running behavior retained |
 

@@ -2,6 +2,15 @@
 
 ## 0.15.0 (unreleased, release candidate preparation)
 
+- Add an opt-in static CRT investigation and direct/delay import inspection;
+  production linking, runtime prerequisite checks and dependency versions stay unchanged.
+- Prepare owner acceptance bundles with a separate installer identity, explicit
+  disposable profile, executable hash verification and refusal of unsafe paths.
+  Cover portable and installed startup/shutdown in CI without distributing test profiles.
+- Cover cold process initialization before its image path is available; retain
+  strict identity checks and the existing startup timeout.
+- Separate technical qualification from tag/publication authorization. Prioritize
+  Windows 11 x64 and review base64 #4 separately without changing the dependency.
 - Recover the toolbar after its own WebView2 browser process or renderer ends.
   Previously pages could remain usable while tabs, address and menus stayed dead.
   Rebuild through the existing trusted toolbar builder, show a notice and limit

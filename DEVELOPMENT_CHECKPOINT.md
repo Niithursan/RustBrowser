@@ -1,6 +1,68 @@
 # Development checkpoint
 
+## Post-merge v0.15: static CRT and owner acceptance investigation
+
+Owner direction after PR #19: continue qualification without declaring or publishing
+an RC. Verified merge `13ff603b84ba2b0c0429dc61bc338de738e9025b`; main CI
+42898120216 and security 42898120222 passed. Created
+`feat/rc-static-crt-validation` from that verified main. Read AGENTS.md and this file.
+Scratch: `<workspace>/work/rc15`. Do not touch the real profile/install, change
+system features, merge, tag or publish. Windows 11 x64 is the initial priority;
+Windows 10 is untested. Acceptance criteria remain proposed, publication separate.
+
+- `1c642ec`: opt-in static build/import inspection, safe owner bundle and production
+  CI coverage. `da054bf`: separate technical acceptance from publication authorization.
+- Pinned shipping build source `da054bf2b390b4df6dfd609b543a3ce6ff218962`, hash
+  `bd9d660bf03baa54fdd85a4cd818e777d4b92dd3f382664aa590885d9b763f58`.
+  No Rust/Cargo/toolchain change from main, no default static linking or new dependency.
+  Import inspection: no direct/delay external CRT, 16 system imports, 4,443,648 bytes.
+  Initial feasibility artifact hash differs because PE timestamp/CodeView GUID differ;
+  pinned configuration was tested again, not assumed reproducible.
+- Pinned static format/strict Clippy/79 regular tests/builds/10 separate native suites/
+  three daily runs/package/installer/metadata passed. Owner bundle GUI and refusal
+  tests passed. Setup's VC Runtime check remains; missing-runtime host not tested.
+- Owner acceptance bundle pointer: `work/rc15/owner-bundle.json`. Prepared, not installed
+  for the owner. Follow its OWNER_BUILD.md and Launch.ps1; shortcuts alone do not
+  isolate profiles. Human checklist remains open.
+- PR #4 reviewed separately: scalar API remains, SIMD default feature adds separate
+  unsafe engines, Windows graph currently excludes 0.23.1. Offline scalar/SIMD parity
+  probe passed 4097 lengths on AVX2; no fallback/ARM audit claim. Defer change while
+  qualifying. No dependency file or PR changed; closed #2/#3 left alone.
+- Fresh survey completed: 41 visits, zero engine/renderer exits, dumps or timeouts;
+  three intentional DNS/TLS failures. Nine-site/20-filler burst also clean. HTTP 429
+  from OpenStreetMap remains a site response; one contained download start observed.
+- First soak stopped after 667.684 seconds / 62 cycles when the owned process and
+  exec session disappeared; cause unknown, no final shutdown result. Excluded from
+  a pass. Raw partial run retained in `work/rc15/soak` and `soak-interrupted.json`.
+- Fresh full soak passed in `work/rc15/soak2`, 17:22 to 17:53 Toronto on 2026-11-10.
+  Pointer `work/rc15/fresh-soak-status.json`: 1800 s configured, 1798.489 s sample
+  span, 1792 samples/24 incomplete, 178 cycles, zero navigation errors, final switch
+  responses 20.645 to 28.607 ms, clean root/observed-child exit. Journal only
+  starting/started/clean_shutdown; running marker absent. Sanitized numerical
+  evidence in `benchmarks/rc15-static-soak.json`. Suspension 15 s/history off;
+  finite run, not a dynamic comparison, leak proof or human/media/device test.
+- `85d5e65` covers failed-build flag restoration and exact installed identity;
+  `f10f2d5` moves protected-path negative tests into synthetic LOCALAPPDATA so even
+  a regression stays in owned scratch. Focused owner tests passed after this change.
+- `84c81ad` records the completed soak; `eec7b45` corrects the inherited Python
+  count attribution: 13 scope + 3 TLS + 2 icon = 18 production tests.
+- All 29 production local gates passed, including 79 regular tests, ten native
+  suites, three daily runs, scripts/Python, builds, imports, packages/installer,
+  metadata, new helper tests and audit (369 crates/1,446 advisories). The owner test
+  initially queried Process.Path before loader initialization; controlled suspended
+  startup reproduced null then correct path. `9dcff76` adds a bounded readiness
+  wait and cold-start/wrong-path/exit regression. Fixed static/dynamic tests passed.
+  Prior 27 gates retained on unchanged application code; owner/audit follow-up passed.
+- Next: verify final packaging and pinned-byte identity, refresh the safe owner
+  bundle, push once and open one review PR. Verify final-head checks with gh pr checks.
+  Do not count the interrupted run as passed. No PR is open for this branch yet.
+- RC status stays unapproved. Final hosted results belong in the PR/final report to
+  avoid a packaged-document push after CI. No merge/tag/publication is authorized.
+
 ## v0.15: `feat/v0.15-release-candidate-prep`
+
+Historical working notes from before PR #19 delivery. That PR is now merged at
+`13ff603`; the active post-merge investigation is recorded above.
 
 Branch from verified `origin/main` `b4f0c23` (PR #18; CI 42857529540 and security
 42857529076 passed). Scratch: `<workspace>/work/v15`. No PR is open yet: pushing the
