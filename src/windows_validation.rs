@@ -599,12 +599,15 @@ fn engine_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         p.marks
                     ));
                 }
-                // A failure reported for the second window's toolbar only.
+                // A failure reported for the toolbar of the window without focus,
+                // so handling it in the focused window would be visible.
+                let target = 1 - s.focused_index();
                 let marks = [
                     s.windows[0].toolbar.webview().as_raw() as usize,
                     s.windows[1].toolbar.webview().as_raw() as usize,
+                    target,
                 ];
-                let source = s.windows[1].toolbar_source;
+                let source = s.windows[target].toolbar_source;
                 p.marks = marks.to_vec();
                 p.app.user_event(
                     el,
@@ -617,17 +620,26 @@ fn engine_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         3 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            let first = s.windows[0].toolbar.webview().as_raw() as usize;
-            let second = s.windows[1].toolbar.webview().as_raw() as usize;
-            if first != p.marks[0] || second == p.marks[1] || s.windows[0].retired_toolbar.is_some()
+            let (target, other) = (p.marks[2], 1 - p.marks[2]);
+            let rebuilt = s.windows[target].toolbar.webview().as_raw() as usize;
+            let kept = s.windows[other].toolbar.webview().as_raw() as usize;
+            if rebuilt == p.marks[target]
+                || kept != p.marks[other]
+                || s.windows[other].retired_toolbar.is_some()
             {
                 return Err("Toolbar recovery did not stay in its own window".into());
             }
-            // Close one tab in each window, then clear: both retired lists must
-            // be empty before engine clearing starts.
+            // Close a tab in the first window now and one in the second window
+            // half a retirement delay later, so the closed second window outlives
+            // the first window's retired view.
             let a = s.windows[0].tabs.items[1].id;
-            let b = s.windows[1].tabs.items[2].id;
             p.command(el, 0, Command::CloseTab(a))?;
+            p.phase = 31;
+            p.at = Instant::now();
+        }
+        31 if p.at.elapsed() > RETIRE_DELAY / 2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let b = s.windows[1].tabs.items[2].id;
             p.command(el, 1, Command::CloseTab(b))?;
             let s = p.app.session.as_mut().ok_or("No session")?;
             if s.windows.iter().any(|w| w.retired.is_empty()) {
@@ -651,7 +663,12 @@ fn engine_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     s.closing_windows.len()
                 ));
             }
-            p.next();
+            // Clearing retires this window's tabs at the same moment it closes the
+            // other window, so their delays end together. Keep the closed window
+            // longer, as a slower teardown would: clearing must still wait for it.
+            s.closing_windows[0].0 = Instant::now() + RETIRE_DELAY * 2;
+            p.phase = 4;
+            p.at = Instant::now();
         }
         4 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
@@ -664,7 +681,7 @@ fn engine_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 );
             }
             if s.clearing.is_none() || native {
-                if p.at.elapsed() > Duration::from_millis(900) || s.clearing.is_none() {
+                if p.at.elapsed() > RETIRE_DELAY * 2 || s.clearing.is_none() {
                     p.log.push(
                         "windows: engine restart, toolbar isolation and clearing passed".into(),
                     );
