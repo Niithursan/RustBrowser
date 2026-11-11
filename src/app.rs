@@ -62,6 +62,8 @@ pub enum Event {
     /// The toolbar view's own WebView2 process failed.
     ToolbarProcess(u64, crate::native_activity::Failure),
     ToolbarResponsive(u64, u64),
+    ZoomChanged(TabId),
+    FindResult(TabId, bool),
     Library(library_worker::Reply),
     DownloadRequested(u64, TabId),
     DownloadStopped(u64, i32),
@@ -128,6 +130,9 @@ fn build_toolbar(
         .with_download_started_handler(|_, _| false)
         .with_url(&toolbar_url)
         .with_devtools(false)
+        .with_default_context_menus(false)
+        .with_browser_accelerator_keys(false)
+        .with_hotkeys_zoom(false)
         .with_navigation_handler(move |url| url == allowed_url)
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_ipc_handler(move |request| {
@@ -955,6 +960,13 @@ impl Session {
             source.as_str()
         };
         let state = ToolbarState {
+            zoom_percent: active
+                .content
+                .engine
+                .zoom_factor()
+                .ok()
+                .map(|zoom| (zoom * 100.0).round() as u32),
+            page_tools: self.effective_panel().is_none() && navigation::allowed(&source),
             settings: &self.settings,
             private: self.private,
             restore_session: self.settings.restore_session,
@@ -1062,6 +1074,29 @@ impl Session {
             return Err("Security initialization is not complete.".into());
         }
         match command {
+            Command::FindInPage
+            | Command::PrintPage
+            | Command::ZoomIn
+            | Command::ZoomOut
+            | Command::ResetZoom => {
+                if self.effective_panel().is_some() {
+                    return Err("Find, zoom and print apply to the visible website page. Return to the page first (F7).".into());
+                }
+                let tab = self.tabs.active().ok_or("No website tab is selected.")?;
+                if !navigation::allowed(&tab.content.engine.view.url().unwrap_or_default()) {
+                    return Err("Find, zoom and print require a website page.".into());
+                }
+                match command {
+                    Command::FindInPage => tab.content.engine.find_in_page("", self.proxy.clone(), tab.id)
+                        .map_err(|_| "Find in page could not open. Update WebView2 Runtime and try again.")?,
+                    Command::PrintPage => tab.content.engine.print_preview()
+                        .map_err(|_| "Print preview could not open. Update WebView2 Runtime and try again.")?,
+                    Command::ZoomIn => tab.content.engine.zoom_step(true)?,
+                    Command::ZoomOut => tab.content.engine.zoom_step(false)?,
+                    Command::ResetZoom => tab.content.engine.view.zoom(1.0)?,
+                    _ => unreachable!(),
+                }
+            }
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
             Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
@@ -1927,6 +1962,10 @@ mod toolbar_validation;
 #[path = "keyboard_validation.rs"]
 mod keyboard_validation;
 
+#[cfg(test)]
+#[path = "basics_validation.rs"]
+mod basics_validation;
+
 /// Why the browser window could not be created.
 #[derive(Debug, PartialEq, Eq)]
 pub enum StartFailure {
@@ -1994,6 +2033,8 @@ impl ApplicationHandler<Event> for App {
                 if event.state == ElementState::Pressed && !event.repeat =>
             {
                 let key = match event.logical_key {
+                    Key::Character(ref value) if matches!(value.as_str(), "=" | "+") => 0xbb,
+                    Key::Character(ref value) if value.as_str() == "-" => 0xbd,
                     Key::Character(value) if value.len() == 1 => {
                         value.as_bytes()[0].to_ascii_uppercase() as u32
                     }
@@ -2077,6 +2118,15 @@ impl ApplicationHandler<Event> for App {
             }
             Event::EngineProcess(id, failure) => session.process_failed(id, failure),
             Event::ToolbarProcess(source, failure) => session.toolbar_failed(source, failure),
+            Event::ZoomChanged(id) => {
+                // Read the current controller, never a potentially stale event value.
+                if !session.tabs.active().is_some_and(|tab| tab.id == id) { return; }
+            },
+            Event::FindResult(id, success) => {
+                if !success && session.tabs.active().is_some_and(|tab| tab.id == id) {
+                    session.notice = "Find in page could not open. Try again after the page finishes loading.".into();
+                }
+            }
             Event::ToolbarResponsive(source, ticket) => {
                 if source == session.toolbar_source
                     && session.toolbar_probe.is_some_and(|(_, active)| active == ticket) {
