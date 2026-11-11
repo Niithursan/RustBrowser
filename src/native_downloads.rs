@@ -472,6 +472,54 @@ pub fn choose_folder(owner: isize) -> Result<Option<PathBuf>, String> {
     }
 }
 
+/// Ask for an unpacked extension folder. Runs on its own STA thread like
+/// `choose_folder`. Returns `None` when the user cancels.
+pub fn choose_extension_folder(owner: isize) -> Result<Option<PathBuf>, String> {
+    // SAFETY: as in `choose_folder`, the dialog and shell items stay on this STA
+    // thread; only an owned path leaves the block.
+    unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            .ok()
+            .map_err(|_| "Could not open the folder picker.".to_string())?;
+        struct Apartment;
+        impl Drop for Apartment {
+            fn drop(&mut self) {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+        let _apartment = Apartment;
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+            .map_err(|_| "Could not open the folder picker.".to_string())?;
+        dialog
+            .SetOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST)
+            .and_then(|()| {
+                dialog.SetTitle(&HSTRING::from(
+                    "Choose the unpacked extension folder (the one with manifest.json)",
+                ))
+            })
+            .map_err(|_| "Could not configure the folder picker.".to_string())?;
+        if let Err(error) = dialog.Show(Some(HWND(owner as *mut _))) {
+            if error.code().0 as u32 == 0x800704c7 {
+                return Ok(None);
+            }
+            return Err("Choosing the folder failed.".into());
+        }
+        let item = dialog
+            .GetResult()
+            .map_err(|_| "No folder was chosen.".to_string())?;
+        let name = item
+            .GetDisplayName(SIGDN_FILESYSPATH)
+            .map_err(|_| "Choose a folder on this computer.".to_string())?;
+        let value = name
+            .to_string()
+            .map_err(|_| "Invalid folder name.".to_string());
+        CoTaskMemFree(Some(name.0 as *const _));
+        Ok(Some(PathBuf::from(value?)))
+    }
+}
+
 /// Ask for an exported bookmarks file and read it, refusing anything larger than
 /// the import limit before reading it all. Runs on its own STA thread like
 /// `choose_folder`. Returns `None` when the user cancels.

@@ -62,6 +62,15 @@ pub enum Command {
     SetRestoreSession(bool),
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,
+    /// Privacy & security > Extensions > Add from folder (native folder dialog).
+    AddExtension,
+    /// Turn an extension the user added on or off.
+    SetExtensionEnabled {
+        id: String,
+        enabled: bool,
+    },
+    /// Remove an extension the user added.
+    RemoveExtension(String),
     /// Privacy & security: "Offer to save passwords".
     SetSavePasswords(bool),
     /// Privacy & security: "Fill in forms automatically".
@@ -131,6 +140,17 @@ pub struct TabState<'a> {
     pub loading: bool,
 }
 
+/// One extension in Privacy & security > Extensions.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ExtensionRow {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub folder: String,
+    /// "on", "off" or "missing" (no longer installed in the profile).
+    pub state: &'static str,
+}
+
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
     pub zoom_percent: Option<u32>,
@@ -149,6 +169,8 @@ pub struct ToolbarState<'a> {
     pub search_engine: SearchEngine,
     pub notice: &'a str,
     pub panel: Option<Panel>,
+    /// Extensions the user added, with their current state.
+    pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
     pub history_enabled: bool,
     pub downloads: Vec<crate::native_downloads::Record>,

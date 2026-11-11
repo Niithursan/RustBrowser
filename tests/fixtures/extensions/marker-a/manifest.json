@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Rust Browser test marker A",
+  "version": "1.0.0",
+  "description": "Test fixture written for Rust Browser. Marks pages it runs on; it reads and sends nothing.",
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["mark.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -249,6 +249,9 @@ impl Engine {
             .with_hotkeys_zoom(true)
             .with_clipboard(false)
             .with_incognito(private)
+            // Extensions run only in the normal website profile, never in private
+            // windows (separate profile) or the toolbar (separate profile, never set).
+            .with_browser_extensions_enabled(!private)
             .with_focused(false)
             .with_navigation_handler(move |url| {
                 let allowed = url == "about:blank" || navigation::allowed(&url);

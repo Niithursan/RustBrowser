@@ -200,6 +200,11 @@ impl ApplicationHandler<Event> for Probe {
     }
 }
 
+/// Run `steps` against an existing profile (a restart of an earlier run).
+fn run_in(root: PathBuf, steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>) {
+    let _ = drive(root, steps, false);
+}
+
 fn run(
     label: &str,
     steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
@@ -208,6 +213,30 @@ fn run(
     let server = super::compat_validation::Server::start();
     let root = root(label);
     prepare(&root, &server.url);
+    let private = label.starts_with("private");
+    let log = drive_with(root.clone(), steps, private, server);
+    (root, log)
+}
+
+fn drive(
+    root: PathBuf,
+    steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
+    private: bool,
+) -> Vec<String> {
+    drive_with(
+        root,
+        steps,
+        private,
+        super::compat_validation::Server::start(),
+    )
+}
+
+fn drive_with(
+    root: PathBuf,
+    steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
+    private: bool,
+    server: super::compat_validation::Server,
+) -> Vec<String> {
     let event_loop = EventLoop::<Event>::with_user_event()
         .with_any_thread(true)
         .build()
@@ -228,11 +257,8 @@ fn run(
         snapshot: Vec::new(),
         reply: None,
         steps,
-        private: false,
+        private,
     };
-    if label.starts_with("private") {
-        probe.private = true;
-    }
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
     let done = probe.done;
@@ -242,7 +268,8 @@ fn run(
     assert!(result.is_ok());
     assert!(failure.is_none(), "{failure:?}\n{}", log.join("\n"));
     assert!(done, "Fixture did not finish");
-    (root, log)
+    drop(server);
+    log
 }
 
 /// Send a hand-off as a second launch would: through the event loop.
@@ -1150,5 +1177,326 @@ fn native_toolbar_autofill_cleanup_does_not_repeat() {
         toolbar_cleanup_done_steps,
         |root, _| write_019_session(root, true),
     );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn marker(letter: char) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/extensions")
+        .join(format!("marker-{}", letter.to_ascii_lowercase()))
+}
+
+/// Ask the first tab which test markers ran on its page; the answer arrives in
+/// `p.result`.
+fn read_markers(p: &mut Probe) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.tabs.items[0]
+        .content
+        .engine
+        .view
+        .evaluate_script_with_callback(
+            "JSON.stringify([document.documentElement.dataset.rbMarkerA||'',document.documentElement.dataset.rbMarkerB||''])",
+            move |value| *result.lock().unwrap() = Some(value),
+        )
+        .map_err(|_| "Page script failed".to_string())
+}
+
+fn markers(p: &Probe) -> Option<String> {
+    p.result.lock().unwrap().clone()
+}
+
+/// Add a test extension as if its folder had been chosen in the dialog.
+fn add_marker(p: &mut Probe, letter: char) -> Result<(), String> {
+    p.app
+        .proxy
+        .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+            Some(marker(letter)),
+        ))))
+        .map_err(|_| "proxy".into())
+}
+
+fn names(s: &Session) -> Vec<(String, &'static str)> {
+    s.extension_rows()
+        .into_iter()
+        .map(|row| (row.name, row.state))
+        .collect()
+}
+
+const MARKER_A: &str = "Rust Browser test marker A";
+const MARKER_B: &str = "Rust Browser test marker B";
+
+/// Add two test extensions from their folders, list them, check both run on a
+/// page, turn one off and remove the other; the toolbar profile has neither.
+/// Then a second browser process on the same profile must find the same state.
+fn extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            add_marker(p, 'a')?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "on")] {
+                add_marker(p, 'b')?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding A: {:?}, notice {:?}", names(s), s.notice));
+            }
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "on"), (MARKER_B.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}?extensions")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding B: {:?}, notice {:?}", names(s), s.notice));
+            }
+        }
+        3 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        4 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"on\",\"on\"]""# {
+                    return Err(format!("Both extensions should run on the page: {found}"));
+                }
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let a = s.settings.extensions[0].id.clone();
+                let b = s.settings.extensions[1].id.clone();
+                p.command(
+                    el,
+                    0,
+                    Command::SetExtensionEnabled {
+                        id: a,
+                        enabled: false,
+                    },
+                )?;
+                p.command(el, 0, Command::RemoveExtension(b))?;
+                p.next();
+            }
+        }
+        5 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "off")] {
+                p.command(el, 0, Command::Reload)?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!(
+                    "Turning off and removing: {:?}, notice {:?}",
+                    names(s),
+                    s.notice
+                ));
+            }
+        }
+        6 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        7 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"\",\"\"]""# {
+                    return Err(format!(
+                        "A turned-off or removed extension still ran: {found}"
+                    ));
+                }
+                // The toolbar profile never has the user's extensions.
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.extension_probe = None;
+                native_extensions::installed(&s.windows[0].toolbar, s.proxy.clone())?;
+                p.next();
+            }
+        }
+        8 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(found) = s.extension_probe.clone() {
+                if let Ok(list) = &found
+                    && list
+                        .iter()
+                        .any(|e| e.name.starts_with("Rust Browser test marker"))
+                {
+                    return Err(format!(
+                        "The toolbar profile has a user extension: {list:?}"
+                    ));
+                }
+                p.log
+                    .push(format!("extensions: toolbar profile reported {found:?}"));
+                p.app.user_event(el, Event::Command(Command::ExitBrowser));
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The toolbar profile was never listed".into());
+            }
+        }
+        9 if p.app.session.is_none() => {
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// After a restart on the same profile: A is still off, B is still gone, and
+/// neither runs on a page.
+fn extension_restart_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.extensions_listed {
+                if names(s) != [(MARKER_A.to_string(), "off")] {
+                    return Err(format!("After restart: {:?}", names(s)));
+                }
+                p.command(el, 0, Command::Navigate(format!("{url}?restart")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err("Extensions were never listed after restart".into());
+            }
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        2 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"\",\"\"]""# {
+                    return Err(format!("After restart an extension ran: {found}"));
+                }
+                // B is not merely hidden: WebView2 no longer has it installed.
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.extension_probe = None;
+                native_extensions::installed(
+                    &s.tabs.items[0].content.engine.view,
+                    s.proxy.clone(),
+                )?;
+                p.next();
+            }
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(found) = s.extension_probe.clone() {
+                let list = found.map_err(|e| format!("Listing after restart failed: {e}"))?;
+                let a = list.iter().find(|e| e.name == MARKER_A);
+                if !a.is_some_and(|a| !a.enabled) || list.iter().any(|e| e.name == MARKER_B) {
+                    return Err(format!("WebView2 after restart: {list:?}"));
+                }
+                p.log.push("extensions: state kept after restart".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The profile was never listed after restart".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; starts a second test process for the restart"]
+fn native_extensions_add_list_disable_remove_and_restart() {
+    let (root, _) = run("extensions", extension_steps, |_, _| {});
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert_eq!(saved.settings.extensions.len(), 1);
+    assert_eq!(saved.settings.extensions[0].name, MARKER_A);
+    // A real restart: a new process on the same profile.
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "app::windows_validation::extension_restart_child",
+            "--ignored",
+            "--test-threads=1",
+            "--nocapture",
+        ])
+        .env("RUST_BROWSER_EXTENSION_ROOT", &root)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the restarted browser did not keep the extension state"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Second half of the restart check; run only by the test above.
+#[test]
+#[ignore = "Started by native_extensions_add_list_disable_remove_and_restart"]
+fn extension_restart_child() {
+    let root = PathBuf::from(
+        std::env::var_os("RUST_BROWSER_EXTENSION_ROOT")
+            .expect("run by native_extensions_add_list_disable_remove_and_restart"),
+    );
+    run_in(root, extension_restart_steps);
+}
+
+/// A private window never runs extensions and refuses to add or change them.
+fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.private {
+                return Err("The fixture did not start a private window".into());
+            }
+            if s.command(Command::AddExtension).is_ok()
+                || s.command(Command::RemoveExtension("a".repeat(32))).is_ok()
+            {
+                return Err("A private window accepted an extension command".into());
+            }
+            add_marker(p, 'a')?;
+            p.command(el, 0, Command::Navigate(format!("{url}?private")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        2 => {
+            if let Some(found) = markers(p) {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                if found != r#""[\"\",\"\"]""# || !s.settings.extensions.is_empty() {
+                    return Err(format!(
+                        "A private window ran or kept an extension: {found}, {:?}",
+                        s.settings.extensions
+                    ));
+                }
+                p.log
+                    .push("extensions: private windows never run them".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real private window"]
+fn native_private_windows_never_run_extensions() {
+    let (root, _) = run("private-extensions", private_extension_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
