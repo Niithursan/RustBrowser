@@ -44,9 +44,13 @@ Done:
 - Gate script: `work/v17/gates.ps1` (adds edit-menu and single-instance suites,
   v0.16 baseline in `work/v17/install/baseline`).
 
-Next: full local gates on `d7b8e93`, then open ONE draft PR (first push that
-starts CI), verify CI on that head, fix only reproduced failures, final push,
-verify CI on the final head. Do not merge, tag or mark ready.
+Final state (2026-11-11): draft PR #23, final head `25a94d0`. CI 42962367821 and
+security 42962367796 passed on it. The earlier head `ab72a65` failed CI 42961341354
+in the DACL test (hosted runner is the built-in Administrator, written as SDDL
+alias LA); fixed in the test only. All 33 local gates passed on `25a94d0`
+(`work/v17/production-gates.json`). This checkpoint note is a local commit only,
+not pushed, to avoid another full CI run; the same status is in the PR comments.
+Stop at the draft PR: do not merge, tag or mark ready without the owner.
 
 Decisions recorded for the owner:
 - Extra features of the existing `windows` crate enabled (no new crate,
