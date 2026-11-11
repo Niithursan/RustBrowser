@@ -1,4 +1,4 @@
-# Owner checklist (about 55 minutes)
+# Owner checklist (about 80 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -126,7 +126,7 @@ the page area starts directly below it with no gap or overlap.
 Use a public documentation page or controlled fixture without sensitive text.
 Press Ctrl+F, enter a word present several times, and use the native find arrows
 or Enter to move between matches. Close its bar with Escape. Repeat using
-**More > Find in page** while the toolbar has focus.
+**Menu (⋮) > Find in page** while the toolbar has focus.
 
 **Pass:** the native find bar appears over the website, highlights the expected
 matches, accepts text and closes. Browser controls are not searched or changed.
@@ -134,7 +134,7 @@ matches, accepts text and closes. Browser controls are not searched or changed.
 ## 10. Zoom (2 minutes)
 
 1. On the website press Ctrl+plus, Ctrl+minus and Ctrl+0. Try Ctrl+wheel with the
-   pointer over content. Use **More > Zoom + / Zoom - / Reset zoom (100%)** too.
+   pointer over content. Use **Menu (⋮) > Zoom + / Zoom - / Reset zoom (100%)** too.
 2. Away from 100%, use the toolbar percentage/reset button. Open a second tab
    to the same website and switch between them.
 
@@ -146,7 +146,7 @@ from Rust Browser's session after closing/recreating a controller.
 ## 11. Print preview and cancellation (2 minutes)
 
 On the same nonsensitive page press Ctrl+P, inspect preview, then cancel with
-Escape. Repeat using **More > Print**, starting with toolbar focus. Inspect the
+Escape. Repeat using **Menu (⋮) > Print**, starting with toolbar focus. Inspect the
 selected output without changing system printer settings. No paper print or PDF
 save is required by this checklist; report actual output separately if you test it.
 
@@ -160,7 +160,7 @@ created by a person can remain on disk, including from private browsing.
 Use the bundle's validation-only Setup (`Launch.ps1 -Installed` flow). Its links
 open the bundle's own disposable profile, never your daily one.
 
-1. Start it with `.\Launch.ps1 -Installed`, open More (⋯) → Privacy & security,
+1. Start it with `.\Launch.ps1 -Installed`, open Menu (⋮) → Privacy & security,
    and select **Make default browser**.
 2. In the Windows Settings page that opens, choose the entry named
    "Rust Browser validation ..." for HTTP and HTTPS.
@@ -190,7 +190,7 @@ the front. (Before 0.18 this opened a new tab instead.)
 
 ## 15. Second window (1 minute)
 
-1. Press Ctrl+N, then use More (⋯) → New window.
+1. Press Ctrl+N, then use Menu (⋮) → New window.
 
 **Pass:** each opens one new window on the new-tab page, with its own taskbar and
 Alt+Tab entry. Close the extra windows with their close buttons; the browser stays
@@ -215,7 +215,7 @@ are using; each window's title and taskbar entry show its own page.
 
 ## 18. Close and reopen the browser (2 minutes)
 
-1. With the three windows from step 17 open, use More (⋯) → Exit.
+1. With the three windows from step 17 open, use Menu (⋮) → Exit.
 2. Start the browser again with the same launcher.
 
 **Pass:** all three windows return with their tabs, pinned tabs and selected tabs;
@@ -253,7 +253,7 @@ password you use anywhere else.
 
 ## 22. Save a password (4 minutes)
 
-1. More (⋯) → Privacy & security → turn on **Offer to save passwords**.
+1. Menu (⋮) → Privacy & security → turn on **Offer to save passwords**.
 2. Sign in to your throwaway test account on its website and accept WebView2's
    offer to save the password.
 3. Sign out, then go back to the sign-in page.
@@ -292,7 +292,7 @@ there.
 
 1. In Firefox: Bookmarks → Manage bookmarks → Import and Backup → Export Bookmarks
    to HTML, and save the file.
-2. In Rust Browser: More (⋯) → Bookmarks → **Import from file…** and choose that
+2. In Rust Browser: Menu (⋮) → Bookmarks → **Import from file…** and choose that
    file.
 
 **Pass:** a notice says how many were added, skipped and refused; the bookmarks and
@@ -305,6 +305,66 @@ nothing.
    test account if the site allows it.
 
 **Pass:** nothing from steps 22 to 26 remains outside the disposable profile.
+
+## 28. Block ads with uBlock Origin Lite (5 minutes)
+
+Use the disposable owner profile from the bundle.
+
+1. Download the latest `uBOLite_<version>.chromium.zip` from
+   https://github.com/uBlockOrigin/uBOL-home/releases and check its SHA-256 against
+   the digest GitHub shows next to the file (README, "Extensions and ad blocking").
+2. Extract it to a new folder outside the bundle.
+3. Menu (⋮) → Privacy & security → Extensions → **Add from folder…**, and choose the
+   folder that contains `manifest.json`. Read the warning shown with the list.
+4. Open a news website you know shows ads (do not sign in) and compare it with the
+   same page in your usual browser without an ad blocker.
+5. Turn the extension off in the list, reload the page, then turn it on again.
+6. Open a private window (Ctrl+Shift+N) and open the same page.
+
+**Pass:** uBlock Origin Lite appears in the list as On, the extension button next to
+the address line shows 1; the news page shows clearly fewer ads than without a
+blocker; with the extension off the ads return; the private window shows the ads
+(extensions never run there) and its Extensions section says so. Note the site you
+used. Remove the extension afterwards.
+
+## 29. The new layout (6 minutes)
+
+1. Without a mouse, use Tab, Shift+Tab, arrow keys and Enter to reach and use: the
+   tabs, + (new tab), back, forward, reload, home, the site-information badge, the
+   address field, the bookmark star, Menu (⋮) and every item in it.
+2. With the mouse, find each action you used before 0.20: find in page, zoom, print,
+   pin, move tab, keep awake, search engine, bookmarks, history, downloads, Privacy &
+   security, new window, reopen closed window, private window and Exit.
+3. Turn on Narrator (Ctrl+Windows+Enter) and move through the toolbar.
+4. Turn on a Windows contrast theme (Settings → Accessibility → Contrast themes), check
+   the toolbar, then turn it off.
+
+**Pass:** every action is findable and works; Narrator reads a useful name for every
+button, including the icon-only ones; in the contrast theme the selected tab, focus
+and all icons stay visible. Report anything you could not find.
+
+## 30. Clean install in a new Windows user account (15 minutes)
+
+This is the clean-machine check for the release candidate build. It uses a separate,
+new Windows user account so your own account, browser and profile are not touched.
+Creating the account is your decision and your action; Rust Browser and its tests
+never create accounts or change system settings.
+
+1. Create a new local standard (not administrator) Windows user account, sign in to
+   it once and let Windows finish setting it up.
+2. In that account, copy in the release candidate Setup file and its `.sha256` file
+   from the bundle, check the SHA-256 as the release notes describe, and run Setup.
+   Note any SmartScreen warning and what you clicked.
+3. Start Rust Browser from the Start menu. Browse a few websites, open a second tab
+   and a second window, add and use a bookmark, then close it and start it again.
+4. Uninstall it from Settings → Apps → Installed apps.
+5. Sign out, then delete the test account (Settings → Accounts → Other users), which
+   also removes its data.
+
+**Pass:** Setup runs without administrator rights; the browser starts, browses and
+restores its tabs; if the WebView2 Runtime or Visual C++ Redistributable was missing
+in that account, Setup said so clearly; uninstall removes the Start menu entry. Report
+the exact SmartScreen text you saw.
 
 When you finish, set your usual default browser back (step 12.3) and uninstall the
 validation entry from Apps & Features.

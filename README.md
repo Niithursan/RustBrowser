@@ -5,15 +5,24 @@ A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
 
+v0.20 is the first published release; download it from the
+[Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
+[Install a release](#install-a-release)). It brings a new layout: tabs are cards
+with the page's icon, the toolbar has icon buttons, a bookmark star in the address
+line and one Menu (⋮) holding every other action. You can add browser extensions
+from a folder, for example uBlock Origin Lite to block ads (see
+[Extensions and ad blocking](#extensions-and-ad-blocking)). Extensions never run in
+private windows. This is not a release candidate.
+
 v0.19 can save passwords and fill in forms using WebView2's own features. Both
-are off until you turn them on in More (⋯) → Privacy & security, and private
+are off until you turn them on in Menu (⋮) → Privacy & security, and private
 windows never save either. **Form autofill is now off by default**: WebView2
 turned it on by itself before this version. Bookmarks can be imported from an
 exported bookmarks HTML file (Firefox, Chrome or Edge). Passwords cannot be
 imported. See [Passwords and autofill](#passwords-and-autofill) and
 [Importing bookmarks](#importing-bookmarks). This is not a release candidate.
 
-v0.18 opens several normal windows on one profile: Ctrl+N or More (⋯) → New
+v0.18 opens several normal windows on one profile: Ctrl+N or Menu (⋮) → New
 window, up to 8 at a time. Links from other apps go to the window you used last,
 which comes to the front. Closing a window closes only that window; the browser
 exits when the last one closes, and every open window returns at the next start,
@@ -71,8 +80,8 @@ prints the version without opening a profile. This work publishes no release.
 
 v0.12 redesigns the toolbar: the address line shows a plain connection word and
 the site's host emphasised, tabs are text with a coloured rule under the active
-one, and tab and library actions sit behind the More (⋯) button (also reachable by
-keyboard shortcuts). It adds Windows high-contrast support, announces
+one, and tab and library actions sat behind a More button (also reachable by
+keyboard shortcuts; since v0.20 this is the Menu (⋮) button). It adds Windows high-contrast support, announces
 navigation errors to screen readers, names list actions by their item, extends the
 controlled compatibility suite to service workers and Cache Storage, fixes false
 errors after rapid successive navigations, and makes CI faster
@@ -84,6 +93,39 @@ regression suite. The version intentionally jumps from 0.8.0 because v0.9
 and v0.10 were research milestones. Existing profile locations and storage
 schemas remain unchanged. See [Windows installation and upgrades](INSTALL_WINDOWS.md)
 and [the daily-driver acceptance record](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md).
+
+## Install a release
+
+Download `rust-browser-v0.20.0-windows-x64-setup.exe` and its `.sha256` file from the
+[Releases page](https://github.com/Niithursan/RustBrowser/releases), check the
+SHA-256 as the release notes show, and run Setup (per user, no administrator rights).
+Builds are unsigned, so Windows SmartScreen warns about an unknown publisher. You
+need the Microsoft WebView2 Runtime and the x64 Visual C++ v14 Redistributable; see
+[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md). The steps below are for building from
+source instead.
+
+## Layout
+
+The tab strip runs along the top. Each tab is a card with the page's icon, its title
+and a close button; the selected card is joined to the toolbar below it and marked
+with an accent line along its top edge and a bold title. The + button follows the
+last tab; when tabs overflow, the scroll buttons and the all-tabs list at the right
+of the strip stay available.
+
+The toolbar row holds back, forward, reload (stop while loading) and home, then the
+address line. At its start, the site-information badge shows the connection and opens
+Privacy & security; at its end, the star bookmarks the page. After the address line
+an extension button appears once you add an extension, showing how many are on. The
+Menu (⋮) at the far right holds everything else: find, zoom, print, pin, move and
+keep-awake for the current tab, the search engine, bookmarks, history, downloads,
+Privacy & security, new, reopened and private windows, and Exit. Every action keeps
+its keyboard shortcut.
+
+Tab icons come from WebView2 as image data checked by the browser; the toolbar never
+loads anything from a website. All icons are drawn for this project. The four themes,
+Windows high contrast and reduced motion are supported as before. Windows draws the
+title bar as usual: drawing tabs into the title bar would risk Snap layouts, title-bar
+dragging, double-click to maximise and Narrator, so it is not done.
 
 ## Setup on Windows
 
@@ -138,15 +180,18 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 
 | Action | Control |
 | --- | --- |
-| Open a website | Address field, then Enter or Go |
+| Open a website | Address field, then Enter |
+| Bookmark the current page | Star at the end of the address line, or Ctrl+D |
+| Choose the search engine | Menu (⋮) → Search with |
+| Manage extensions | Extension button after the address line (shown once you add one), or Menu (⋮) → Privacy & security → Extensions |
 | Focus/select address | Ctrl+L, Alt+D, F6 |
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
 | Stop | × button or Escape |
-| Find in the visible website | Ctrl+F or More (⋯) → Find in page; uses WebView2's native find bar |
-| Zoom in / out | Ctrl+plus (or Ctrl+equals) / Ctrl+minus, Ctrl+wheel over content, or More (⋯) → Zoom + / Zoom - |
-| Reset zoom | Ctrl+0, More (⋯) → Reset zoom (100%), or the percentage/reset button shown away from 100% |
-| Print preview | Ctrl+P or More (⋯) → Print; choose output and confirm in WebView2's preview, or cancel |
+| Find in the visible website | Ctrl+F or Menu (⋮) → Find in page; uses WebView2's native find bar |
+| Zoom in / out | Ctrl+plus (or Ctrl+equals) / Ctrl+minus, Ctrl+wheel over content, or Menu (⋮) → Zoom + / Zoom - |
+| Reset zoom | Ctrl+0, Menu (⋮) → Reset zoom (100%), or the percentage/reset button shown away from 100% |
+| Print preview | Ctrl+P or Menu (⋮) → Print; choose output and confirm in WebView2's preview, or cancel |
 | Home | Home button or Alt+Home → local new-tab page |
 | New tab | + button or Ctrl+T |
 | Close active tab | Ctrl+W or Ctrl+F4 (last normal tab opens Home; last private tab closes its window) |
@@ -154,26 +199,26 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Reopen the last closed tab | Ctrl+Shift+T (this window only; up to 16; the address is reloaded, page state is not restored) |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab or Ctrl+PageDown / Ctrl+PageUp (wraps around) |
 | Select a tab | Click its title, or Ctrl+1 to Ctrl+8 by position; Ctrl+9 selects the last tab |
-| Reorder tabs | Drag a tab, More (⋯) → Move left/right, or Ctrl+Shift+PageUp/PageDown |
-| Pin/unpin active tab | More (⋯) → Pin tab, or Ctrl+Shift+P |
+| Reorder tabs | Drag a tab, Menu (⋮) → Move left/right, or Ctrl+Shift+PageUp/PageDown |
+| Pin/unpin active tab | Menu (⋮) → Pin tab, or Ctrl+Shift+P |
 | Navigate focused tab strip | Left/Right, Home/End; Tab reaches the selected tab |
 | Find an overflowed tab | All-tabs selector or tab-strip scroll buttons |
-| Prevent active tab sleeping | More (⋯) → Keep awake (saved per normal tab) |
+| Prevent active tab sleeping | Menu (⋮) → Keep awake (saved per normal tab) |
 | Focus webpage from toolbar | F7 |
 | Bookmark current page | Ctrl+D |
-| Bookmark manager | More (⋯) → Bookmarks, or Ctrl+Shift+O |
-| Import bookmarks from another browser | More (⋯) → Bookmarks → Import from file… (an exported bookmarks HTML file) |
-| Offer to save passwords / fill in forms | More (⋯) → Privacy & security → Passwords and forms (both off by default) |
-| Browsing history | More (⋯) → History, or Ctrl+H |
-| Download manager | More (⋯) → Downloads, or Ctrl+J |
-| New window | More (⋯) → New window, or Ctrl+N (up to 8 normal windows) |
+| Bookmark manager | Menu (⋮) → Bookmarks, or Ctrl+Shift+O |
+| Import bookmarks from another browser | Menu (⋮) → Bookmarks → Import from file… (an exported bookmarks HTML file) |
+| Offer to save passwords / fill in forms | Menu (⋮) → Privacy & security → Passwords and forms (both off by default) |
+| Browsing history | Menu (⋮) → History, or Ctrl+H |
+| Download manager | Menu (⋮) → Downloads, or Ctrl+J |
+| New window | Menu (⋮) → New window, or Ctrl+N (up to 8 normal windows) |
 | Close this window | Its close button or Alt+F4 (other windows stay open; the last one exits) |
-| Reopen a closed window | More (⋯) → Reopen closed window (this run only) |
-| Close every window | More (⋯) → Exit (all of them return at the next start) |
-| New private window | More (⋯) → Private window, or Ctrl+Shift+N |
+| Reopen a closed window | Menu (⋮) → Reopen closed window (this run only) |
+| Close every window | Menu (⋮) → Exit (all of them return at the next start) |
+| New private window | Menu (⋮) → Private window, or Ctrl+Shift+N |
 | Cut, copy, paste or select all in the address field | Right-click the address field, or the menu key |
-| Choose Rust Browser as the default browser | More (⋯) → Privacy & security → Make default browser (opens Windows Settings) |
-| Privacy and security | Connection word at the start of the address line, More (⋯) → Privacy & security |
+| Choose Rust Browser as the default browser | Menu (⋮) → Privacy & security → Make default browser (opens Windows Settings) |
+| Privacy and security | Site-information badge at the start of the address line, Menu (⋮) → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
 
 Find, zoom and print apply to the visible website, including in a private window,
@@ -185,7 +230,7 @@ Find/print APIs show an update/retry error. Printing can create lasting output
 even from private browsing. Actual printer/PDF output is not part of validation.
 
 Bare domains receive `https://`. Explicit `http://` supports local development.
-Words and phrases are searched with the selected provider. The toolbar selector
+Words and phrases are searched with the selected provider. Menu (⋮) → Search with
 chooses Google (default), DuckDuckGo or Bing and saves that choice automatically.
 Queries are URL-encoded; active schemes and embedded credentials remain blocked.
 Inputs resembling a domain or localhost address are treated as URLs. Single-label
@@ -227,13 +272,13 @@ can be open in each window.
 
 Closing one of several windows hides it at once and removes it from the saved
 session; its pages are destroyed a few seconds later, like closed tabs. Until
-Rust Browser exits, More (⋯) → Reopen closed window brings back the most recently
+Rust Browser exits, Menu (⋮) → Reopen closed window brings back the most recently
 closed window with its tab addresses and pins, in the same order. Titles,
 keep-awake choices, back/forward history and page state are not restored, and the
 list is kept in memory only (up to 8 windows). Clearing browsing data empties it
 and closes every other window first.
 
-Closing the last window, or More (⋯) → Exit, ends the browser. At the next start
+Closing the last window, or Menu (⋮) → Exit, ends the browser. At the next start
 every window that was open returns with its tabs, the one used last in front.
 After a crash the next start restores the windows from the last save.
 
@@ -457,7 +502,7 @@ Windows, or other software. Downloads and their metadata can remain on disk.
 
 ## Passwords and autofill
 
-More (⋯) → Privacy & security → **Passwords and forms** has two switches:
+Menu (⋮) → Privacy & security → **Passwords and forms** has two switches:
 
 - **Offer to save passwords**: WebView2 offers to save a password when you sign in,
   and fills it in next time.
@@ -483,6 +528,43 @@ Passwords cannot be imported: WebView2 has no import interface (the WebView2 API
 used here has only the two switches and the clearing kinds). Keep using your old
 browser's saved passwords for sites you have not signed in to yet, or use a
 separate password manager app.
+
+## Extensions and ad blocking
+
+Menu (⋮) → Privacy & security → **Extensions** → **Add from folder…** adds a browser
+extension from an unpacked folder you downloaded yourself. Rust Browser never
+downloads, bundles or updates extensions. The list shows the extensions you added,
+whether each is on, and lets you turn each off or on and remove it; this lasts after
+a restart. Extensions run only in normal windows, never in private windows or in the
+browser's own toolbar. Extension buttons, pop-ups and settings pages are not
+available, so extensions run with their default settings.
+
+**An extension can read and change every website you open in normal windows,
+including what you type.** Add only extensions you trust, from their official
+release page.
+
+To block ads, the recommended extension is **uBlock Origin Lite**:
+
+1. Open its official releases page, https://github.com/uBlockOrigin/uBOL-home/releases,
+   and download the `uBOLite_<version>.chromium.zip` file of the latest release.
+2. Check the download: GitHub shows a SHA-256 digest next to each release file. In
+   PowerShell, `(Get-FileHash .\uBOLite_<version>.chromium.zip).Hash` must match it.
+3. Extract the ZIP into a folder you keep (for example
+   `%LOCALAPPDATA%\RustBrowser-extensions\uBOLite`). Do not delete the folder later:
+   the extension runs from it.
+4. In Rust Browser: Menu (⋮) → Privacy & security → Extensions → Add from folder…,
+   and choose the folder that contains `manifest.json`.
+
+uBlock Origin Lite blocks ad and tracker requests by default; it does not hide every
+ad box on a page. In the v0.20 tests it blocked every ad and tracker request of a
+local test page in three of three runs. The classic uBlock Origin also loads today,
+but it uses Manifest V2, which Chromium is retiring, so uBlock Origin Lite is the
+one to rely on. On the browser's synthetic benchmark, uBlock Origin Lite added one
+background process, about 30 to 40 MiB of private memory and about 20 to 80 ms to
+the time until the first page was usable (see VALIDATION.md).
+
+To update an extension, download the new release, extract it to a new folder, remove
+the old extension in Rust Browser and add the new folder.
 
 ## Website permissions
 
@@ -559,7 +641,7 @@ Database files/backups contain personal data, are not encrypted and must stay ou
 
 ## Importing bookmarks
 
-More (⋯) → Bookmarks → **Import from file…** opens a Windows file dialog. Choose a
+Menu (⋮) → Bookmarks → **Import from file…** opens a Windows file dialog. Choose a
 bookmarks HTML file exported from another browser:
 
 - Firefox: Bookmarks → Manage bookmarks → Import and Backup → Export Bookmarks to HTML.
