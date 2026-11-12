@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.20.0 (unreleased; to be the first published release)
+
+- New layout: tabs are cards with the page's icon, title and close button, the
+  selected card joined to the toolbar; + follows the last tab. The toolbar row has
+  icon buttons for back, forward, reload or stop and home, the address line with a
+  site-information badge and a bookmark star, an extension button, and a single
+  Menu (⋮) holding every other action (it replaces More, and now also holds the
+  search engine choice). The Go button is gone; Enter still opens the address. Icons
+  are drawn for this project. The normal Windows title bar is kept.
+- Browser extensions: Privacy & security > Extensions adds an unpacked extension
+  folder you downloaded, lists your extensions, turns them on or off and removes
+  them. uBlock Origin Lite works for ad blocking (see README). Extensions never run
+  in private windows or the toolbar, and Rust Browser never downloads them.
+- Fixed: since 0.18 the status line, the "Connecting" and "Loading" text and the
+  window-title separator showed garbled characters instead of the middle dot,
+  ellipsis and dash.
+- Window titles and tab tooltips separate their parts with " - " (for example
+  "Private - Example Domain"), and no user-facing text uses an em dash (tested).
+- Fixed: the toolbar's own profile could keep form entries saved before 0.19, when
+  WebView2 had autofill on in the address field. They are cleared once on upgrade;
+  saved passwords and website form data are not touched.
+- Release preparation: release notes for v0.20.0, RELEASING.md with the owner's
+  release steps, and a release workflow that runs every CI suite and publishes only
+  the reviewed notes. Builds remain unsigned.
+- Installer upgrade tests now start from a real 0.19 installation. Profile path,
+  session format 1 and SQLite schema 3 are unchanged; new settings fields are
+  optional and older versions ignore them.
+
 ## 0.19.0 (unreleased)
 
 - **Form autofill is now off by default.** WebView2 turned general autofill on by

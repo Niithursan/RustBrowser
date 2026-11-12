@@ -1,7 +1,7 @@
 use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
-    native_background, native_downloads, native_popup, native_security,
+    native_background, native_downloads, native_extensions, native_popup, native_security,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
@@ -49,6 +49,10 @@ pub enum Event {
         success: bool,
     },
     PermissionPrompt,
+    /// An extension operation finished.
+    Extension(native_extensions::Reply),
+    /// The one-time toolbar autofill cleanup finished (true when it succeeded).
+    ToolbarAutofillCleared(bool),
     EngineCleared {
         startup: bool,
         success: bool,
@@ -432,6 +436,21 @@ struct Session {
     /// Windows left out of the last save because of the size limit, already
     /// announced to the user (so the notice is shown once).
     unsaved_windows: Vec<WindowId>,
+    /// A folder being added as an extension, with its manifest version.
+    pending_extension: Option<(PathBuf, String)>,
+    /// The user's extensions as WebView2 last reported them (website profile).
+    extensions: Vec<native_extensions::Info>,
+    /// Whether `extensions` has been read from WebView2 since startup.
+    extensions_listed: bool,
+    /// The last `native_extensions::installed` answer (tests only).
+    #[cfg(test)]
+    extension_probe: Option<Result<Vec<native_extensions::Info>, String>>,
+    /// The last answer WebView2 gave to adding an extension (tests only).
+    #[cfg(test)]
+    extension_added: Option<Result<String, String>>,
+    /// Toolbar views the one-time autofill cleanup was asked to clear.
+    #[cfg(test)]
+    toolbar_autofill_clears: Vec<usize>,
     // Last field: native views/contexts and workers must release before cleanup.
     _private_lease: Option<PrivateLease>,
 }
@@ -471,6 +490,167 @@ impl Session {
             None => false,
         }
     }
+    /// Remove the toolbar profile's leftover form data once (before 0.19 WebView2
+    /// had autofill on in the address field). Only the toolbar profile, only
+    /// general autofill; a failure is retried at the next start.
+    fn clear_toolbar_autofill_once(&mut self) {
+        if self.private || self.settings.toolbar_autofill_cleared {
+            return;
+        }
+        let toolbar = &self.windows[0].toolbar;
+        #[cfg(test)]
+        self.toolbar_autofill_clears
+            .push(
+                windows::core::Interface::as_raw(&wry::WebViewExtWindows::webview(toolbar))
+                    as usize,
+            );
+        if native_security::clear_toolbar_autofill(toolbar, self.proxy.clone()).is_err() {
+            self.diagnostics.record(DiagnosticCode::CommandFailed);
+        }
+    }
+
+    /// Ask WebView2 for the state of the user's extensions.
+    fn refresh_extensions(&mut self) {
+        if self.private {
+            return;
+        }
+        let ids = self
+            .settings
+            .extensions
+            .iter()
+            .map(|e| e.id.clone())
+            .collect();
+        if let Some(tab) = self.tabs.active()
+            && let Err(message) =
+                native_extensions::list(&tab.content.engine.view, ids, self.proxy.clone())
+        {
+            self.notice = message;
+        }
+    }
+
+    /// The rows shown in Privacy & security > Extensions.
+    fn extension_rows(&self) -> Vec<ui::ExtensionRow> {
+        self.settings
+            .extensions
+            .iter()
+            .map(|saved| {
+                let live = self.extensions.iter().find(|e| e.id == saved.id);
+                ui::ExtensionRow {
+                    id: saved.id.clone(),
+                    name: live.map_or_else(|| saved.name.clone(), |e| e.name.clone()),
+                    version: saved.version.clone(),
+                    folder: saved.folder.clone(),
+                    state: match live {
+                        Some(e) if e.enabled => "on",
+                        Some(_) => "off",
+                        None if self.extensions_listed => "missing",
+                        None => "off",
+                    },
+                }
+            })
+            .collect()
+    }
+
+    /// Handle the result of an extension operation.
+    fn extension_reply(&mut self, reply: native_extensions::Reply) {
+        use native_extensions::Reply;
+        match reply {
+            Reply::Folder(Ok(None)) => {}
+            Reply::Folder(Ok(Some(folder))) => {
+                if self.private {
+                    return;
+                }
+                match native_extensions::check_folder(&folder) {
+                    Ok(version) => {
+                        self.pending_extension = Some((folder.clone(), version));
+                        if let Some(tab) = self.tabs.active()
+                            && let Err(message) = native_extensions::add(
+                                &tab.content.engine.view,
+                                &folder,
+                                self.proxy.clone(),
+                            )
+                        {
+                            self.notice = message;
+                        }
+                    }
+                    Err(message) => self.notice = message,
+                }
+            }
+            Reply::Folder(Err(message)) => self.notice = message,
+            #[cfg(test)]
+            Reply::Added(Ok((info, _))) if self.private => {
+                self.extension_added = Some(Ok(info.id));
+            }
+            Reply::Added(Ok((info, folder))) => {
+                #[cfg(test)]
+                {
+                    self.extension_added = Some(Ok(info.id.clone()));
+                }
+                let version = self
+                    .pending_extension
+                    .take()
+                    .map(|(_, version)| version)
+                    .unwrap_or_default();
+                if !self.settings.extensions.iter().any(|e| e.id == info.id) {
+                    self.settings
+                        .extensions
+                        .push(rust_browser::settings::SavedExtension {
+                            id: info.id.clone(),
+                            name: info.name.clone(),
+                            version,
+                            folder: folder
+                                .chars()
+                                .filter(|c| !c.is_control())
+                                .take(1024)
+                                .collect(),
+                        });
+                }
+                self.notice = format!(
+                    "Extension added: {}. It can read and change every website you open in normal windows.",
+                    info.name
+                );
+                self.persist();
+                self.refresh_extensions();
+            }
+            Reply::Added(Err(message)) => {
+                #[cfg(test)]
+                {
+                    self.extension_added = Some(Err(message.clone()));
+                }
+                self.pending_extension = None;
+                self.notice = message;
+            }
+            Reply::Listed(Ok(found)) => {
+                self.extensions = found;
+                self.extensions_listed = true;
+            }
+            Reply::Listed(Err(message)) => self.notice = message,
+            Reply::Changed(id, Ok(enabled)) => {
+                let name = self
+                    .settings
+                    .extensions
+                    .iter()
+                    .find(|e| e.id == id)
+                    .map_or("The extension", |e| e.name.as_str());
+                self.notice = format!(
+                    "{name} is now {}. This lasts after a restart.",
+                    if enabled { "on" } else { "off" }
+                );
+                self.refresh_extensions();
+            }
+            Reply::Changed(_, Err(message)) => self.notice = message,
+            Reply::Removed(id, Ok(())) => {
+                self.settings.extensions.retain(|e| e.id != id);
+                self.extensions.retain(|e| e.id != id);
+                self.notice = "Extension removed.".into();
+                self.persist();
+            }
+            Reply::Removed(_, Err(message)) => self.notice = message,
+            #[cfg(test)]
+            Reply::Installed(found) => self.extension_probe = Some(found),
+        }
+    }
+
     /// Password saving and autofill for new content views. Private windows never
     /// have either.
     fn forms(&self) -> native_security::Forms {
@@ -781,6 +961,8 @@ impl Session {
         )?;
         if !private {
             session.start_handoff();
+            session.clear_toolbar_autofill_once();
+            session.refresh_extensions();
         }
         // Reopen the other windows of the restored session, then give focus back to
         // the window that was focused last.
@@ -1047,6 +1229,15 @@ impl Session {
             last_background: Instant::now(),
             last_snapshot: RefCell::new(None),
             unsaved_windows: Vec::new(),
+            pending_extension: None,
+            extensions: Vec::new(),
+            extensions_listed: false,
+            #[cfg(test)]
+            extension_probe: None,
+            #[cfg(test)]
+            extension_added: None,
+            #[cfg(test)]
+            toolbar_autofill_clears: Vec::new(),
             _private_lease: private_lease,
         };
         let restored = if !session.settings.restore_session {
@@ -1149,7 +1340,7 @@ impl Session {
         let state = State {
             url: url.into(),
             loading: true,
-            message: "Connectingâ€¦".into(),
+            message: "Connecting…".into(),
             ..State::default()
         };
         Ok(Page {
@@ -1427,7 +1618,7 @@ impl Session {
                             loading: loaded,
                             failed: !loaded,
                             message: if loaded {
-                                "Connectingâ€¦"
+                                "Connecting…"
                             } else {
                                 "Error: This tab could not be reloaded."
                             }
@@ -1703,6 +1894,11 @@ impl Session {
             library: &self.library_data,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
+            extensions: if self.private {
+                Vec::new()
+            } else {
+                self.extension_rows()
+            },
             diagnostics: (self.panel == Some(Panel::Settings)).then(|| self.diagnostics.snapshot()),
             tabs: self
                 .tabs
@@ -1716,6 +1912,7 @@ impl Session {
                     keep_awake: tab.keep_awake,
                     phase: tab.content.lifecycle.phase,
                     loading: tab.content.state.loading,
+                    favicon: &tab.content.state.favicon,
                 })
                 .collect(),
         };
@@ -1736,9 +1933,9 @@ impl Session {
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
         let prefix = if self.private {
-            "Private â€” "
+            "Private - "
         } else if active.content.state.loading {
-            "Loadingâ€¦ â€” "
+            "Loading… - "
         } else {
             ""
         };
@@ -1931,6 +2128,60 @@ impl Session {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
                     .spawn()?;
+            }
+            Command::AddExtension => {
+                if self.private {
+                    return Err("Add extensions from a normal window; private windows never run extensions.".into());
+                }
+                if self.settings.extensions.len() >= rust_browser::settings::MAX_EXTENSIONS {
+                    return Err(format!(
+                        "At most {} extensions can be added. Remove one first.",
+                        rust_browser::settings::MAX_EXTENSIONS
+                    )
+                    .into());
+                }
+                let owner = match self.window.window_handle().map(|handle| handle.as_raw()) {
+                    Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
+                    _ => {
+                        return Err(
+                            "Could not identify the browser window for the folder picker.".into(),
+                        );
+                    }
+                };
+                let proxy = self.proxy.clone();
+                std::thread::Builder::new()
+                    .name("extension-folder-picker".into())
+                    .spawn(move || {
+                        let result = native_downloads::choose_extension_folder(owner);
+                        let _ = proxy
+                            .send_event(Event::Extension(native_extensions::Reply::Folder(result)));
+                    })
+                    .map_err(|_| "Could not open the folder picker.")?;
+            }
+            Command::SetExtensionEnabled { id, enabled } => {
+                if self.private
+                    || !native_extensions::valid_id(&id)
+                    || !self.settings.extensions.iter().any(|e| e.id == id)
+                {
+                    return Err("That extension is not one you added.".into());
+                }
+                let tab = self.tabs.active().ok_or("No tab is open.")?;
+                native_extensions::set_enabled(
+                    &tab.content.engine.view,
+                    id,
+                    enabled,
+                    self.proxy.clone(),
+                )?;
+            }
+            Command::RemoveExtension(id) => {
+                if self.private
+                    || !native_extensions::valid_id(&id)
+                    || !self.settings.extensions.iter().any(|e| e.id == id)
+                {
+                    return Err("That extension is not one you added.".into());
+                }
+                let tab = self.tabs.active().ok_or("No tab is open.")?;
+                native_extensions::remove(&tab.content.engine.view, id, self.proxy.clone())?;
             }
             Command::ImportBookmarks => {
                 if self.private {
@@ -2155,7 +2406,7 @@ impl Session {
                     tab.content.engine.load(&LoadTarget::web(&url)?)?;
                     tab.url = url.clone();
                     tab.content.state.url = url;
-                    tab.content.state.message = "Connectingâ€¦".into();
+                    tab.content.state.message = "Connecting…".into();
                     tab.content.state.loading = true;
                     tab.content.state.failed = false;
                 }
@@ -2261,7 +2512,7 @@ impl Session {
                 self.permissions.borrow_mut().cancel_tab(id);
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
-                tab.content.state.message = "Loadingâ€¦".into();
+                tab.content.state.message = "Loading…".into();
             }
             PageEvent::Cancelled => {
                 if tab.content.state.loading {
@@ -2272,6 +2523,9 @@ impl Session {
                 }
             }
             PageEvent::Changed => {}
+            PageEvent::Favicon(data) => {
+                tab.content.state.favicon = data;
+            }
             PageEvent::Title(title) => {
                 tab.title = if tab.url == navigation::HOME {
                     "New tab".into()
@@ -2320,8 +2574,7 @@ impl Session {
                     (Some(error), _) => format!("Error: {error}"),
                     (None, Some(code)) => http_status_message(code),
                     (None, None) => {
-                        "Ready Â· Ctrl+L address Â· Ctrl+T new tab Â· Ctrl+Tab switch Â· F7 page"
-                            .into()
+                        "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
                     }
                 };
             }
@@ -3201,6 +3454,13 @@ impl ApplicationHandler<Event> for App {
                 },
                 Err(message) => session.notice = message,
             },
+            Event::Extension(reply) => session.extension_reply(reply),
+            Event::ToolbarAutofillCleared(success) => {
+                if success && !session.private {
+                    session.settings.toolbar_autofill_cleared = true;
+                    session.persist();
+                }
+            }
             Event::DownloadDestination(id, result) => {
                 session.downloads.borrow_mut().destination(id, result)
             }

@@ -9,7 +9,9 @@ param(
     [ValidateRange(0,3600)][int]$SoakSeconds = 120,
     [switch]$FreshOnly,
     [switch]$Churn,
-    [ValidateRange(5,180)][int]$RecoverySeconds = 15
+    [ValidateRange(5,180)][int]$RecoverySeconds = 15,
+    # An unpacked extension folder to add in every run (cost measurement only).
+    [string]$Extension = ''
 )
 $ErrorActionPreference = 'Stop'
 $executable = (Resolve-Path -LiteralPath $ProbeExecutable).Path
@@ -37,6 +39,7 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
         $env:RUST_BROWSER_BENCH_ROOT=$case;$env:RUST_BROWSER_BENCH_TABS="$count"
         $env:RUST_BROWSER_BENCH_SETTLE="$SettleSeconds";$env:RUST_BROWSER_BENCH_SAMPLE="$SampleSeconds";$env:RUST_BROWSER_BENCH_SOAK="$SoakSeconds";$env:RUST_BROWSER_BENCH_RECOVERY="$RecoverySeconds"
         $env:RUST_BROWSER_BENCH_CHURN=if($Churn){'1'}else{'0'}
+        if($Extension){$env:RUST_BROWSER_BENCH_EXTENSION=(Resolve-Path -LiteralPath $Extension).Path}else{Remove-Item Env:RUST_BROWSER_BENCH_EXTENSION -ErrorAction SilentlyContinue}
         $metricsPath=Join-Path $case 'metrics.json'
         if(Test-Path -LiteralPath $metricsPath){Remove-Item -LiteralPath $metricsPath}
         $start=Get-Date
@@ -74,4 +77,5 @@ foreach($count in $TabCounts) { foreach($repeat in 1..$Repeats) {
         Write-Output "$Label / $count tabs / ${mode}: usable $([math]::Round($metrics.first_usable_ms)) ms; run finished in $([math]::Round(((Get-Date)-$start).TotalSeconds)) s"
     }
 } }
+Remove-Item Env:RUST_BROWSER_BENCH_EXTENSION -ErrorAction SilentlyContinue
 Remove-Item Env:RUST_BROWSER_BENCH_ROOT,Env:RUST_BROWSER_BENCH_TABS,Env:RUST_BROWSER_BENCH_SETTLE,Env:RUST_BROWSER_BENCH_SAMPLE,Env:RUST_BROWSER_BENCH_SOAK,Env:RUST_BROWSER_BENCH_RECOVERY,Env:RUST_BROWSER_BENCH_CHURN

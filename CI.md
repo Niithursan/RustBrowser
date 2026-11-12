@@ -104,10 +104,10 @@ reruns of the same commit. Security run [42726540444](https://github.com/Niithur
 | CI runner time | 218–298 s | 737 s | 286, 320 s |
 | Release job | 69–103 s | 558 s | 114, 174 s |
 | Release compile | 23–45 s | 168 s | 21, 40 s |
-| v0.12 upgrade-fixture build | — | 154.5 s (miss) | 0.35, 0.38 s (hit) |
-| Installer lifecycle step (fixture included) | — | 287 s | 33, 51 s |
+| v0.12 upgrade-fixture build | - | 154.5 s (miss) | 0.35, 0.38 s (hit) |
+| Installer lifecycle step (fixture included) | - | 287 s | 33, 51 s |
 | Release cache restore / save | 40–54 s (both jobs) | 9 / 45 s | 25–36 / 0 s |
-| Fixture cache save | — | 7 s | 0 s |
+| Fixture cache save | - | 7 s | 0 s |
 | Review artifact upload | <7 s | <2 s | 2 s |
 | Security audit (wall) | 26–28 s | 27 s | 26, 31 s |
 

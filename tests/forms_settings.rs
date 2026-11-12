@@ -46,6 +46,10 @@ fn a_0_18_settings_file_loads_with_both_switches_off() {
     let settings: Settings = serde_json::from_str(SETTINGS_018).unwrap();
     assert!(!settings.save_passwords);
     assert!(!settings.autofill);
+    assert!(
+        !settings.toolbar_autofill_cleared,
+        "the toolbar cleanup still runs"
+    );
     // Everything 0.18 saved is kept.
     assert!(!settings.history_enabled);
     assert_eq!(settings.suspend_after_seconds, 300);

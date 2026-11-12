@@ -169,11 +169,14 @@ impl ApplicationHandler<Event> for Probe {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.app.about_to_wait(el);
         if self.done || self.failure.is_some() {
+            // Exit now instead of when the browser's next timer wakes the loop.
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         if self.started.elapsed() > self.limit {
             self.failure = Some(format!("Windows fixture timed out at phase {}", self.phase));
             el.exit();
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         let ready =
@@ -183,15 +186,23 @@ impl ApplicationHandler<Event> for Probe {
             if let Err(error) = steps(self, el) {
                 self.failure = Some(error);
                 el.exit();
+                el.set_control_flow(ControlFlow::Poll);
                 return;
             }
         }
-        if !self.done {
+        if self.done {
+            el.set_control_flow(ControlFlow::Poll);
+        } else {
             el.set_control_flow(ControlFlow::WaitUntil(
                 Instant::now() + Duration::from_millis(25),
             ));
         }
     }
+}
+
+/// Run `steps` against an existing profile (a restart of an earlier run).
+fn run_in(root: PathBuf, steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>) {
+    let _ = drive(root, steps, false);
 }
 
 fn run(
@@ -202,6 +213,30 @@ fn run(
     let server = super::compat_validation::Server::start();
     let root = root(label);
     prepare(&root, &server.url);
+    let private = label.starts_with("private");
+    let log = drive_with(root.clone(), steps, private, server);
+    (root, log)
+}
+
+fn drive(
+    root: PathBuf,
+    steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
+    private: bool,
+) -> Vec<String> {
+    drive_with(
+        root,
+        steps,
+        private,
+        super::compat_validation::Server::start(),
+    )
+}
+
+fn drive_with(
+    root: PathBuf,
+    steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
+    private: bool,
+    server: super::compat_validation::Server,
+) -> Vec<String> {
     let event_loop = EventLoop::<Event>::with_user_event()
         .with_any_thread(true)
         .build()
@@ -222,11 +257,8 @@ fn run(
         snapshot: Vec::new(),
         reply: None,
         steps,
-        private: false,
+        private,
     };
-    if label.starts_with("private") {
-        probe.private = true;
-    }
     let result = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
     let done = probe.done;
@@ -236,7 +268,8 @@ fn run(
     assert!(result.is_ok());
     assert!(failure.is_none(), "{failure:?}\n{}", log.join("\n"));
     assert!(done, "Fixture did not finish");
-    (root, log)
+    drop(server);
+    log
 }
 
 /// Send a hand-off as a second launch would: through the event loop.
@@ -956,6 +989,9 @@ fn private_forms_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
     {
         return Err("A private window accepted a bookmark import".into());
     }
+    if !s.toolbar_autofill_clears.is_empty() {
+        return Err("A private window ran the toolbar autofill cleanup".into());
+    }
     s.settings.save_passwords = true;
     s.settings.autofill = true;
     s.open_tab(navigation::HOME.into())
@@ -1049,5 +1085,640 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_bookmark_import_reaches_the_library() {
     let (root, _) = run("import", import_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Write a 0.19-shaped session file: settings without `toolbar_autofill_cleared`
+/// (or with it, when `cleared`), and website password saving on.
+fn write_019_session(root: &Path, cleared: bool) {
+    let mut settings = serde_json::to_value(rust_browser::settings::Settings {
+        save_passwords: true,
+        toolbar_autofill_cleared: cleared,
+        ..Default::default()
+    })
+    .unwrap();
+    if !cleared {
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("toolbar_autofill_cleared");
+    }
+    let file = serde_json::json!({
+        "version": 1,
+        "tabs": [navigation::HOME],
+        "active": 0,
+        "settings": settings,
+    });
+    std::fs::write(root.join("session.json"), file.to_string()).unwrap();
+}
+
+/// Upgrading from 0.19 clears the toolbar profile's form data once, on the
+/// toolbar view only, and leaves website password saving as it was.
+fn toolbar_cleanup_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if s.settings.toolbar_autofill_cleared {
+        let toolbar = s.windows[0].toolbar.webview().as_raw() as usize;
+        if s.toolbar_autofill_clears != [toolbar] {
+            return Err(format!(
+                "Cleanup ran {} times, or not on the toolbar view",
+                s.toolbar_autofill_clears.len()
+            ));
+        }
+        if !s.settings.save_passwords {
+            return Err("The cleanup changed the website password switch".into());
+        }
+        let page = native_security::forms(&s.tabs.items[0].content.engine.view)
+            .map_err(|e| e.to_string())?;
+        if !page.passwords {
+            return Err("A website view lost password saving".into());
+        }
+        p.log.push("toolbar: leftover autofill cleared once".into());
+        p.done = true;
+        el.exit();
+    } else if p.at.elapsed() > Duration::from_secs(15) {
+        return Err(format!(
+            "The toolbar cleanup never finished ({} requests)",
+            s.toolbar_autofill_clears.len()
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_toolbar_autofill_is_cleared_once_on_upgrade() {
+    let (root, _) = run("toolbar-cleanup", toolbar_cleanup_steps, |root, _| {
+        write_019_session(root, false)
+    });
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert!(saved.settings.toolbar_autofill_cleared);
+    assert!(saved.settings.save_passwords);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn toolbar_cleanup_done_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    if p.at.elapsed() < Duration::from_secs(3) {
+        return Ok(());
+    }
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if !s.toolbar_autofill_clears.is_empty() {
+        return Err("The toolbar cleanup ran again after it had finished".into());
+    }
+    p.done = true;
+    el.exit();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_toolbar_autofill_cleanup_does_not_repeat() {
+    let (root, _) = run(
+        "toolbar-cleanup-done",
+        toolbar_cleanup_done_steps,
+        |root, _| write_019_session(root, true),
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn marker(letter: char) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/extensions")
+        .join(format!("marker-{}", letter.to_ascii_lowercase()))
+}
+
+/// Ask the first tab which test markers ran on its page; the answer arrives in
+/// `p.result`.
+fn read_markers(p: &mut Probe) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.tabs.items[0]
+        .content
+        .engine
+        .view
+        .evaluate_script_with_callback(
+            "JSON.stringify([document.documentElement.dataset.rbMarkerA||'',document.documentElement.dataset.rbMarkerB||''])",
+            move |value| *result.lock().unwrap() = Some(value),
+        )
+        .map_err(|_| "Page script failed".to_string())
+}
+
+fn markers(p: &Probe) -> Option<String> {
+    p.result.lock().unwrap().clone()
+}
+
+/// Add a test extension as if its folder had been chosen in the dialog.
+fn add_marker(p: &mut Probe, letter: char) -> Result<(), String> {
+    p.app
+        .proxy
+        .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+            Some(marker(letter)),
+        ))))
+        .map_err(|_| "proxy".into())
+}
+
+fn names(s: &Session) -> Vec<(String, &'static str)> {
+    s.extension_rows()
+        .into_iter()
+        .map(|row| (row.name, row.state))
+        .collect()
+}
+
+const MARKER_A: &str = "Rust Browser test marker A";
+const MARKER_B: &str = "Rust Browser test marker B";
+
+/// Add two test extensions from their folders, list them, check both run on a
+/// page, turn one off and remove the other; the toolbar profile has neither.
+/// Then a second browser process on the same profile must find the same state.
+fn extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            add_marker(p, 'a')?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "on")] {
+                add_marker(p, 'b')?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding A: {:?}, notice {:?}", names(s), s.notice));
+            }
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "on"), (MARKER_B.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}?extensions")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding B: {:?}, notice {:?}", names(s), s.notice));
+            }
+        }
+        3 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        4 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"on\",\"on\"]""# {
+                    return Err(format!("Both extensions should run on the page: {found}"));
+                }
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                // WebView2's built-in PDF viewer is not the user's extension.
+                let builtin = "mhjfbmdgcfjbbpaeojofohoefgiehjai".to_string();
+                if s.command(Command::RemoveExtension(builtin.clone())).is_ok()
+                    || s.command(Command::SetExtensionEnabled {
+                        id: builtin,
+                        enabled: false,
+                    })
+                    .is_ok()
+                {
+                    return Err("A built-in extension could be removed or turned off".into());
+                }
+                let a = s.settings.extensions[0].id.clone();
+                let b = s.settings.extensions[1].id.clone();
+                p.command(
+                    el,
+                    0,
+                    Command::SetExtensionEnabled {
+                        id: a,
+                        enabled: false,
+                    },
+                )?;
+                p.command(el, 0, Command::RemoveExtension(b))?;
+                p.next();
+            }
+        }
+        5 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(MARKER_A.to_string(), "off")] {
+                p.command(el, 0, Command::Reload)?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!(
+                    "Turning off and removing: {:?}, notice {:?}",
+                    names(s),
+                    s.notice
+                ));
+            }
+        }
+        6 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        7 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"\",\"\"]""# {
+                    return Err(format!(
+                        "A turned-off or removed extension still ran: {found}"
+                    ));
+                }
+                // The toolbar profile never has the user's extensions.
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.extension_probe = None;
+                native_extensions::installed(&s.windows[0].toolbar, s.proxy.clone())?;
+                p.next();
+            }
+        }
+        8 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(found) = s.extension_probe.clone() {
+                if let Ok(list) = &found
+                    && list
+                        .iter()
+                        .any(|e| e.name.starts_with("Rust Browser test marker"))
+                {
+                    return Err(format!(
+                        "The toolbar profile has a user extension: {list:?}"
+                    ));
+                }
+                p.log
+                    .push(format!("extensions: toolbar profile reported {found:?}"));
+                s.extension_added = None;
+                // Refused either at once or in WebView2's answer.
+                if let Err(message) =
+                    native_extensions::add(&s.windows[0].toolbar, &marker('b'), s.proxy.clone())
+                {
+                    s.extension_added = Some(Err(message));
+                }
+                p.phase = 80;
+                p.at = Instant::now();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The toolbar profile was never listed".into());
+            }
+        }
+        80 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(added) = s.extension_added.clone() {
+                if added.is_ok() {
+                    return Err("WebView2 accepted an extension in the toolbar profile".into());
+                }
+                p.app.user_event(el, Event::Command(Command::ExitBrowser));
+                p.phase = 9;
+                p.at = Instant::now();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("Adding to the toolbar profile never answered".into());
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The toolbar profile was never listed".into());
+            }
+        }
+        9 if p.app.session.is_none() => {
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// After a restart on the same profile: A is still off, B is still gone, and
+/// neither runs on a page.
+fn extension_restart_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.extensions_listed {
+                if names(s) != [(MARKER_A.to_string(), "off")] {
+                    return Err(format!("After restart: {:?}", names(s)));
+                }
+                p.command(el, 0, Command::Navigate(format!("{url}?restart")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err("Extensions were never listed after restart".into());
+            }
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        2 => {
+            if let Some(found) = markers(p) {
+                if found != r#""[\"\",\"\"]""# {
+                    return Err(format!("After restart an extension ran: {found}"));
+                }
+                // B is not merely hidden: WebView2 no longer has it installed.
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.extension_probe = None;
+                native_extensions::installed(
+                    &s.tabs.items[0].content.engine.view,
+                    s.proxy.clone(),
+                )?;
+                p.next();
+            }
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(found) = s.extension_probe.clone() {
+                let list = found.map_err(|e| format!("Listing after restart failed: {e}"))?;
+                let a = list.iter().find(|e| e.name == MARKER_A);
+                if !a.is_some_and(|a| !a.enabled) || list.iter().any(|e| e.name == MARKER_B) {
+                    return Err(format!("WebView2 after restart: {list:?}"));
+                }
+                p.log.push("extensions: state kept after restart".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The profile was never listed after restart".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; starts a second test process for the restart"]
+fn native_extensions_add_list_disable_remove_and_restart() {
+    let (root, _) = run("extensions", extension_steps, |_, _| {});
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert_eq!(saved.settings.extensions.len(), 1);
+    assert_eq!(saved.settings.extensions[0].name, MARKER_A);
+    // A real restart: a new process on the same profile.
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "app::windows_validation::extension_restart_child",
+            "--ignored",
+            "--test-threads=1",
+            "--nocapture",
+        ])
+        .env("RUST_BROWSER_EXTENSION_ROOT", &root)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the restarted browser did not keep the extension state"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Second half of the restart check; run only by the test above.
+#[test]
+#[ignore = "Started by native_extensions_add_list_disable_remove_and_restart"]
+fn extension_restart_child() {
+    let root = PathBuf::from(
+        std::env::var_os("RUST_BROWSER_EXTENSION_ROOT")
+            .expect("run by native_extensions_add_list_disable_remove_and_restart"),
+    );
+    run_in(root, extension_restart_steps);
+}
+
+/// A private window never runs extensions and refuses to add or change them.
+fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.private {
+                return Err("The fixture did not start a private window".into());
+            }
+            if s.command(Command::AddExtension).is_ok()
+                || s.command(Command::RemoveExtension("a".repeat(32))).is_ok()
+            {
+                return Err("A private window accepted an extension command".into());
+            }
+            add_marker(p, 'a')?;
+            p.command(el, 0, Command::Navigate(format!("{url}?private")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            read_markers(p)?;
+            p.next();
+        }
+        2 => {
+            if let Some(found) = markers(p) {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                if found != r#""[\"\",\"\"]""# || !s.settings.extensions.is_empty() {
+                    return Err(format!(
+                        "A private window ran or kept an extension: {found}, {:?}",
+                        s.settings.extensions
+                    ));
+                }
+                s.extension_added = None;
+                // Refused either at once or in WebView2's answer.
+                if let Err(message) = native_extensions::add(
+                    &s.tabs.items[0].content.engine.view,
+                    &marker('a'),
+                    s.proxy.clone(),
+                ) {
+                    s.extension_added = Some(Err(message));
+                }
+                p.next();
+            }
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(added) = s.extension_added.clone() {
+                if added.is_ok() {
+                    return Err("WebView2 accepted an extension in a private window".into());
+                }
+                p.log
+                    .push("extensions: private windows never run them".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("Adding in a private window never answered".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real private window"]
+fn native_private_windows_never_run_extensions() {
+    let (root, _) = run("private-extensions", private_extension_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Screenshot tool for the layout review (not a gate): the toolbar view in the
+/// light and dark themes at 100% and 150%, on the new-tab page (the toolbar view
+/// fills the window there) and above a website. Writes PNG files to
+/// `RUST_BROWSER_SHOTS` named `<label>-<page>-<theme>-<scale>.png`.
+fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    const SHOTS: [(&str, rust_browser::settings::Theme, f64); 4] = [
+        ("light", rust_browser::settings::Theme::Light, 1.0),
+        ("light", rust_browser::settings::Theme::Light, 1.5),
+        ("dark", rust_browser::settings::Theme::Dark, 1.0),
+        ("dark", rust_browser::settings::Theme::Dark, 1.5),
+    ];
+    let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
+    let label = std::env::var("RUST_BROWSER_SHOTS_LABEL").unwrap_or_else(|_| "shot".into());
+    let url = p.url.clone();
+    // Phases: 0 settle; then per page (new tab, website) and per shot: set, capture.
+    let index = p.phase as usize;
+    if p.at.elapsed() < Duration::from_millis(if index == 0 { 2000 } else { 900 }) {
+        return Ok(());
+    }
+    if index > 2 * SHOTS.len() * 2 {
+        p.done = true;
+        el.exit();
+        return Ok(());
+    }
+    if index == 0 {
+        p.next();
+        return Ok(());
+    }
+    let step = index - 1;
+    let (page, shot, capture) = (
+        step / (SHOTS.len() * 2),
+        (step / 2) % SHOTS.len(),
+        step % 2 == 1,
+    );
+    let (theme_name, theme, scale) = SHOTS[shot];
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    let toolbar = s.windows[0].toolbar.webview();
+    if !capture {
+        if page == 1 && shot == 0 {
+            p.command(el, 0, Command::Navigate(format!("{url}?layout")))?;
+        }
+        let s = p.app.session.as_mut().ok_or("No session")?;
+        s.settings.theme = theme;
+        s.last_render.borrow_mut().clear();
+        s.render();
+        let size = s
+            .window
+            .inner_size()
+            .to_logical::<f64>(s.window.scale_factor());
+        let height = if page == 0 {
+            size.height
+        } else {
+            s.chrome_height
+        };
+        let params = serde_json::json!({ "width": size.width.round() as u32,
+            "height": height.round() as u32, "deviceScaleFactor": scale, "mobile": false });
+        let toolbar = s.windows[0].toolbar.webview();
+        // SAFETY: UI-thread call on this fixture's own toolbar view.
+        unsafe {
+            toolbar.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from("Emulation.setDeviceMetricsOverride"),
+                &windows::core::HSTRING::from(params.to_string()),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),
+            )
+        }
+        .map_err(|_| "Metrics override failed")?;
+    } else {
+        let name = format!(
+            "{label}-{}-{theme_name}-{}.png",
+            if page == 0 { "newtab" } else { "website" },
+            (scale * 100.0) as u32
+        );
+        let path = out.join(name);
+        // SAFETY: UI-thread call on this fixture's own toolbar view.
+        unsafe {
+            toolbar.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from("Page.captureScreenshot"),
+                &windows::core::HSTRING::from(r#"{"format":"png"}"#),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |_, json| {
+                    let text = json.to_string();
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && let Some(data) = value["data"].as_str()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+                    {
+                        let _ = std::fs::write(&path, bytes);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|_| "Screenshot failed")?;
+    }
+    p.next();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Layout review tool: writes screenshots to RUST_BROWSER_SHOTS"]
+fn layout_screenshots() {
+    let (root, _) = run("shots", screenshot_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Send one DevTools protocol call to the first window's toolbar.
+fn toolbar_cdp(s: &Session, method: &str, params: serde_json::Value) -> Result<(), String> {
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    // SAFETY: UI-thread call on this fixture's own toolbar view.
+    unsafe {
+        s.windows[0].toolbar.webview().CallDevToolsProtocolMethod(
+            &windows::core::HSTRING::from(method),
+            &windows::core::HSTRING::from(params.to_string()),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),
+        )
+    }
+    .map_err(|_| format!("DevTools call {method} failed"))
+}
+
+/// The layout has no Go button: pressing Enter in the address field still
+/// navigates (the form's implicit submission, through Chromium's own key input).
+fn enter_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows[0].toolbar.evaluate_script(&format!(
+                "(()=>{{if(document.querySelector('#nav button[type=submit]'))throw 'Go button present';const a=document.getElementById('address');a.focus();a.value={};}})()",
+                serde_json::to_string(&format!("{url}?entered")).unwrap()
+            )).is_err() {
+                return Err("Address field script failed".into());
+            }
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_millis(300) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for kind in ["keyDown", "keyUp"] {
+                toolbar_cdp(
+                    s,
+                    "Input.dispatchKeyEvent",
+                    serde_json::json!({ "type": kind, "key": "Enter", "code": "Enter",
+                        "text": if kind == "keyDown" { "\r" } else { "" },
+                        "windowsVirtualKeyCode": 13 }),
+                )?;
+            }
+            p.next();
+        }
+        2 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].url.ends_with("?entered") {
+                p.log
+                    .push("layout: Enter in the address field navigates".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("Enter did not navigate: {}", s.tabs.items[0].url));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_address_enter_navigates_without_a_go_button() {
+    let (root, _) = run("enter", enter_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

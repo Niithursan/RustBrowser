@@ -1,5 +1,54 @@
 # Security
 
+## v0.20 extensions, layout and the first release
+
+### Browser extensions
+
+- **Extensions run with broad access.** An extension the user adds can read and
+  change every page it matches in normal windows, including form contents and
+  passwords as they are typed, make network requests and keep its own storage.
+  Rust Browser does not restrict or review what an extension does; WebView2 enforces
+  the permissions in the extension's manifest. Users should add only extensions they
+  trust, from the extension's official release.
+- **Only the normal website profile has extensions.** WebView2's extension support is
+  turned on only for normal website views. Private windows use separate temporary
+  profiles with it off, and refuse every extension command. The toolbar has its own
+  profile, never has extension support turned on and never runs the user's
+  extensions (tested: the toolbar profile lists only WebView2's two built-in
+  Microsoft extensions).
+- **Nothing is downloaded.** Rust Browser never downloads, bundles, updates or
+  installs an extension on its own. The user picks an unpacked folder in a Windows
+  folder dialog; the browser checks that it holds a valid `manifest.json` (version 2
+  or 3, at most 1 MiB) and passes the folder to WebView2's `AddBrowserExtension`.
+- **What is active is visible.** Privacy & security lists every extension the user
+  added and whether it is on; the extension button in the toolbar shows how many are
+  on and their names. WebView2 keeps the installed and on or off state in the profile
+  across restarts (tested in two processes). The settings only record which extension
+  IDs the user added, so WebView2's built-in extensions are never listed or removed.
+- **Web content and toolbar messages cannot add extensions.** Adding happens only
+  after the native folder dialog. Toolbar commands can turn on, turn off or remove
+  only extension IDs the user added (checked against the saved list and the ID
+  format).
+- **Not available:** extension toolbar buttons, pop-ups, options pages and
+  `chrome-extension:` pages (navigation to them stays blocked), so an extension runs
+  with its default settings.
+
+### Layout and the toolbar policy
+
+- Icons are inline SVG in the toolbar's own markup. Tab icons are read from WebView2
+  by the browser as PNG bytes, checked to be PNG and at most 32 KiB, and passed to
+  the toolbar as `data:` URLs. The toolbar's content security policy gains only
+  `img-src data:`; it still loads nothing from the network and runs only its own
+  inline code. A test pins the exact policy.
+
+### First release
+
+- v0.20.0 is the first published release. Builds remain **unsigned**; Windows
+  SmartScreen warns about an unknown publisher. The release workflow publishes only
+  when the owner runs it by hand with the publish input, from an existing tag on
+  `main`, with the exact five checked files and the reviewed release notes. See
+  RELEASING.md and packaging/windows/UPDATE_SECURITY.md.
+
 ## v0.19 passwords, autofill and imported bookmark files
 
 ### Password saving and autofill boundary

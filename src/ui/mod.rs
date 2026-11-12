@@ -62,6 +62,15 @@ pub enum Command {
     SetRestoreSession(bool),
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,
+    /// Privacy & security > Extensions > Add from folder (native folder dialog).
+    AddExtension,
+    /// Turn an extension the user added on or off.
+    SetExtensionEnabled {
+        id: String,
+        enabled: bool,
+    },
+    /// Remove an extension the user added.
+    RemoveExtension(String),
     /// Privacy & security: "Offer to save passwords".
     SetSavePasswords(bool),
     /// Privacy & security: "Fill in forms automatically".
@@ -118,6 +127,9 @@ pub struct State {
     pub back: bool,
     pub forward: bool,
     pub message: String,
+    /// The page icon as a PNG data URL (empty when none); sent per tab instead.
+    #[serde(skip)]
+    pub favicon: String,
 }
 
 #[derive(Serialize)]
@@ -129,6 +141,19 @@ pub struct TabState<'a> {
     pub keep_awake: bool,
     pub phase: rust_browser::background::Phase,
     pub loading: bool,
+    /// PNG data URL of the page icon, or empty.
+    pub favicon: &'a str,
+}
+
+/// One extension in Privacy & security > Extensions.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ExtensionRow {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub folder: String,
+    /// "on", "off" or "missing" (no longer installed in the profile).
+    pub state: &'static str,
 }
 
 #[derive(Serialize)]
@@ -149,6 +174,8 @@ pub struct ToolbarState<'a> {
     pub search_engine: SearchEngine,
     pub notice: &'a str,
     pub panel: Option<Panel>,
+    /// Extensions the user added, with their current state.
+    pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
     pub history_enabled: bool,
     pub downloads: Vec<crate::native_downloads::Record>,
@@ -263,7 +290,7 @@ mod tests {
                     .get(name)
                     .unwrap_or_else(|| panic!("{theme} lacks {name}"))
             };
-            for background in ["--surface", "--panel", "--card", "--field"] {
+            for background in ["--surface", "--panel", "--card", "--field", "--strip"] {
                 // WCAG 1.4.3: normal text at least 4.5:1.
                 let ratio = contrast(token("--text"), token(background));
                 assert!(
@@ -272,7 +299,7 @@ mod tests {
                 );
             }
             for foreground in ["--secondary", "--error"] {
-                for background in ["--surface", "--panel"] {
+                for background in ["--surface", "--panel", "--strip"] {
                     let ratio = contrast(token(foreground), token(background));
                     assert!(
                         ratio >= 4.5,
@@ -280,7 +307,7 @@ mod tests {
                     );
                 }
             }
-            for background in ["--surface", "--panel", "--card"] {
+            for background in ["--surface", "--panel", "--card", "--strip"] {
                 // WCAG 1.4.11: focus rings and active-tab bar at least 3:1.
                 let ratio = contrast(token("--accent"), token(background));
                 assert!(
@@ -288,6 +315,46 @@ mod tests {
                     "{theme}: --accent on {background} is {ratio:.2}"
                 );
             }
+        }
+    }
+    #[test]
+    fn the_toolbar_policy_allows_only_embedded_images_beyond_its_own_code() {
+        let policy = HTML
+            .split("Content-Security-Policy\" content=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("toolbar policy");
+        assert_eq!(
+            policy,
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'"
+        );
+        // Icons are inline SVG elements, never fetched or embedded as images.
+        assert!(!HTML.contains("<img src=\"http"));
+        assert!(!HTML.contains("url("));
+    }
+    #[test]
+    fn every_toolbar_control_has_an_accessible_name() {
+        // Icon-only buttons must carry aria-label or title; text buttons name themselves.
+        for (index, part) in HTML.split("<button").enumerate().skip(1) {
+            let tag = &part[..part.find('>').unwrap()];
+            let body = &part[part.find('>').unwrap() + 1..part.find("</button>").unwrap()];
+            let text: String = {
+                let mut out = String::new();
+                let mut inside = false;
+                for c in body.chars() {
+                    match c {
+                        '<' => inside = true,
+                        '>' => inside = false,
+                        _ if !inside => out.push(c),
+                        _ => {}
+                    }
+                }
+                out
+            };
+            assert!(
+                tag.contains("aria-label=") || tag.contains("title=") || !text.trim().is_empty(),
+                "button {index} has no accessible name: <button{tag}>"
+            );
         }
     }
     #[test]

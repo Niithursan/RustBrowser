@@ -241,6 +241,13 @@ impl ApplicationHandler<Event> for Probe {
                 self.metrics.construction_ms = self.started.elapsed().as_secs_f64() * 1000.0;
                 self.metrics.scale_factor = session.window.scale_factor();
                 session.render();
+                // Optional extension (v0.20 cost measurement): added as if chosen in
+                // the folder dialog. WebView2 keeps it, so a warm reopen runs with it.
+                if let Some(folder) = std::env::var_os("RUST_BROWSER_BENCH_EXTENSION") {
+                    let _ = self.app.proxy.send_event(Event::Extension(
+                        crate::native_extensions::Reply::Folder(Ok(Some(PathBuf::from(folder)))),
+                    ));
+                }
                 self.app.session = Some(session);
             }
             Err(error) => {

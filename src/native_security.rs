@@ -285,6 +285,32 @@ pub fn clear_kinds(request: &ClearRequest) -> i32 {
     kinds
 }
 
+/// The only data the one-time toolbar cleanup removes: WebView2 general autofill.
+/// Never passwords, and never any other kind.
+pub const TOOLBAR_CLEAR_KINDS: COREWEBVIEW2_BROWSING_DATA_KINDS =
+    COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL;
+
+/// Clear the leftover form data of the toolbar's own profile. `toolbar` must be a
+/// toolbar view: its profile is separate from websites' profile, so saved
+/// passwords and website autofill are not affected.
+pub fn clear_toolbar_autofill(
+    toolbar: &WebView,
+    proxy: EventLoopProxy<Event>,
+) -> windows::core::Result<()> {
+    // SAFETY: asynchronous handler only sends an owned result; the profile stays live.
+    unsafe {
+        let core: ICoreWebView2_13 = toolbar.webview().cast()?;
+        let profile: ICoreWebView2Profile2 = core.Profile()?.cast()?;
+        profile.ClearBrowsingData(
+            TOOLBAR_CLEAR_KINDS,
+            &ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
+                let _ = proxy.send_event(Event::ToolbarAutofillCleared(result.is_ok()));
+                Ok(())
+            })),
+        )
+    }
+}
+
 pub fn clear(
     view: &WebView,
     request: &ClearRequest,
@@ -357,5 +383,17 @@ mod form_tests {
             confirmed: true,
         };
         assert_eq!(clear_kinds(&everything) & (password | autofill), 0);
+    }
+
+    #[test]
+    fn the_toolbar_cleanup_clears_only_general_autofill() {
+        assert_eq!(
+            TOOLBAR_CLEAR_KINDS.0,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL.0
+        );
+        assert_eq!(
+            TOOLBAR_CLEAR_KINDS.0 & COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE.0,
+            0
+        );
     }
 }

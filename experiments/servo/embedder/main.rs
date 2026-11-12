@@ -394,7 +394,7 @@ impl ApplicationHandler<Event> for App {
         match event {
             Event::Wake => session.servo.spin_event_loop(),
             Event::Frame => session.window.request_redraw(),
-            Event::Status(status) => session.window.set_title(&format!("{TITLE} — {status}")),
+            Event::Status(status) => session.window.set_title(&format!("{TITLE} - {status}")),
             Event::Failed => {
                 self.failure = Some("Servo reported an engine failure".into());
                 self.finish(event_loop);

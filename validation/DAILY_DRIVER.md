@@ -100,7 +100,7 @@ HTTP code (push CI run 42679469407, phase 2). A standalone check and a new
 deterministic regression test reproduced the empty response; restoring blocking mode
 on accepted streams fixes it. All navigation assertions are unchanged.
 
-**Correction — a second, production cause.** Main CI at `fef457a` (run
+**Correction - a second, production cause.** Main CI at `fef457a` (run
 42710344722) failed after the fixture fix with WebView2 status 9 in the overlapping
 navigation phase. Two host loads close together let the first load's
 `NavigationStarting` arrive after it was superseded; the adapter only rejected late

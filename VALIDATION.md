@@ -1,5 +1,162 @@
 # Validation
 
+## v0.20 extensions, layout and release preparation
+
+Baseline `383a6de` (PR #25 squash merge); CI 43113399661 and security 43113399666
+passed before branching. Branch `feat/v0.20-adblock-layout-release`. Version 0.20.0;
+profile path, session format 1 and SQLite schema 3 unchanged; two optional settings
+fields that older versions ignore; dynamic CRT. One Windows 11 Pro x64 machine,
+WebView2 157, non-elevated session. Local results only in this section; hosted
+results for the final head are recorded in the pull request.
+
+### Ad blocking: what was tested first (decision rule 1a)
+
+uBlock Origin Lite 2026.1110.1816 (MV3, `uBOLite_2026.1110.1816.chromium.zip`,
+SHA-256 `85fe5909366e8ada66c5b331bbdbf69cf5100245ed6161b1e4e2f1f848ec7d03`, equal to
+the digest GitHub publishes) and uBlock Origin 1.76.0 (MV2,
+`uBlock0_1.76.0.chromium.zip`, SHA-256
+`e76a1912426caa7b8679ad11dd140d1529c23db22ddbe892b6f901e9b7763456`), unpacked, each
+added with `AddBrowserExtension` to a disposable WebView2 profile with
+`AreBrowserExtensionsEnabled` on.
+
+- **Network caveat found first:** this machine's DNS already blocks ad domains (they
+  resolve to `::`), so tests against real sites could not show what an extension does.
+  Every host was therefore mapped to a local logging server with the experiment-only
+  browser argument `--host-resolver-rules`; a local news page requested three ad
+  scripts (doubleclick, googlesyndication, googletagmanager), an ad pixel, its own
+  script and images, and contained two ad boxes.
+- **Loads:** both, every time (IDs `nhhbkmgedjdemoadhmhiinbgbhhgbgnk` and
+  `eojmiehcjpbaojaebohaheeoclpbmgmk`).
+- **Blocks:** without an extension all four ad requests reached the server; with
+  either extension none did, in 3 of 3 runs each. First-party script and images
+  loaded. uBlock Origin also hid the generic ad box (cosmetic filtering); uBlock
+  Origin Lite in its default basic mode did not. Neither blocked the first-party
+  path `/ads/banner_ad.gif`.
+- **Breaks:** nothing observed on the fixture; extension pop-ups and settings pages
+  are not reachable (no extension UI in WebView2 here). uBlock Origin is MV2, which
+  Chromium is retiring.
+- **Persists:** a second process on the same profile listed uBlock Origin Lite as
+  enabled and still blocked 4 of 4 ad requests. WebView2 also lists two built-in
+  Microsoft extensions (Clipboard, PDF viewer).
+
+Outcome: rule 1b applies; extension support ships, with uBlock Origin Lite
+recommended. Evidence: `work/v20/ext/RESULTS.md` and the server logs.
+
+### Reproduced defects and fixes
+
+1. **Garbled status and title text since 0.18.** The status line read "Ready", then
+   a garbled middle dot, and "Connecting" ended in garbled characters: `app.rs` had
+   been re-encoded (UTF-8 read as Windows-1252) during the 0.18 work. Seen in the
+   "before" screenshots; `tests/source_text.rs` failed on the 7 strings; fixed by
+   restoring the 0.17 text; the test passed. It later also rejected a CHANGELOG line
+   that quoted the garbled bytes, which was reworded.
+2. **Toolbar profile kept form entries from before 0.19** (owner carry-over). A
+   one-time clear of the toolbar profile's general autofill, tested on a 0.19-shaped
+   profile (exactly one clear, on the toolbar view; the website password switch
+   kept), on a profile already cleared (none) and in private windows (none).
+3. **Release workflow problems** found by `validation/test_release_workflow.py`
+   before fixing: `release.yml` lacked every native suite added since v0.18, and
+   published with `--generate-notes`. It now runs the same native suites as CI and
+   publishes only `release-notes/<tag>.md`.
+4. **Fixture only:** the windows fixture waited for the browser's next timer to exit
+   after finishing (about 58 seconds in one suite); it now polls once done.
+
+### Automated evidence
+
+All 44 local gates passed on `ea41c2f` (`work/v20/production-gates.json`): format,
+Clippy with `-D warnings`, 139 regular tests (34 native tests are ignored there and
+run on their own), debug and release builds, 24 native suites each in its own
+process plus the two-process second-launch suite, three daily runs, process sampler,
+launcher fixtures, experimental and production Python tests (including the new
+release workflow test), dynamic imports, portable package, installer lifecycle from
+a real 0.19 installation (pinned `383a6de`, executable SHA-256
+`adba9a62a254de2caedf2867f06abcaa6ebab96d46792dbdfc1cf2a4295c4155`), release
+metadata, static-build restoration, owner bundle tests and `cargo audit`. The
+installer suite checks that the real default-browser choice is unchanged.
+
+New tests: `native_extensions_add_list_disable_remove_and_restart` (two marker
+extensions written for this project: add both from their folders, both run on a
+page, a built-in WebView2 extension cannot be removed or turned off, turn one off and
+remove the other, neither runs, WebView2 refuses an extension in the toolbar view;
+then a second process on the same profile finds the first still off, the second
+gone, and neither running); `native_private_windows_never_run_extensions` (commands
+refused, no extension kept or run, WebView2 refuses an extension in a private view);
+`native_toolbar_autofill_is_cleared_once_on_upgrade` and
+`native_toolbar_autofill_cleanup_does_not_repeat`;
+`native_address_enter_navigates_without_a_go_button` (a real Enter key event through
+DevTools); unit tests for extension folders and IDs, the toolbar cleanup kind,
+favicon checks (PNG only, at most 32 KiB), the exact toolbar content security
+policy, an accessible name on every toolbar button, the tab-strip colour in the WCAG
+contrast checks, re-encoded text, and the release workflow.
+
+The existing keyboard and scaled-layout, page-tools, toolbar recovery, edit-menu,
+tab, new-tab and daily-driver suites pass on the new layout with no assertion
+changed; the active tab keeps its inset accent rule and bold title.
+
+Mutation checks (one defect injected at a time, `work/v20/mutate.py`), all 14 caught:
+toolbar cleanup repeating, toolbar cleanup clearing passwords, extensions on in
+private windows, extensions on in the toolbar, no ownership check on extension
+commands, a removed extension staying listed, manifest version 1 accepted, network
+images allowed in the toolbar, favicons not checked to be PNG, the star without a
+name, a second field blocking Enter in the address form, re-encoded status text,
+the release workflow dropping a suite, and generated release notes. Two survived an
+earlier design of the private and toolbar checks (the browser's own guard hid the
+WebView2 setting), so those suites now add an extension below the guard.
+
+### Cost of uBlock Origin Lite (synthetic benchmark)
+
+`benchmarks/windows.ps1` with the release probe (SHA-256 `F22FF738...8539A`), 1 and 10
+tabs, 3 repeats, 20 s settle, 8 s idle sample, no soak, uBlock Origin Lite added with
+the new `-Extension` option. The fixture page has no ads, so this is the extension's
+overhead, not what blocking saves. In the fresh-profile uBlock runs the extension is
+added after startup, so the warm-profile rows are the fair comparison. Working set is
+summed over processes and counts shared pages more than once.
+
+| Tabs | Profile | Metric | No extension (median, min-max) | uBlock Origin Lite (median, min-max) |
+| --- | --- | --- | --- | --- |
+| 1 | fresh | usable ms | 856 (839-882) | 759 (705-843) |
+| 1 | fresh | all loaded ms | 856 (839-882) | 759 (705-843) |
+| 1 | fresh | idle working set MiB | 674 (665-674) | 729 (723-729) |
+| 1 | fresh | idle private MiB | 327 (325-329) | 358 (357-364) |
+| 1 | fresh | idle processes | 14 (14-14) | 15 (15-15) |
+| 1 | warm | usable ms | 649 (649-664) | 672 (655-713) |
+| 1 | warm | all loaded ms | 649 (649-664) | 672 (655-713) |
+| 1 | warm | idle working set MiB | 663 (659-669) | 716 (711-718) |
+| 1 | warm | idle private MiB | 324 (322-325) | 353 (352-357) |
+| 1 | warm | idle processes | 14 (14-14) | 15 (15-15) |
+| 10 | fresh | usable ms | 1223 (1210-1320) | 1321 (1167-1336) |
+| 10 | fresh | all loaded ms | 1260 (1233-1325) | 1328 (1178-1344) |
+| 10 | fresh | idle working set MiB | 1198 (1188-1198) | 1257 (1254-1259) |
+| 10 | fresh | idle private MiB | 572 (566-575) | 604 (602-605) |
+| 10 | fresh | idle processes | 23 (23-23) | 24 (24-24) |
+| 10 | warm | usable ms | 1170 (1148-1193) | 1246 (1190-1277) |
+| 10 | warm | all loaded ms | 1178 (1158-1202) | 1252 (1197-1304) |
+| 10 | warm | idle working set MiB | 1189 (1182-1190) | 1252 (1247-1259) |
+| 10 | warm | idle private MiB | 564 (562-571) | 602 (598-613) |
+| 10 | warm | idle processes | 23 (23-23) | 24 (24-24) |
+
+Warm profile: one more process, about 53 to 63 MiB more summed working set, about 29
+to 38 MiB more private memory, and first usable 23 ms (1 tab) and 76 ms (10 tabs)
+later at the median. The cost of turning extension support on at all, compared with
+0.19, was not measured.
+
+### Layout
+
+Before and after screenshots of the toolbar view, light and dark, 100% and 150%, on
+the new-tab page and above a website: `docs/screenshots/v0.20/` (captured with the
+`layout_screenshots` tool). The 150% images are DevTools-emulated scale on this
+machine, not a second monitor. Drawing tabs into the Windows title bar was not
+attempted (see README, Layout).
+
+### Not tested here
+
+Owner checklist steps 28 to 30 (uBlock Origin Lite on a real news site, the new
+layout by hand with Narrator and a contrast theme, a clean install in a new Windows
+user account). Real ad-heavy websites were not measured because of this network's
+DNS filtering. Favicons from real websites were not shown in a test (the fixture
+serves none); the conversion is unit-tested. The release workflow has never run: it
+can only run from a tag, which only the owner creates. Windows 10 is untested.
+
 ## v0.19 passwords, autofill and bookmark import
 
 Baseline `efd1a2a` (PR #24 squash merge); CI 43091111950 and security 43091111977
@@ -79,11 +236,22 @@ define 266 `ICoreWebView2*` interfaces and no member whose name contains "import
 the only password members are the two autosave switches and
 `ICoreWebView2BasicAuthenticationResponse` (answers to HTTP sign-in prompts).
 
+### Owner results
+
+Owner checklist on bundle `o-b60800e5`, version 0.19.0, built from PR #25 head
+`abdff7b` (EXE SHA-256
+`6e59d53d49fbe99cbca28d5caaca8a0b2d0bc7aefaac12f5f4c67da755e445e9`), 2026-11-11:
+steps 22 to 27 all passed by owner report, with the bundle's disposable profile.
+Passwords used the public demo login at the-internet.herokuapp.com; autofill used
+made-up details on httpbin.org/forms/post, submitted because autofill saves entries
+on submit; a real Firefox export was imported. The validation install and its
+profile were removed. Folder mapping on import is approved as it is. These results
+cover that build only.
+
 ### Not tested here
 
-Owner checklist steps 22 to 27 (saving a password on a real sign-in page, a
-private window, filling a real form, clearing passwords, importing a real Firefox
-export) are not done. Whether WebView2 actually offers to save or fill on a given
+Before the owner results above, owner checklist steps 22 to 27 had not been done.
+Whether WebView2 actually offers to save or fill on a given
 site, and what clearing removes from its stores, were not observed: the suites
 check the settings WebView2 reports and the clearing kinds requested. The native
 file dialog was not driven by a test. Popups get the switches through the same view

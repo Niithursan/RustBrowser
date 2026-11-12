@@ -40,6 +40,25 @@ pub struct Settings {
     /// Let WebView2 fill in forms (addresses and similar) automatically (v0.19,
     /// opt-in). Off by default even though WebView2's own default is on.
     pub autofill: bool,
+    /// Set once the toolbar profile's leftover form data (WebView2 turned autofill
+    /// on in the toolbar before 0.19) has been cleared. Missing from older files.
+    pub toolbar_autofill_cleared: bool,
+    /// Extensions the user added from a folder (v0.20). WebView2 keeps whether each
+    /// is installed and enabled; this list only says which ones are the user's.
+    pub extensions: Vec<SavedExtension>,
+}
+
+/// Most extensions a profile may add.
+pub const MAX_EXTENSIONS: usize = 16;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SavedExtension {
+    /// WebView2's extension ID (32 letters a to p).
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// The folder it was added from, shown so the user knows what was added.
+    pub folder: String,
 }
 
 impl Default for Settings {
@@ -55,6 +74,8 @@ impl Default for Settings {
             show_recent: false,
             save_passwords: false,
             autofill: false,
+            toolbar_autofill_cleared: false,
+            extensions: Vec::new(),
         }
     }
 }
@@ -77,6 +98,20 @@ impl Settings {
     pub fn validate(&self) -> Result<(), String> {
         if !(15..=3600).contains(&self.suspend_after_seconds) || self.favorites.len() > 12 {
             return Err("Invalid background timer or too many favorites.".into());
+        }
+        if self.extensions.len() > MAX_EXTENSIONS
+            || self.extensions.iter().any(|e| {
+                e.id.len() != 32
+                    || !e.id.bytes().all(|b| (b'a'..=b'p').contains(&b))
+                    || e.name.chars().count() > 80
+                    || e.version.chars().count() > 32
+                    || e.folder.len() > 1024
+                    || [&e.name, &e.version, &e.folder]
+                        .iter()
+                        .any(|t| t.chars().any(char::is_control))
+            })
+        {
+            return Err("Invalid saved extensions.".into());
         }
         let mut urls = std::collections::HashSet::new();
         for item in &self.favorites {

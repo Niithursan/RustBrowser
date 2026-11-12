@@ -1,4 +1,4 @@
-# Windows release readiness (v0.19 development)
+# Windows release readiness (v0.20 development)
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
@@ -8,13 +8,32 @@ WebView2 stays production and Servo remains experimental/fixture-only.
 
 ## Current milestone and exact prior-build owner results
 
+v0.20 branches from verified main `383a6de` (CI 43113399661 and security 43113399666
+passed). It adds browser extensions (uBlock Origin Lite tested for ad blocking), a
+new layout with card tabs and one menu, and prepares v0.20.0 as the **first
+published release**: release notes, RELEASING.md and a release workflow that runs
+every CI suite and publishes only the reviewed notes. Only the owner creates the tag
+and approves publishing; nothing has been tagged or published. All 44 local gates
+passed on `ea41c2f` and 14 mutation checks were caught; see VALIDATION.md. Owner
+checklist steps 28 to 30 (including the clean install in a new Windows user account)
+are new and not yet done. Builds remain unsigned. No release candidate is declared.
+
 v0.19 branches from verified main `efd1a2a` (CI 43091111950 and security
 43091111977 passed). It adds opt-in password saving and form autofill through
 WebView2 (form autofill is now off by default), two clearing choices and bookmark
 import from an exported HTML file, and fixes silent loss of windows when the session
 is too large. All 39 local gates passed on `1336439` and 14 mutation checks were
-caught; see VALIDATION.md. Owner checklist steps 22 to 27 are new and not yet done.
-No release candidate is declared.
+caught; see VALIDATION.md. No release candidate is declared.
+
+Owner checklist on bundle `o-b60800e5`, version 0.19.0, built from PR #25 head
+`abdff7b` (EXE SHA-256
+`6e59d53d49fbe99cbca28d5caaca8a0b2d0bc7aefaac12f5f4c67da755e445e9`), 2026-11-11:
+steps 22 to 27 all passed by owner report, with the bundle's disposable profile.
+Passwords used the public demo login at the-internet.herokuapp.com; autofill used
+made-up details on httpbin.org/forms/post, submitted because autofill saves entries
+on submit; a real Firefox export was imported. The validation install and its
+profile were removed. Folder mapping on import is approved as it is. These results
+cover that build only.
 
 v0.16 branches from verified main `cb3d81d`; Windows CI 42931608985 and security
 42931608910 passed. It adds content-only native find, zoom and print, and toolbar
