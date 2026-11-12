@@ -66,8 +66,10 @@ fn no_em_dashes_in_user_facing_text() {
                 continue;
             }
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if !["rs", "html", "md", "ps1", "py", "iss", "txt", "toml", "yml", "json"]
-                .contains(&ext)
+            if ![
+                "rs", "html", "md", "ps1", "py", "iss", "txt", "toml", "yml", "json",
+            ]
+            .contains(&ext)
             {
                 continue;
             }
