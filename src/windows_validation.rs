@@ -1931,7 +1931,7 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 }
                 eval_toolbar(
                     p,
-                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),i=document.getElementById('menu-snapshot');return JSON.stringify({right:Math.round(innerWidth-m.right),tall:m.height>innerHeight/2,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,still:!i.hidden&&i.src.startsWith('data:image/jpeg;base64,')})})()",
+                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),i=document.getElementById('menu-snapshot');return JSON.stringify({right:Math.round(innerWidth-m.right),tall:m.height>innerHeight/2,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,still:!!i&&i.src.startsWith('data:image/jpeg;base64,')})})()",
                 )?;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(10) {
