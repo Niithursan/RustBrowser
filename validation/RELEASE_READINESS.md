@@ -8,6 +8,19 @@ WebView2 stays production and Servo remains experimental/fixture-only.
 
 ## Current milestone and exact prior-build owner results
 
+**Release decision, 2026-11-12: v0.20.0 will not be tagged or released.** The first
+release is postponed until the owner says it is ready. `release-notes/v0.20.0.md` and
+RELEASING.md stay as prepared drafts. Nothing has been tagged or published.
+
+Owner checklist on bundle `o-a47ce755`, version 0.20.0, built from PR #26 head
+`0590beb` (EXE SHA-256
+`edff5c726a13c67adbcc64728d4d11d88bc7e54d4f92dce7c3029224b0e1f1e1`), 2026-11-12:
+bundle setup, step 28 (uBlock Origin Lite: checksum verified, ads blocked, ads back
+with the extension off, a private window not filtered; site: YouTube) and step 29
+(keyboard, mouse, Narrator, contrast theme) passed by owner report. Step 30 (a clean
+install in a new Windows user account) was not tested. These results cover that build
+only.
+
 v0.20 branches from verified main `383a6de` (CI 43113399661 and security 43113399666
 passed). It adds browser extensions (uBlock Origin Lite tested for ad blocking), a
 new layout with card tabs and one menu, and prepares v0.20.0 as the **first
