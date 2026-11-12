@@ -60,6 +60,8 @@ pub enum Command {
     /// Close every window and keep them all for the next start.
     ExitBrowser,
     SetRestoreSession(bool),
+    /// The menu (the toolbar's ⋮ button) opened or closed as a sidebar.
+    SetMenuOpen(bool),
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,
     /// Privacy & security > Extensions > Add from folder (native folder dialog).
@@ -174,6 +176,8 @@ pub struct ToolbarState<'a> {
     pub search_engine: SearchEngine,
     pub notice: &'a str,
     pub panel: Option<Panel>,
+    /// The menu sidebar is open (the toolbar fills the window).
+    pub menu_open: bool,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,

@@ -13,37 +13,53 @@ fn ctrl_wheel(view: &WebView) -> Result<(), String> {
     use windows::Win32::{
         Foundation::{HWND, LPARAM, RECT, WPARAM},
         UI::WindowsAndMessaging::{
-            EnumChildWindows, GetClassNameW, GetWindowRect, SendMessageW, WM_MOUSEWHEEL,
+            EnumChildWindows, GetClassNameW, GetWindowRect, IsWindowVisible, SendMessageW,
+            WM_MOUSEWHEEL,
         },
     };
+    /// Every visible render widget under the browser window, with its size. The
+    /// toolbar and every tab have one; the page is the one sized like its controller.
     unsafe extern "system" fn find(hwnd: HWND, state: LPARAM) -> BOOL {
         let mut name = [0u16; 128];
-        // SAFETY: synchronous enumeration with a live, stack-owned output slot.
+        // SAFETY: synchronous enumeration with a live, stack-owned output list.
         unsafe {
             let len = GetClassNameW(hwnd, &mut name) as usize;
-            if String::from_utf16_lossy(&name[..len]) == "Chrome_RenderWidgetHostHWND" {
-                *(state.0 as *mut Option<HWND>) = Some(hwnd);
-                return BOOL(0);
+            if String::from_utf16_lossy(&name[..len]) == "Chrome_RenderWidgetHostHWND"
+                && IsWindowVisible(hwnd).as_bool()
+            {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    (*(state.0 as *mut Vec<(HWND, RECT)>)).push((hwnd, rect));
+                }
             }
         }
         BOOL(1)
     }
     // SAFETY: controller, descendants and synchronous message belong only to this
-    // disposable fixture. Enumeration ends before the stack slot is dropped.
+    // disposable fixture. Enumeration ends before the stack list is dropped.
     unsafe {
+        let controller = view.controller();
         let mut parent = HWND::default();
-        view.controller()
+        controller
             .ParentWindow(&mut parent)
             .map_err(|e| e.to_string())?;
-        let mut child: Option<HWND> = None;
+        let mut bounds = RECT::default();
+        controller.Bounds(&mut bounds).map_err(|e| e.to_string())?;
+        let (width, height) = (bounds.right - bounds.left, bounds.bottom - bounds.top);
+        let mut widgets: Vec<(HWND, RECT)> = Vec::new();
         let _ = EnumChildWindows(
             Some(parent),
             Some(find),
-            LPARAM(&mut child as *mut _ as isize),
+            LPARAM(&mut widgets as *mut _ as isize),
         );
-        let hwnd = child.ok_or("Owned content render host not found")?;
-        let mut rect = RECT::default();
-        GetWindowRect(hwnd, &mut rect).map_err(|e| e.to_string())?;
+        // The page's own widget, not whichever widget Windows lists first (the
+        // toolbar's or another tab's would never zoom this page).
+        let (hwnd, rect) = widgets
+            .into_iter()
+            .find(|(_, r)| {
+                ((r.right - r.left) - width).abs() <= 2 && ((r.bottom - r.top) - height).abs() <= 2
+            })
+            .ok_or("Owned content render host not found")?;
         let position = ((rect.left + 20) as u16 as u32) | (((rect.top + 20) as u16 as u32) << 16);
         let _ = SendMessageW(
             hwnd,

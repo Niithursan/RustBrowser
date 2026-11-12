@@ -342,8 +342,9 @@ The project aims to evolve through incremental releases:
 - v0.6+: Potential Servo experimentation
 - v0.18: Multiple normal windows (done)
 - v0.19: Saved passwords, form autofill and bookmark import
-- v0.20: Ad blocking and the first tagged release
-- Then: daily use by the owner, followed by a v0.21 reliability pass
+- v0.20: Ad blocking and a new layout (done; the release prepared for it was not published)
+- Then: daily use by the owner, followed by a v0.21 reliability and polish pass
+- First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
 
 These milestones are planning targets, not guarantees of completed functionality.

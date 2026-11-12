@@ -1,5 +1,71 @@
 # Validation
 
+## v0.21 toolbar polish and menu sidebar
+
+Baseline `d4cf1af` (PR #26 squash merge); CI 43136087446 and security 43136087955
+passed before branching. Branch `feat/v0.21-toolbar-polish`. Version stays 0.20.0
+(unreleased); profile path, session format 1 and SQLite schema 3 unchanged. One
+Windows 11 Pro x64 machine, WebView2 157. Local results only in this section; hosted
+results for the final head are in the pull request.
+
+### What changed
+
+The polish from the owner-requested Hallmark audit of `src/ui/toolbar.html`, and, at
+the owner's request during the work, the menu (⋮) opening as a vertical sidebar. The
+audit reports and screenshots are in `docs/hallmark/v0.21/`:
+
+| Audit (`sloplint --scope app`) | FAIL | REFLEX | WARN |
+| --- | --- | --- | --- |
+| Before (`d4cf1af`) | 32 | 27 | 5 |
+| After (`b182740`) | 30 | 0 | 2 |
+
+All 30 remaining FAILs are gate 48 on the theme blocks: their colour tokens sit on
+`body[data-theme=...]`, which the linter does not read as a token block although the
+Floor allows a declared theme block. The owner waived moving `data-theme` to `<html>`
+(recorded in the PR). The two WARNs are dismissed: 41 (the favourite card inherits
+`--text`, covered by the contrast tests) and F23 (a meta description on an internal
+page). The marketing-page gates do not apply to this app screen.
+
+### Found during the work
+
+1. **A flaky page-tools step, made visible by the polish.** Step 40 of
+   `native_content_find_zoom_print_boundary` failed 2 of 8 runs on this branch and 0
+   of 8 on `main`. Its helper sent Ctrl+wheel to the first
+   `Chrome_RenderWidgetHostHWND` under the window; the toolbar and every tab have
+   one, in an order Windows does not fix, and a wheel at the toolbar never zooms the
+   page. The helper now picks the visible widget sized like the active page's
+   controller; the check is unchanged and passed 10 of 10.
+2. **The scaled-layout check measured less than it said.** Its selector named
+   `#tabs-bar`, which does not exist, so the tab strip's own buttons were never
+   measured. It now names `#tabrow`; it passes at 1, 1.25, 1.5 and 2 with 16
+   controls, and a mutation overlapping a scroll button and the all-tabs button is
+   caught.
+3. **The audit's re-run** flagged the empty still-image placeholder behind the
+   sidebar (gate 76); the image is now created only when a still exists.
+4. The z-order finding in 1 is why the sidebar never overlaps the page and toolbar
+   views: while it is open the toolbar fills the window over a still of the page and
+   the live page is hidden.
+
+### Automated evidence
+
+All 46 local gates passed on `b182740` (`work/v21/production-gates.json`): format,
+Clippy, 141 regular tests (36 native tests are ignored there and run on their own),
+both builds, 26 native suites each in its own process plus the two-process suite,
+three daily runs, fixtures, Python tests, imports, portable package, installer
+lifecycle from 0.19, release metadata, static-build restoration, owner bundle tests
+and `cargo audit`. New: `native_toolbar_polish_states` and
+`native_menu_opens_as_a_sidebar`, and a unit test for the still's JPEG check. Mutation
+checks (`work/v21/mutate.py`), all 8 caught: reload and stop shown together, the
+shortcut hints back in the status line, a tooltip separator, the toolbar not filling
+the window, the live page visible under the sidebar, Escape not closing it, the menu
+as a row again, and an overlap in the tab strip.
+
+### Not tested here
+
+The sidebar and polish by hand with Narrator and a contrast theme; the sidebar's still
+on a page with video (it shows one frame); the render tier of the audit (Puppeteer is
+not installed; the real screenshots were used instead).
+
 ## v0.20 extensions, layout and release preparation
 
 Baseline `383a6de` (PR #25 squash merge); CI 43113399661 and security 43113399666

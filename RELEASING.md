@@ -1,5 +1,9 @@
 # Releasing Rust Browser
 
+> **Prepared draft, not published.** The owner decided on 2026-11-12 that v0.20.0 will
+> not be tagged or released; the first release is postponed until the owner says it is
+> ready. This file is kept so it can be reused then.
+
 Only the repository owner creates release tags and approves publishing. Automation
 never creates a tag, and the release workflow publishes only when the owner runs it
 by hand with **publish** turned on. These steps are for v0.20.0, the first published

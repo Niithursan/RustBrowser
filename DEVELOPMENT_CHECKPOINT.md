@@ -1,5 +1,17 @@
 # Development checkpoint
 
+## v0.21: toolbar polish and menu sidebar (Claude Code, in progress)
+
+Branch `feat/v0.21-toolbar-polish` from verified origin/main `d4cf1af` (CI
+43136087446 and security 43136087955 passed). Scratch `<workspace>/work/v21`.
+Version stays 0.20.0. Done: carry-over (`9071fdf`, `e93b646`: v0.20 owner results,
+release postponed, drafts, roadmap); wheel helper fix `921bbdf`; polish `6d3040b`;
+menu sidebar `619e160`, tests `730e030`, `1ee51ed`; docs `641fb05`; CI `b182740`.
+All 46 local gates passed on `b182740`; 8 mutation checks caught.
+
+Next: draft PR with the audit reports and screenshots, CI on the final head. Do not
+merge, tag or publish.
+
 ## v0.20: extensions, layout and the first release (Claude Code, in progress)
 
 Branch `feat/v0.20-adblock-layout-release` from verified origin/main `383a6de`

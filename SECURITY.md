@@ -1,5 +1,14 @@
 # Security
 
+## v0.21 menu sidebar
+
+- While the menu sidebar is open, the browser captures one JPEG still of the visible
+  page with WebView2's `CapturePreview` into memory, checks it is a JPEG of at most
+  6 MiB, and shows it in the toolbar as a `data:` image behind the sidebar. It is never
+  written to disk and is discarded when the sidebar closes. The toolbar's content
+  security policy is unchanged (`img-src data:` already allowed tab icons). The live
+  page is hidden, not unloaded, while the sidebar is open.
+
 ## v0.20 extensions, layout and the first release
 
 ### Browser extensions

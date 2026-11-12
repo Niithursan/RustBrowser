@@ -255,6 +255,83 @@ fn favicon_data(stream: &windows::Win32::System::Com::IStream) -> Option<String>
     favicon_url(&bytes)
 }
 
+/// Largest page still passed to the toolbar while the menu sidebar is open.
+const MAX_SNAPSHOT: usize = 6 * 1024 * 1024;
+
+/// Capture what the page shows now as a JPEG and send it as a data URL (or `None`
+/// when capturing failed), for the menu sidebar to show behind itself while the
+/// live page is hidden. Nothing is written to disk.
+pub fn capture_snapshot(
+    view: &WebView,
+    reply: impl FnOnce(Option<String>) + 'static,
+) -> windows::core::Result<()> {
+    // SAFETY: an in-memory stream and a capture on a live view, on its UI thread;
+    // the completion handler only reads the stream it was given.
+    unsafe {
+        let stream = windows::Win32::UI::Shell::SHCreateMemStream(None).ok_or_else(|| {
+            windows::core::Error::from_hresult(windows::core::HRESULT(0x8007000Eu32 as i32))
+        })?;
+        let read = stream.clone();
+        let mut reply = Some(reply);
+        view.webview().CapturePreview(
+            COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
+            &stream,
+            &webview2_com::CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                let data = result.ok().and_then(|()| snapshot_data(&read));
+                if let Some(reply) = reply.take() {
+                    reply(data);
+                }
+                Ok(())
+            })),
+        )
+    }
+}
+
+fn snapshot_data(stream: &windows::Win32::System::Com::IStream) -> Option<String> {
+    // SAFETY: rewinds and reads a stream this process created.
+    unsafe {
+        stream
+            .Seek(0, windows::Win32::System::Com::STREAM_SEEK_SET, None)
+            .ok()?;
+    }
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 65536];
+    loop {
+        let mut read = 0u32;
+        // SAFETY: reads into a local buffer.
+        let result = unsafe {
+            stream.Read(
+                chunk.as_mut_ptr().cast(),
+                chunk.len() as u32,
+                Some(&mut read),
+            )
+        };
+        if result.is_err() {
+            return None;
+        }
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read as usize]);
+        if bytes.len() > MAX_SNAPSHOT {
+            return None;
+        }
+    }
+    snapshot_url(&bytes)
+}
+
+/// A data URL for JPEG `bytes`, or `None` when they are empty, too large or not JPEG.
+pub fn snapshot_url(bytes: &[u8]) -> Option<String> {
+    use base64::Engine as _;
+    (!bytes.is_empty() && bytes.len() <= MAX_SNAPSHOT && bytes.starts_with(&[0xFF, 0xD8, 0xFF]))
+        .then(|| {
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        })
+}
+
 /// A data URL for PNG `bytes`, or `None` when they are empty, too large or not PNG.
 pub fn favicon_url(bytes: &[u8]) -> Option<String> {
     use base64::Engine as _;
@@ -948,5 +1025,21 @@ mod favicon_tests {
         let mut big = png.clone();
         big.resize(MAX_FAVICON + 1, 0);
         assert!(favicon_url(&big).is_none());
+    }
+
+    #[test]
+    fn only_bounded_jpeg_snapshots_reach_the_toolbar() {
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+        assert!(
+            snapshot_url(&jpeg)
+                .unwrap()
+                .starts_with("data:image/jpeg;base64,")
+        );
+        assert!(snapshot_url(b"").is_none());
+        assert!(snapshot_url(b"\x89PNG\r\n\x1a\n").is_none());
+        assert!(snapshot_url(b"<script>").is_none());
+        let mut big = jpeg.to_vec();
+        big.resize(MAX_SNAPSHOT + 1, 0);
+        assert!(snapshot_url(&big).is_none());
     }
 }

@@ -1,0 +1,66 @@
+toolbar.html
+  FAIL 20 :1 no Hallmark stamp on the first non-empty line of any CSS | fix: The stamp comment is line 1 of the CSS; only @charset may precede it
+  FAIL 34 :13 overflow-x: hidden on body (breaks sticky) | fix: Use overflow-x: clip on both html and body, never hidden
+  FAIL 39a :17 disabled via opacity alone on button:disabled | fix: Three disabled channels: fill, ink and cursor, plus the disabled attribute
+  FAIL 39a :143 disabled via opacity alone on button:disabled
+  FAIL 48 :8 colour literal #141C23 outside tokens (--strip on body[data-theme=slate]) | fix: Lift the value into the token block
+  FAIL 48 :8 colour literal #1F2A33 outside tokens (--surface on body[data-theme=slate])
+  FAIL 48 :8 colour literal #1A232B outside tokens (--panel on body[data-theme=slate])
+  FAIL 48 :8 colour literal #2A3742 outside tokens (--card on body[data-theme=slate])
+  FAIL 48 :8 colour literal #162028 outside tokens (--field on body[data-theme=slate])
+  FAIL 48 :8 colour literal #3D4D5A outside tokens (--line on body[data-theme=slate])
+  FAIL 48 :8 colour literal #7CC4E4 outside tokens (--accent on body[data-theme=slate])
+  FAIL 48 :9 colour literal #1B1420 outside tokens (--strip on body[data-theme=plum])
+  FAIL 48 :9 colour literal #2A2130 outside tokens (--surface on body[data-theme=plum])
+  FAIL 48 :9 colour literal #231B29 outside tokens (--panel on body[data-theme=plum])
+  FAIL 48 :9 colour literal #382C40 outside tokens (--card on body[data-theme=plum])
+  FAIL 48 :9 colour literal #1E1724 outside tokens (--field on body[data-theme=plum])
+  FAIL 48 :9 colour literal #4C3D56 outside tokens (--line on body[data-theme=plum])
+  FAIL 48 :9 colour literal #E3B5FF outside tokens (--accent on body[data-theme=plum])
+  FAIL 48 :10 colour literal #D9DEE3 outside tokens (--strip on body[data-theme=light])
+  FAIL 48 :10 colour literal #EEF0F2 outside tokens (--surface on body[data-theme=light])
+  FAIL 48 :10 colour literal #F8F9FA outside tokens (--panel on body[data-theme=light])
+  FAIL 48 :10 colour literal #E2E6EA outside tokens (--card on body[data-theme=light])
+  FAIL 48 :10 colour literal #fff outside tokens (--field on body[data-theme=light])
+  FAIL 48 :10 colour literal #1B2430 outside tokens (--text on body[data-theme=light])
+  FAIL 48 :10 colour literal #4A5563 outside tokens (--secondary on body[data-theme=light])
+  FAIL 48 :10 colour literal #A7B0BA outside tokens (--line on body[data-theme=light])
+  FAIL 48 :10 colour literal #A3192A outside tokens (--error on body[data-theme=light])
+  FAIL 48 :10 colour literal #2446B8 outside tokens (--accent on body[data-theme=light])
+  FAIL 48 :10 colour literal #fff outside tokens (--on-accent on body[data-theme=light])
+  FAIL 48 :10 colour literal rgba(27,36,48,.06) outside tokens (--hover on body[data-theme=light])
+  FAIL 48 :144 colour literal rgba(0,0,0,.35) outside tokens (box-shadow on #address-menu)
+  FAIL 63 :146 arrow glued to the label "›" | fix: A verb as the label; the link already says it goes somewhere
+  REFLEX 24b :15 padding: 0 10px (off the 4px scale) on button,select | fix: Use the 4px spacing scale
+  REFLEX 24b :19 padding: 0 10px (off the 4px scale) on input
+  REFLEX 24b :23 padding: 6px 8px 0 (off the 4px scale) on #tabrow
+  REFLEX 24b :24 padding-right: 6px (off the 4px scale) on #mode
+  REFLEX 24b :29 gap: 6px (off the 4px scale) on .tab
+  REFLEX 24b :29 padding: 0 4px 0 10px (off the 4px scale) on .tab
+  REFLEX 24b :41 padding-right: 10px (off the 4px scale) on .tab.pinned
+  REFLEX 24b :56 gap: 6px (off the 4px scale) on #tab-actions
+  REFLEX 24b :56 margin: 0 8px 6px (off the 4px scale) on #tab-actions
+  REFLEX 24b :57 gap: 6px (off the 4px scale) on #search-choice
+  REFLEX 24b :60 gap: 6px (off the 4px scale) on #library-links
+  REFLEX 24b :63 padding: 6px 8px (off the 4px scale) on #nav
+  REFLEX 24b :66 margin: 0 6px (off the 4px scale) on #location
+  REFLEX 24b :68 gap: 5px (off the 4px scale) on #security
+  REFLEX 24b :68 padding: 0 10px 0 8px (off the 4px scale) on #security
+  REFLEX 24b :81 padding: 0 16px 0 10px (off the 4px scale) on #address
+  REFLEX 24b :84 padding-left: 10px (off the 4px scale) on #address-view
+  REFLEX 24b :94 margin: 0 10px 4px (off the 4px scale) on #dismiss-notice
+  REFLEX 24b :110 gap: 8px 10px (off the 4px scale) on .manager-tools,.row,.folder-tools
+  REFLEX 24b :114 gap: 6px (off the 4px scale) on .manager-tools label
+  REFLEX 24b :118 padding: 12px 6px (off the 4px scale) on .row
+  REFLEX 24b :129 padding: 0 22px (off the 4px scale) on #newtab-search button
+  REFLEX 24b :131 gap: 10px (off the 4px scale) on #favorite-list
+  REFLEX 24b :134 margin-top: 6px (off the 4px scale) on .favorite-card .remove
+  REFLEX 24b :135 padding: 10px 12px (off the 4px scale) on .recent-row
+  REFLEX 24b :144 padding: 6px 10px (off the 4px scale) on #address-menu button
+  REFLEX 26b :1 no :active styling anywhere | fix: All eight states; guard: not a form control, no aria-disabled anywhere
+  WARN 41 :132 dark surface (L 25%) on .favorite-card sets no text colour | fix: Swap text to paper in the same rule
+  WARN F1 :159 straight quote in prose x1 (first: ed by this window's tabs; cleari) | fix: Use typographic quotes: “ ” ’
+  WARN F2 :147 three-period ellipsis in prose x1 | fix: Use a true ellipsis character (…)
+  WARN F3 :105 no text-wrap: balance on any display head (4 head rule(s), e.g. h1) | fix: Add text-wrap: balance to h1/h2-level heads
+  WARN F23 :1 the document lacks a meta description | fix: Name the language, title the page in its own words, and describe it in one sentence for link previews
+sloplint: 32 FAIL, 27 REFLEX, 5 WARN across 1 file(s).
