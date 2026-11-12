@@ -109,17 +109,26 @@ source instead.
 The tab strip runs along the top. Each tab is a card with the page's icon, its title
 and a close button; the selected card is joined to the toolbar below it and marked
 with an accent line along its top edge and a bold title. The + button follows the
-last tab; when tabs overflow, the scroll buttons and the all-tabs list at the right
-of the strip stay available.
+last tab; when tabs overflow, the scroll buttons and the all-tabs button at the right
+of the strip (it opens the list of every tab) stay available. A tab shows small icons
+when it is pinned, loading or asleep; hovering it shows its title, with its state on
+the next line.
 
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
 address line. At its start, the site-information badge shows the connection and opens
 Privacy & security; at its end, the star bookmarks the page. After the address line
 an extension button appears once you add an extension, showing how many are on. The
-Menu (⋮) at the far right holds everything else: find, zoom, print, pin, move and
-keep-awake for the current tab, the search engine, bookmarks, history, downloads,
-Privacy & security, new, reopened and private windows, and Exit. Every action keeps
-its keyboard shortcut.
+Menu (⋮) at the far right opens a sidebar down the right of the window with everything
+else: find, zoom, print, pin, move and keep-awake for the current tab, the search
+engine, the list of keyboard shortcuts, bookmarks, history, downloads, Privacy &
+security, new, reopened and private windows, and Exit. While the sidebar is open the
+page beside it is a dimmed still image; click it, press Escape or ⋮ again, or choose
+an item that goes somewhere, and the live page comes back. Every action keeps its
+keyboard shortcut.
+
+Under the toolbar a status line says only what is happening (Ready, loading, or what
+went wrong). The keyboard shortcuts are listed in Menu (⋮) → Keyboard shortcuts and in
+the tooltip of the address field.
 
 Tab icons come from WebView2 as image data checked by the browser; the toolbar never
 loads anything from a website. All icons are drawn for this project. The four themes,
@@ -183,6 +192,7 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Open a website | Address field, then Enter |
 | Bookmark the current page | Star at the end of the address line, or Ctrl+D |
 | Choose the search engine | Menu (⋮) → Search with |
+| See every keyboard shortcut | Menu (⋮) → Keyboard shortcuts, or hover the address field |
 | Manage extensions | Extension button after the address line (shown once you add one), or Menu (⋮) → Privacy & security → Extensions |
 | Focus/select address | Ctrl+L, Alt+D, F6 |
 | Back / forward | Buttons or Alt+Left / Alt+Right |

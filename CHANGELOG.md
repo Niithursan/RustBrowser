@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.20.0 (unreleased; to be the first published release)
+## Unreleased (v0.21 development; the version stays 0.20.0 for now)
+
+- The menu (⋮) opens as a vertical sidebar on the right. While it is open the page
+  beside it is a dimmed still image; Escape, ⋮, a click on the page or an item that
+  goes somewhere closes it.
+- Toolbar polish from a design audit: the status line shows only the message; the
+  keyboard shortcuts move to Menu > Keyboard shortcuts and the address field's
+  tooltip; reload and stop swap places while a page loads; the all-tabs list is an
+  icon button; the pin, loading, sleep, warning and tab-scroll symbols are icons from
+  the toolbar's own set; tab tooltips put the state on its own line; disabled
+  controls change colour instead of only fading; buttons show a pressed state;
+  spacing is on a 4px scale; "Private window" is no longer in capitals.
+- The v0.20.0 release notes and RELEASING.md are kept as drafts: the first release is
+  postponed until the owner decides.
+
+## 0.20.0 (not released; the first release was postponed)
 
 - New layout: tabs are cards with the page's icon, title and close button, the
   selected card joined to the toolbar; + follows the last tab. The toolbar row has
