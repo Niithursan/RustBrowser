@@ -43,7 +43,7 @@ const EXPECTED: &str = r#"(() => { const describe = e => (e.id || '') + '|' + (e
 /// Layout problems at the current emulated width: horizontal overflow, visible
 /// controls outside the viewport, and visible controls overlapping each other.
 const LAYOUT: &str = r#"(() => { const vw = document.documentElement.clientWidth;
-  const controls = [...document.querySelectorAll('#tabs-bar button, #tabs [role=tab], #nav button, #nav input, #nav select, #more, #new, #tab-picker')]
+  const controls = [...document.querySelectorAll('#tabrow button, #tabs [role=tab], #nav button, #nav input, #nav select, #more, #new, #tab-picker')]
     .filter(e => !e.closest('[hidden]') && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
   const name = e => e.id || e.getAttribute('aria-label') || e.textContent.trim().slice(0, 30);
   const out = [];
