@@ -114,6 +114,10 @@ jobs:
         run: cargo test --locked --bin rust-browser native_private_windows_never_run_extensions -- --ignored --test-threads=1
       - name: Native address field Enter without a Go button
         run: cargo test --locked --bin rust-browser native_address_enter_navigates_without_a_go_button -- --ignored --test-threads=1
+      - name: Native toolbar polish states
+        run: cargo test --locked --bin rust-browser native_toolbar_polish_states -- --ignored --test-threads=1
+      - name: Native menu opens as a sidebar
+        run: cargo test --locked --bin rust-browser native_menu_opens_as_a_sidebar -- --ignored --test-threads=1
       - name: Native single-instance hand-off between two browser processes
         run: cargo test --locked --test single_instance -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
