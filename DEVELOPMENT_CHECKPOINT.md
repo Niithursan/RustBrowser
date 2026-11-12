@@ -24,9 +24,12 @@ Done:
   and 20 to 80 ms to first usable (warm profile).
 - All 44 local gates passed on `ea41c2f`; 14 mutation checks caught.
 
-Next: draft PR, CI on the final head (results in the PR), owner bundle, owner steps
-28 to 30, then the owner tags and publishes per RELEASING.md. Do not merge, tag or
-publish.
+- Draft PR #26; CI 43124085022 and security 43124085010 passed on `1f6732b`. Owner
+  approved extension support with uBlock Origin Lite, and asked for " - " instead
+  of em dashes in titles and all user-facing text, with a test (done).
+
+Next: CI on the new head, owner bundle from it, owner steps 28 to 30, then the owner
+tags and publishes per RELEASING.md. Do not merge, tag or publish.
 
 ## v0.19: passwords, autofill and bookmark import (Claude Code, in progress)
 
@@ -373,7 +376,7 @@ Current continuation:
   a post-CI packaged-document push that spends another full Windows run. No remote
   v0.15 result is claimed in this pre-PR checkpoint. Do not merge, tag, publish or deploy.
 
-## v0.14 — `feat/v0.14-daily-driver-reliability` (Claude Code, 2026-11-09)
+## v0.14 - `feat/v0.14-daily-driver-reliability` (Claude Code, 2026-11-09)
 
 Branch created from verified `origin/main` `ca7ac14` (PR #17 squash merge, 0.13.0;
 main CI 42730890112 and security 42730890455 passed). Scratch: `<workspace>/work/v14`.

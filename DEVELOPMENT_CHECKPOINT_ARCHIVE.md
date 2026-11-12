@@ -5,9 +5,9 @@ DEVELOPMENT_CHECKPOINT.md in v0.15 so the live checkpoint stays short. Entries a
 historical: commands, paths and "Next" steps describe the state at the time and may
 no longer apply.
 
-## v0.13 — `feat/v0.13-windows-release-readiness`
+## v0.13 - `feat/v0.13-windows-release-readiness`
 
-### Claude Code continuation (2026-11-09) — supersedes "Next:" below
+### Claude Code continuation (2026-11-09) - supersedes "Next:" below
 
 - Took over at pushed `cb7a4b1`. Five uncommitted Codex doc edits were preserved
   and committed as `72f48a7`: absolute links for repository-only docs in packaged files.
@@ -111,7 +111,7 @@ no longer apply.
 - Still unverified: clean machine/Windows 10, missing/old runtimes, physical installer
   wizard interaction, mid-copy/power-loss/full-disk recovery and signed distribution.
 
-## v0.12 — `feat/v0.12-ui-compatibility-ci` (PR #16)
+## v0.12 - `feat/v0.12-ui-compatibility-ci` (PR #16)
 
 Completed (all local gates passed at 0.12.0; see VALIDATION.md):
 1. CI: PR/main/dispatch triggers, SHA-pinned rust-cache, parallel release job,
@@ -139,7 +139,7 @@ Final-head CI at `02e4221` passed (CI 42717009388, security 42717009508; warm,
 197 s / 24 s). After the main merge, re-verify gates and CI on the new head.
 Do not merge, tag or publish.
 
-## Post-merge fix (2026-11-09) — `fix/superseded-web-navigation-start`
+## Post-merge fix (2026-11-09) - `fix/superseded-web-navigation-start`
 
 - PR #14 squash-merged at `fef457a` (0.11.0). Main CI 42710344722 then failed:
   daily native phase 9, status 9 from a superseded host load whose
@@ -154,7 +154,7 @@ Do not merge, tag or publish.
 
 # v0.11 development checkpoint
 
-## Claude Code continuation (2026-11-09) — supersedes all entries below
+## Claude Code continuation (2026-11-09) - supersedes all entries below
 
 Took over from Codex at pushed `d77d9c9` (clean tree, branch = origin). No
 production code was changed; evidence, documentation and one test-fixture fix.
@@ -199,7 +199,7 @@ production code was changed; evidence, documentation and one test-fixture fix.
 - Next session: if new commits are pushed, re-verify final-head CI with `gh`.
   Do not merge, tag or publish without explicit approval.
 
-## Codex continuation — superseded by the section above
+## Codex continuation - superseded by the section above
 
 - PR #14 remains draft. Main, tags and releases are unchanged.
 - Corrected campaign session 96778 exited with failure after 13 successful cases:

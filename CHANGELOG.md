@@ -16,6 +16,8 @@
 - Fixed: since 0.18 the status line, the "Connecting" and "Loading" text and the
   window-title separator showed garbled characters instead of the middle dot,
   ellipsis and dash.
+- Window titles and tab tooltips separate their parts with " - " (for example
+  "Private - Example Domain"), and no user-facing text uses an em dash (tested).
 - Fixed: the toolbar's own profile could keep form entries saved before 0.19, when
   WebView2 had autofill on in the address field. They are cleared once on upgrade;
   saved passwords and website form data are not touched.

@@ -52,7 +52,7 @@ class PublishTests(unittest.TestCase):
         notes = REPO / 'release-notes' / f'v{VERSION}.md'
         self.assertTrue(notes.is_file(), f'missing {notes.name}')
         text = notes.read_text(encoding='utf-8')
-        self.assertNotIn('—', text, 'no em dashes in release notes')
+        self.assertNotIn('\u2014', text, 'no em dashes in release notes')
         for required in ['unsigned', 'SmartScreen', 'WebView2', 'Visual C++',
                          'Known limitations', 'SHA-256', 'Report a vulnerability']:
             self.assertIn(required, text, required)

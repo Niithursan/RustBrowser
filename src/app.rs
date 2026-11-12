@@ -1933,9 +1933,9 @@ impl Session {
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
         }
         let prefix = if self.private {
-            "Private — "
+            "Private - "
         } else if active.content.state.loading {
-            "Loading… — "
+            "Loading… - "
         } else {
             ""
         };
