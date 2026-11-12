@@ -1,4 +1,4 @@
-# Windows release readiness (v0.19 development)
+# Windows release readiness (v0.20 development)
 
 This is preparation for a release candidate, not a declaration of one. No release,
 tag, publication or deployment is authorized. The [criteria](RELEASE_CRITERIA.md)
@@ -7,6 +7,16 @@ repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
 ## Current milestone and exact prior-build owner results
+
+v0.20 branches from verified main `383a6de` (CI 43113399661 and security 43113399666
+passed). It adds browser extensions (uBlock Origin Lite tested for ad blocking), a
+new layout with card tabs and one menu, and prepares v0.20.0 as the **first
+published release**: release notes, RELEASING.md and a release workflow that runs
+every CI suite and publishes only the reviewed notes. Only the owner creates the tag
+and approves publishing; nothing has been tagged or published. All 44 local gates
+passed on `ea41c2f` and 14 mutation checks were caught; see VALIDATION.md. Owner
+checklist steps 28 to 30 (including the clean install in a new Windows user account)
+are new and not yet done. Builds remain unsigned. No release candidate is declared.
 
 v0.19 branches from verified main `efd1a2a` (CI 43091111950 and security
 43091111977 passed). It adds opt-in password saving and form autofill through

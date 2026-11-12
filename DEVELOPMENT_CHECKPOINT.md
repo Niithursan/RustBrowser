@@ -1,5 +1,33 @@
 # Development checkpoint
 
+## v0.20: extensions, layout and the first release (Claude Code, in progress)
+
+Branch `feat/v0.20-adblock-layout-release` from verified origin/main `383a6de`
+(CI 43113399661 and security 43113399666 passed after waiting for CI to finish).
+Scratch `<workspace>/work/v20`; gate script `work/v20/gates.ps1`; mutation script
+`work/v20/mutate.py`; extension experiment `work/v20/ext/`.
+
+Done:
+- `efbbb2f` v0.19 owner results, checklist step 24 submits the form.
+- `cc5aabf` one-time toolbar autofill clear (`toolbar_autofill_cleared`).
+- Experiment: uBlock Origin Lite and uBlock Origin load and block on WebView2 157
+  (local logging server; this network's DNS blocks ad domains). Rule 1b: ship.
+- `2ff7a8c` extensions (`src/native_extensions.rs`, settings `extensions`, website
+  profile only); `12f57c1` WebView2 refusal checks below the browser's guards.
+- `bd42b0f` garbled status text since 0.18 fixed (`tests/source_text.rs`).
+- `f1d3eba` layout (card tabs, icon toolbar, one Menu, favicons as checked PNG data,
+  `img-src data:`); `8f0d8f7` before and after screenshots.
+- `c0e0a18` release workflow runs every CI suite, publishes `release-notes/<tag>.md`;
+  `5e3a4e3` installer upgrade from 0.19 (cache key installer-fixture-v8);
+  `9cc60cc` 0.20.0; `1604b99` release notes and RELEASING.md; `5d9447c` docs.
+- Benchmark: uBlock Origin Lite costs one process, about 30 to 38 MiB private memory
+  and 20 to 80 ms to first usable (warm profile).
+- All 44 local gates passed on `ea41c2f`; 14 mutation checks caught.
+
+Next: draft PR, CI on the final head (results in the PR), owner bundle, owner steps
+28 to 30, then the owner tags and publishes per RELEASING.md. Do not merge, tag or
+publish.
+
 ## v0.19: passwords, autofill and bookmark import (Claude Code, in progress)
 
 Branch `feat/v0.19-passwords-autofill-import` from verified origin/main `efd1a2a`
