@@ -49,6 +49,9 @@ pub enum Event {
         success: bool,
     },
     PermissionPrompt,
+    /// The page still for behind the menu sidebar of window `0` (`None` if the
+    /// capture failed).
+    MenuSnapshot(WindowId, Option<String>),
     /// An extension operation finished.
     Extension(native_extensions::Reply),
     /// The one-time toolbar autofill cleanup finished (true when it succeeded).
@@ -376,6 +379,11 @@ struct WindowState {
     panel: Option<Panel>,
     fullscreen: Option<TabId>,
     focus_pending: bool,
+    /// The menu is open as a sidebar: the toolbar fills the window over a still
+    /// of the page, and the live page is hidden until it closes.
+    menu_open: bool,
+    /// The menu was asked to open and waits for the page still.
+    menu_wanted: bool,
     chrome_height: f64,
     last_render: RefCell<String>,
     last_title: RefCell<String>,
@@ -507,6 +515,21 @@ impl Session {
         if native_security::clear_toolbar_autofill(toolbar, self.proxy.clone()).is_err() {
             self.diagnostics.record(DiagnosticCode::CommandFailed);
         }
+    }
+
+    /// Open the menu sidebar over `snapshot` (or a plain backdrop), if it is still
+    /// wanted.
+    fn show_menu(&mut self, snapshot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.menu_wanted {
+            return Ok(());
+        }
+        self.menu_open = true;
+        self.activate()?;
+        let url = serde_json::to_string(&snapshot.unwrap_or_default())?;
+        self.toolbar.evaluate_script(&format!(
+            "window.showMenuSnapshot&&window.showMenuSnapshot({url})"
+        ))?;
+        Ok(())
     }
 
     /// Ask WebView2 for the state of the user's extensions.
@@ -749,6 +772,8 @@ impl Session {
             panel: None,
             fullscreen: None,
             focus_pending: false,
+            menu_open: false,
+            menu_wanted: false,
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
@@ -901,6 +926,9 @@ impl Session {
             }
             Event::ToolbarProcess(source, _) | Event::ToolbarResponsive(source, _) => {
                 self.select_toolbar(*source);
+            }
+            Event::MenuSnapshot(id, _) => {
+                self.select_window(*id);
             }
             Event::PermissionPrompt => {
                 let tab = self.permissions.borrow().prompt().map(|p| p.tab);
@@ -1183,6 +1211,8 @@ impl Session {
             panel: None,
             fullscreen: None,
             focus_pending: false,
+            menu_open: false,
+            menu_wanted: false,
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
@@ -1675,7 +1705,7 @@ impl Session {
             position: LogicalPosition::new(0.0, 0.0).into(),
             size: LogicalSize::new(
                 size.width,
-                if self.effective_panel().is_some() {
+                if self.effective_panel().is_some() || self.menu_open {
                     size.height
                 } else {
                     self.chrome_height
@@ -1721,6 +1751,7 @@ impl Session {
         self.claim_permissions();
         let active = self.tabs.active_index();
         let panel = self.effective_panel();
+        let menu_open = self.windows[self.current].menu_open;
         let now = self.started.elapsed();
         let window = &mut self.windows[self.current];
         for (index, tab) in window.tabs.items.iter_mut().enumerate() {
@@ -1739,7 +1770,7 @@ impl Session {
             }
             tab.content
                 .engine
-                .set_visible(index == active && panel.is_none())?;
+                .set_visible(index == active && panel.is_none() && !menu_open)?;
         }
         self.resize()?;
         self.focus_active()
@@ -1894,6 +1925,7 @@ impl Session {
             library: &self.library_data,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
+            menu_open: self.windows[self.current].menu_open,
             extensions: if self.private {
                 Vec::new()
             } else {
@@ -2128,6 +2160,33 @@ impl Session {
                 std::process::Command::new(std::env::current_exe()?)
                     .arg("--private")
                     .spawn()?;
+            }
+            Command::SetMenuOpen(open) => {
+                self.menu_wanted = open;
+                if !open {
+                    if self.menu_open {
+                        self.menu_open = false;
+                        self.activate()?;
+                    }
+                } else if !self.menu_open {
+                    let window = self.window.id();
+                    let proxy = self.proxy.clone();
+                    let page = self
+                        .tabs
+                        .active()
+                        .filter(|_| self.effective_panel().is_none())
+                        .map(|tab| &tab.content.engine.view);
+                    // A still of the page first, so the sidebar never shows a gap.
+                    let captured = page.is_some_and(|view| {
+                        engine::capture_snapshot(view, move |data| {
+                            let _ = proxy.send_event(Event::MenuSnapshot(window, data));
+                        })
+                        .is_ok()
+                    });
+                    if !captured {
+                        self.show_menu(None)?;
+                    }
+                }
             }
             Command::AddExtension => {
                 if self.private {
@@ -3455,6 +3514,11 @@ impl ApplicationHandler<Event> for App {
                 Err(message) => session.notice = message,
             },
             Event::Extension(reply) => session.extension_reply(reply),
+            Event::MenuSnapshot(_, data) => {
+                if let Err(error) = session.show_menu(data) {
+                    session.notice = format!("Error: {error}");
+                }
+            }
             Event::ToolbarAutofillCleared(success) => {
                 if success && !session.private {
                     session.settings.toolbar_autofill_cleared = true;
