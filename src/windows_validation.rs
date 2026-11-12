@@ -1722,3 +1722,154 @@ fn native_address_enter_navigates_without_a_go_button() {
     let (root, _) = run("enter", enter_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Run `script` in the first window's toolbar; the answer lands in `p.result`.
+fn eval_toolbar(p: &mut Probe, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[0]
+        .toolbar
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Toolbar script failed".to_string())
+}
+
+/// The toolbar state the polish defines, as JSON.
+const POLISH_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const shown=e=>!!e&&!e.hidden&&e.getClientRects().length>0;const tab=document.querySelector('.tab.active .select');return JSON.stringify({reload:shown(b('reload')),stop:shown(b('stop')),status:b('status').textContent.trim(),role:b('status').getAttribute('role'),address:b('address').title,picker:b('tab-picker').tagName+'|'+b('tab-picker').getAttribute('aria-label'),pickerShown:shown(b('tab-picker')),shortcuts:shown(b('show-shortcuts'))||!!b('show-shortcuts'),tabTitle:tab?tab.title:'',tabLabel:tab?tab.getAttribute('aria-label'):''})})()"#;
+
+fn polish_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = p.result.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let inner: String = serde_json::from_str(&text).map_err(|e| format!("{e}: {text}"))?;
+    serde_json::from_str(&inner)
+        .map(Some)
+        .map_err(|e| format!("{e}: {inner}"))
+}
+
+/// The polished toolbar: reload and stop swap places while loading, the status line
+/// carries only the message, the shortcuts live in the address tooltip and a menu
+/// list, the all-tabs list stays a named native list, and tab tooltips put the
+/// state on its own line.
+fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?polish")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            eval_toolbar(p, POLISH_REPORT)?;
+            p.next();
+        }
+        2 => {
+            if let Some(r) = polish_report(p)? {
+                let checks = [
+                    (
+                        r["reload"] == true && r["stop"] == false,
+                        "idle shows reload, not stop",
+                    ),
+                    (r["status"] == "Ready", "the status line says only Ready"),
+                    (r["role"] == "status", "the status row keeps role=status"),
+                    (
+                        r["address"]
+                            .as_str()
+                            .is_some_and(|t| t.contains("Ctrl+L") && t.contains("F7")),
+                        "the address tooltip lists shortcuts",
+                    ),
+                    (
+                        r["picker"] == "SELECT|All browser tabs" && r["pickerShown"] == true,
+                        "the all-tabs list keeps its name",
+                    ),
+                    (r["shortcuts"] == true, "the Keyboard shortcuts item exists"),
+                ];
+                if let Some((_, what)) = checks.iter().find(|(ok, _)| !ok) {
+                    return Err(format!("Idle toolbar: {what}: {r}"));
+                }
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                if let Some(tab) = s.tabs.active_mut() {
+                    tab.content.state.loading = true;
+                    tab.keep_awake = true;
+                }
+                s.last_render.borrow_mut().clear();
+                s.render();
+                p.next();
+            }
+        }
+        3 if p.at.elapsed() > Duration::from_millis(300) => {
+            eval_toolbar(p, POLISH_REPORT)?;
+            p.next();
+        }
+        4 => {
+            if let Some(r) = polish_report(p)? {
+                let title = r["tabTitle"].as_str().unwrap_or("");
+                if r["reload"] != false || r["stop"] != true {
+                    return Err(format!("Loading toolbar should show stop, not reload: {r}"));
+                }
+                if !title.ends_with("\nKeep awake") || title.contains(" - ") {
+                    return Err(format!(
+                        "Tab tooltip should put the state on its own line: {title:?}"
+                    ));
+                }
+                if !r["tabLabel"]
+                    .as_str()
+                    .is_some_and(|l| l.ends_with(", loading"))
+                {
+                    return Err(format!("A loading tab should say so: {r}"));
+                }
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                if let Some(tab) = s.tabs.active_mut() {
+                    tab.content.state.loading = false;
+                    tab.keep_awake = false;
+                }
+                // The shortcuts item opens its list inside the menu.
+                if s.windows[0]
+                    .toolbar
+                    .evaluate_script("document.getElementById('more').click();document.getElementById('show-shortcuts').click()")
+                    .is_err()
+                {
+                    return Err("Menu script failed".into());
+                }
+                p.next();
+            }
+        }
+        5 if p.at.elapsed() > Duration::from_millis(300) => {
+            eval_toolbar(
+                p,
+                "document.getElementById('show-shortcuts').getAttribute('aria-expanded')+'|'+!document.getElementById('shortcut-list').hidden+'|'+document.querySelectorAll('#shortcut-list li').length",
+            )?;
+            p.next();
+        }
+        6 => {
+            if let Some(text) = p.result.lock().unwrap().clone() {
+                let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+                let parts: Vec<&str> = inner.split('|').collect();
+                if parts.len() != 3
+                    || parts[0] != "true"
+                    || parts[1] != "true"
+                    || parts[2].parse::<usize>().unwrap_or(0) < 15
+                {
+                    return Err(format!("Keyboard shortcuts list did not open: {inner}"));
+                }
+                p.log
+                    .push("toolbar polish: states, status, shortcuts and tooltips".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_toolbar_polish_states() {
+    let (root, _) = run("polish", polish_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}

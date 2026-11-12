@@ -2573,9 +2573,9 @@ impl Session {
                 tab.content.state.message = match (error, http_status) {
                     (Some(error), _) => format!("Error: {error}"),
                     (None, Some(code)) => http_status_message(code),
-                    (None, None) => {
-                        "Ready · Ctrl+L address · Ctrl+T new tab · Ctrl+Tab switch · F7 page".into()
-                    }
+                    // Only the message; the shortcut hints are in the address field's
+                    // tooltip and Menu > Keyboard shortcuts.
+                    (None, None) => "Ready".into(),
                 };
             }
             PageEvent::Error(error) => {
