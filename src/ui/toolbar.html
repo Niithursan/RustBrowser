@@ -249,6 +249,8 @@ const byId=id=>document.getElementById(id);
 // The part of the browser this view shows: the toolbar, the tab column or the library.
 const ROLE=({'#tabs':'tabs','#library':'library'})[location.hash]||'toolbar';document.documentElement.dataset.role=ROLE;
 if(ROLE==='tabs')byId('tabs').setAttribute('aria-orientation','vertical');
+// In the library column the button closes the column (the page stays beside it).
+if(ROLE==='library'){byId('close-manager').textContent='Close';byId('close-manager').title='Close the library panel (Ctrl+Shift+B)'}
 let currentPanel=null,librarySignature='',downloadSignature='',libraryData={folders:[],bookmarks:[],history:[]};
 {const option=document.createElement('option');option.value='light';option.textContent='Light';byId('home-theme').append(option);}
 byId('dismiss-notice').onclick=()=>send('dismiss_notice');
