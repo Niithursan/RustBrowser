@@ -1516,6 +1516,10 @@ fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
                         s.settings.extensions
                     ));
                 }
+                // The shield never counts in a private window.
+                if s.counts_blocked() || s.tabs.items[0].content.engine.blocked.count().is_some() {
+                    return Err("A private window counts blocked requests".into());
+                }
                 s.extension_added = None;
                 // Refused either at once or in WebView2's answer.
                 if let Err(message) = native_extensions::add(
@@ -2191,5 +2195,303 @@ fn library_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_library_sidebar_beside_a_live_page() {
     let (root, _) = run("library", library_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+const BLOCKER: &str = "Rust Browser test blocker";
+
+/// The shield panel's state in the first window's toolbar, as JSON.
+const SHIELD_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const r=b('shield').getBoundingClientRect(),l=b('location').getBoundingClientRect();return JSON.stringify({open:!b('shield-panel').hidden,expanded:b('shield').getAttribute('aria-expanded'),on:b('shield').dataset.on,badge:b('shield-count').textContent,label:b('shield').getAttribute('aria-label'),state:b('shield-state').textContent,count:b('shield-count-text').hidden?'':b('shield-count-text').textContent,limits:b('shield-limits').textContent,inAddress:r.right<=l.right+1&&r.left>=l.left-1,focus:document.activeElement&&document.activeElement.id})})()"#;
+
+fn shield_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = p.result.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    serde_json::from_str(&inner)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// The shield counts exactly the requests the test blocker stops on a page, shows
+/// that count at the end of the address line and in its panel (which takes its own
+/// space above the page), says what it cannot do, closes with Escape, and starts
+/// again at zero on the next page.
+fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            // WebView2 writes indexed rules into the folder: use a copy.
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            // Before any extension: nothing is counted and the panel says so.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].content.engine.blocked.count().is_some() {
+                return Err("Pages count before an extension is added".into());
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!(
+                    "Adding the blocker: {:?}, notice {:?}",
+                    names(s),
+                    s.notice
+                ));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count == Some(2) {
+                // The tab existed before the extension was added; it counts anyway.
+                p.log.push("shield: 2 of 2 blocked requests counted".into());
+                eval_toolbar(p, "document.getElementById('shield').click()")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err(format!("The shield counted {count:?}, not 2"));
+            }
+        }
+        3 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "shield panel open")?;
+            let views = shown_views(s);
+            let (toolbar, page) = (named(&views, "toolbar"), named(&views, "page"));
+            let (Some(toolbar), Some(page)) = (toolbar, page) else {
+                return Err(format!(
+                    "The page should stay shown under the panel: {views:?}"
+                ));
+            };
+            if (page.top - toolbar.bottom).abs() > 2 {
+                return Err(format!(
+                    "The page should move down below the panel: {views:?}"
+                ));
+            }
+            p.marks.push((toolbar.bottom - toolbar.top).max(0) as usize);
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        4 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            let text = |key: &str| r[key].as_str().unwrap_or("").to_string();
+            if r["open"] != true
+                || text("expanded") != "true"
+                || text("on") != "true"
+                || text("badge") != "2"
+                || r["inAddress"] != true
+                || !text("label").contains("2 blocked")
+                || !text("state").contains(BLOCKER)
+                || !text("count").starts_with("2 requests blocked on this page")
+                || !text("limits").contains("cannot turn blocking off for one site")
+                || text("focus") != "shield-panel"
+            {
+                return Err(format!("The shield panel is wrong: {r}"));
+            }
+            eval_toolbar(
+                p,
+                "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+            )?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(600) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            let open = p.marks.first().copied().unwrap_or(0);
+            if (toolbar.bottom - toolbar.top).max(0) as usize >= open {
+                return Err(format!(
+                    "Closing the panel should give the page its room back: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "shield panel closed")?;
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        6 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            if r["open"] != false || r["focus"] != "shield" {
+                return Err(format!(
+                    "Escape should close the panel and return focus: {r}"
+                ));
+            }
+            p.command(el, 0, Command::Navigate(format!("{url}?after-shield")))?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count != Some(0) {
+                return Err(format!(
+                    "The count should start again on a new page: {count:?}"
+                ));
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        8 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            // The toolbar shows the engine's count for this page: none.
+            if r["badge"] != ""
+                || r["label"].as_str().unwrap_or("").contains("blocked")
+                || !r["count"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("0 requests blocked")
+            {
+                return Err(format!("The shield should show 0 on the new page: {r}"));
+            }
+            // Turned off, the extension blocks nothing and the shield says so.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let id = s.settings.extensions[0].id.clone();
+            p.command(el, 0, Command::SetExtensionEnabled { id, enabled: false })?;
+            p.next();
+        }
+        9 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "off")] {
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html?off")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Turning the blocker off: {:?}", names(s)));
+            }
+        }
+        10 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count != Some(0) {
+                return Err(format!("A turned-off extension blocked {count:?}"));
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        11 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            if r["on"] != "false"
+                || r["badge"] != ""
+                || !r["state"].as_str().unwrap_or("").contains("turned off")
+            {
+                return Err(format!("The shield should say the extension is off: {r}"));
+            }
+            p.log
+                .push("shield: panel beside the page, Escape, reset, off".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_counts_what_an_extension_blocks() {
+    let (root, _) = run("shield", shield_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Load a page of 300 requests 12 times, alternating between a tab that counts
+/// blocked requests and one that does not, and log both load times.
+fn shield_cost_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    const ROUNDS: u32 = 12;
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[1].content.engine;
+            native_shield::watch(
+                &engine.view,
+                engine.blocked.clone(),
+                s.proxy.clone(),
+                s.tabs.items[1].id,
+            )
+            .map_err(|e| e.to_string())?;
+            p.next();
+        }
+        n if (2..2 + 2 * ROUNDS).contains(&n)
+            && n % 2 == 0
+            && p.at.elapsed() > Duration::from_millis(500) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let index = ((n / 2) % 2) as usize;
+            let id = s.tabs.items[index].id;
+            p.command(el, 0, Command::SelectTab(id))?;
+            p.command(el, 0, Command::Navigate(format!("{url}many.html?{n}")))?;
+            p.next();
+        }
+        n if (2..2 + 2 * ROUNDS).contains(&n)
+            && n % 2 == 1
+            && p.at.elapsed() > Duration::from_millis(200)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let ms = p.at.elapsed().as_millis() as usize;
+            p.log.push(format!(
+                "{} {ms}",
+                if (n / 2) % 2 == 1 {
+                    "counting"
+                } else {
+                    "plain"
+                }
+            ));
+            p.marks.push(ms);
+            p.next();
+        }
+        n if n == 2 + 2 * ROUNDS => {
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Measurement only; run by hand with --nocapture"]
+fn native_shield_cost_probe() {
+    let (root, _) = run("shield-cost", shield_cost_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

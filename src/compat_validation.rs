@@ -100,6 +100,11 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
         "/redirect-modern"=>{status="302 Found";extra="Location: /modern.html\r\n";Vec::new()},
         "/auth.html"=>b"<!doctype html><title>Fixture authentication</title><button id='finish' onclick=\"document.cookie='fixture_session=joined; SameSite=Lax; path=/';window.opener.postMessage('fixture-auth-complete',location.origin);window.close()\">Complete synthetic authentication</button>".to_vec(),
         "/upload"=>b"synthetic upload accepted".to_vec(),
+        // Two requests the test blocker extension stops, and one it allows.
+        "/shield.html"=>b"<!doctype html><title>Shield fixture</title><h1>Shield fixture</h1><script src='/blocked-by-fixture.js'></script><img src='/blocked-by-fixture.png' alt=''><script src='/allowed.js'></script>".to_vec(),
+        // 300 small requests, to measure what the shield's counting costs.
+        "/many.html"=>{let mut page=b"<!doctype html><title>Many requests</title>".to_vec();for i in 0..300{page.extend(format!("<img src='/allowed.js?{i}' alt=''>").bytes())}page},
+        "/allowed.js"=>{kind="application/javascript";b"document.documentElement.dataset.allowed='yes'".to_vec()},
         "/download"=>{kind="application/octet-stream";extra="Content-Disposition: attachment; filename=fixture.txt\r\n";vec![b'x';1024*1024]},
         "/status-404"=>{status="404 Not Found";b"<!doctype html><title>Missing fixture</title>The fixture has no such page.".to_vec()},
         "/status-503"=>{status="503 Service Unavailable";b"<!doctype html><title>Unavailable fixture</title>The fixture is unavailable.".to_vec()},
