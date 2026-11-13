@@ -2272,9 +2272,15 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         1 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            if names(s) == [(BLOCKER.to_string(), "on")] {
+            let both = [(BLOCKER.to_string(), "on"), (MARKER_A.to_string(), "on")];
+            if names(s) == both {
+                p.marks.clear();
                 p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
                 p.next();
+            } else if names(s) == [(BLOCKER.to_string(), "on")] && p.marks.is_empty() {
+                // A second extension that does not ask to block requests.
+                p.marks.push(1);
+                add_marker(p, 'a')?;
             } else if p.at.elapsed() > Duration::from_secs(20) {
                 return Err(format!(
                     "Adding the blocker: {:?}, notice {:?}",
@@ -2330,7 +2336,10 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 || text("badge") != "2"
                 || r["inAddress"] != true
                 || !text("label").contains("2 blocked")
-                || !text("state").contains(BLOCKER)
+                || !text("state").contains(&format!("Can block requests: {BLOCKER}."))
+                || !text("state").contains(&format!(
+                    "On, but not asking to block requests: {MARKER_A}."
+                ))
                 || !text("count").starts_with("2 requests blocked on this page")
                 || !text("limits").contains("cannot turn blocking off for one site")
                 || text("focus") != "shield-panel"
@@ -2407,7 +2416,7 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         9 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            if names(s) == [(BLOCKER.to_string(), "off")] {
+            if names(s) == [(BLOCKER.to_string(), "off"), (MARKER_A.to_string(), "on")] {
                 p.command(el, 0, Command::Navigate(format!("{url}shield.html?off")))?;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(20) {
@@ -2432,11 +2441,15 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let Some(r) = shield_report(p)? else {
                 return Ok(());
             };
+            // Only an extension that does not ask to block requests is on.
+            let state = r["state"].as_str().unwrap_or("");
             if r["on"] != "false"
                 || r["badge"] != ""
-                || !r["state"].as_str().unwrap_or("").contains("turned off")
+                || !state.contains("No extension on in this window asks to block requests")
+                || !state.contains(MARKER_A)
+                || state.contains(BLOCKER)
             {
-                return Err(format!("The shield should say the extension is off: {r}"));
+                return Err(format!("The shield should say no blocker is on: {r}"));
             }
             p.log
                 .push("shield: panel beside the page, Escape, reset, off".into());
@@ -2964,5 +2977,84 @@ fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_newtab_tiles_and_background() {
     let (root, _) = run("tiles", tiles_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A request the blocker stops inside a frame from another site (localhost in a
+/// 127.0.0.1 page) is not in the page's count: WebView2 reports such frames'
+/// requests to their own DevTools target. The panel says so.
+fn shield_frame_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}shield-frame.html")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding the blocker: {:?}", names(s)));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            *p.result.lock().unwrap() = None;
+            let result = p.result.clone();
+            s.tabs.items[0]
+                .content
+                .engine
+                .view
+                .evaluate_script_with_callback(
+                    "document.documentElement.dataset.frame||'none'",
+                    move |v| *result.lock().unwrap() = Some(v),
+                )
+                .map_err(|_| "eval")?;
+            p.next();
+        }
+        3 => {
+            if let Some(v) = p.result.lock().unwrap().clone() {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let count = s.tabs.items[0].content.engine.blocked.count();
+                // The frame loaded and its script was stopped, yet nothing is counted.
+                if v != r#""stopped:localhost""# || count != Some(0) {
+                    return Err(format!(
+                        "Frame from another site: count {count:?}, frame {v}"
+                    ));
+                }
+                p.log
+                    .push("shield: a cross-site frame's blocked request is not counted".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_does_not_count_frames_from_other_sites() {
+    let (root, _) = run("shield-frame", shield_frame_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

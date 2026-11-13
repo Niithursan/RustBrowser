@@ -107,6 +107,9 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
         // A page with its own icon, for the new-tab tiles.
         "/tile.html"=>b"<!doctype html><title>Tile fixture</title><link rel='icon' type='image/png' href='/tile-icon.png'><h1>Tile fixture</h1>".to_vec(),
         "/tile-icon.png"=>{kind="image/png";include_bytes!("../tests/fixtures/tile-icon.png").to_vec()},
+        // A frame from another site (localhost) whose own request the blocker stops.
+        "/shield-frame.html"=>b"<!doctype html><title>Shield frame fixture</title><iframe id='f'></iframe><script>addEventListener('message',e=>document.documentElement.dataset.frame=String(e.data));document.getElementById('f').src=location.href.replace('127.0.0.1','localhost').replace('shield-frame.html','frame-inner.html')</script>".to_vec(),
+        "/frame-inner.html"=>b"<!doctype html><title>Inner frame</title><script src='/blocked-by-fixture.js?frame' onerror=\"parent.postMessage('stopped:'+location.hostname,'*')\"></script>inner".to_vec(),
         "/allowed.js"=>{kind="application/javascript";b"document.documentElement.dataset.allowed='yes'".to_vec()},
         "/download"=>{kind="application/octet-stream";extra="Content-Disposition: attachment; filename=fixture.txt\r\n";vec![b'x';1024*1024]},
         "/status-404"=>{status="404 Not Found";b"<!doctype html><title>Missing fixture</title>The fixture has no such page.".to_vec()},
