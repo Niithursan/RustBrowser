@@ -130,6 +130,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_shield_does_not_count_frames_from_other_sites -- --ignored --test-threads=1
       - name: Native shield panel fits a narrow window
         run: cargo test --locked --bin rust-browser native_shield_panel_fits_a_narrow_window -- --ignored --test-threads=1
+      - name: Native side columns have the toolbar restrictions and recover
+        run: cargo test --locked --bin rust-browser native_side_views_have_the_toolbar_restrictions_and_recover -- --ignored --test-threads=1
       - name: Native single-instance hand-off between two browser processes
         run: cargo test --locked --test single_instance -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
