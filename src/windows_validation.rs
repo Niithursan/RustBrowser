@@ -2863,3 +2863,90 @@ fn native_vertical_tabs_in_two_windows() {
     let (root, _) = run("vertical", vertical_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The new-tab tiles, as JSON.
+const TILES_REPORT: &str = r#"(()=>{const cards=[...document.querySelectorAll('#favorite-list .favorite-card')];const m=document.getElementById('manager');return JSON.stringify({shown:!document.getElementById('newtab-body').hidden,background:m.dataset.background,image:getComputedStyle(m).backgroundImage,picker:document.getElementById('home-background').value,tiles:cards.map(c=>{const t=c.querySelector('.tile'),i=t&&t.querySelector('img');return {icon:i?i.getAttribute('src').slice(0,22):'',letter:i?'':t.textContent,hidden:t.getAttribute('aria-hidden'),name:c.querySelector('.visit span:last-child').textContent}})})})()"#;
+
+/// Favourite tiles show the icon saved from a visit to their site, or a letter;
+/// the background comes from the theme's colours and is saved as a setting.
+fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let other = url.replace("127.0.0.1", "localhost");
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            s.command(Command::AddFavorite {
+                title: "Tile fixture".into(),
+                url: format!("{url}tile.html"),
+            })
+            .map_err(|e| e.to_string())?;
+            s.command(Command::AddFavorite {
+                title: "letter fixture".into(),
+                url: format!("{other}?letter"),
+            })
+            .map_err(|e| e.to_string())?;
+            p.command(el, 0, Command::Navigate(format!("{url}tile.html")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let favorites = &s.settings.favorites;
+            if !favorites[0].icon.is_empty() {
+                let favicon = &s.windows[0].tabs.items[0].content.state.favicon;
+                if favorites[0].icon != *favicon || !favorites[1].icon.is_empty() {
+                    return Err("Only the visited site's favourite should keep its icon".into());
+                }
+                s.settings.validate()?;
+                p.command(el, 0, Command::Home)?;
+                p.command(
+                    el,
+                    0,
+                    Command::SetNewtabBackground(rust_browser::settings::Background::Dusk),
+                )?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("The favourite never got its site's icon".into());
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_millis(800) => {
+            eval_toolbar(p, TILES_REPORT)?;
+            p.next();
+        }
+        3 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let tile = |i: usize, key: &str| r["tiles"][i][key].as_str().unwrap_or("").to_string();
+            if r["shown"] != true
+                || r["background"] != "dusk"
+                || r["picker"] != "dusk"
+                || !r["image"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("linear-gradient")
+                || tile(0, "icon") != "data:image/png;base64,"
+                || tile(0, "name") != "Tile fixture"
+                || !tile(1, "icon").is_empty()
+                || tile(1, "letter") != "L"
+                || tile(1, "hidden") != "true"
+            {
+                return Err(format!("The new-tab tiles are wrong: {r}"));
+            }
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.newtab_background != rust_browser::settings::Background::Dusk {
+                return Err("The background was not saved".into());
+            }
+            p.log
+                .push("new tab: icon tile, letter tile, dusk background".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_newtab_tiles_and_background() {
+    let (root, _) = run("tiles", tiles_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
