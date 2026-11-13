@@ -2750,7 +2750,7 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             p.marks = vec![active as usize];
             eval_toolbar(
                 p,
-                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display)",
+                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display+' '+Math.abs(Math.ceil(document.getElementById('chrome').getBoundingClientRect().height)-innerHeight))",
             )?;
             p.next();
         }
@@ -2758,8 +2758,14 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let Some(text) = p.result.lock().unwrap().clone() else {
                 return Ok(());
             };
-            if text != r#""\"none\"""# {
-                return Err(format!("The toolbar still shows the tab strip: {text}"));
+            // No tab strip, and the toolbar view is as tall as its content (no
+            // empty band above the page).
+            // The script's JSON string, inside the callback's JSON.
+            let outer: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            let inner: String = serde_json::from_str(&outer).map_err(|e| e.to_string())?;
+            let (display, gap) = inner.split_once(' ').unwrap_or((&inner, "?"));
+            if display != "none" || gap.parse::<f64>().map_or(true, |g| g > 2.0) {
+                return Err(format!("The toolbar beside the column is wrong: {inner}"));
             }
             // Keyboard: focus moves to the column, and Down selects the next tab.
             p.command(el, 0, Command::FocusTabs)?;
@@ -3005,16 +3011,35 @@ fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     return Err("Only the visited site's favourite should keep its icon".into());
                 }
                 s.settings.validate()?;
-                p.command(el, 0, Command::Home)?;
-                p.command(
-                    el,
-                    0,
-                    Command::SetNewtabBackground(rust_browser::settings::Background::Dusk),
-                )?;
+                // Another page of the same site, without an icon of its own, must
+                // not replace the favourite's icon with the engine's generic one.
+                *p.result.lock().unwrap() = Some(favorites[0].icon.clone());
+                p.command(el, 0, Command::Navigate(format!("{url}?other-page")))?;
+                p.phase = 9;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(15) {
                 return Err("The favourite never got its site's icon".into());
             }
+        }
+        10 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let saved = p.result.lock().unwrap().clone().unwrap_or_default();
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.favorites[0].icon != saved {
+                return Err("Another page of the site replaced the favourite's icon".into());
+            }
+            p.command(el, 0, Command::Home)?;
+            p.command(
+                el,
+                0,
+                Command::SetNewtabBackground(rust_browser::settings::Background::Dusk),
+            )?;
+            p.phase = 1;
+            p.next();
         }
         2 if p.at.elapsed() > Duration::from_millis(800) => {
             eval_toolbar(p, TILES_REPORT)?;
@@ -3475,5 +3500,287 @@ fn side_restriction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), Str
 #[ignore = "Requires Windows/WebView2; ends only the fixture's own toolbar processes"]
 fn native_side_views_have_the_toolbar_restrictions_and_recover() {
     let (root, _) = run("side-views", side_restriction_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Whole-window screenshots for the v0.21 review (not a gate). Each shown view is
+/// captured by its own engine at the emulated scale and the captures are placed at
+/// their layout positions with System.Drawing, so 150% needs no display setting.
+/// Writes `<label>-<scene>-<theme>-<scale>.png` to `RUST_BROWSER_SHOTS`.
+fn window_shot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use rust_browser::settings::Theme;
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
+    // The horizontal new-tab page fills the toolbar view alone; `layout_screenshots`
+    // captures it (a whole-window capture of it came out blank).
+    const SCENES: [&str; 6] = [
+        "website",
+        "shield",
+        "library",
+        "vertical-website",
+        "vertical-library",
+        "vertical-newtab",
+    ];
+    const SHOTS: [(&str, Theme, f64); 4] = [
+        ("light", Theme::Light, 1.0),
+        ("light", Theme::Light, 1.5),
+        ("dark", Theme::Dark, 1.0),
+        ("dark", Theme::Dark, 1.5),
+    ];
+    const PER_SCENE: u32 = 1 + 3 * SHOTS.len() as u32;
+    // Seven scenes of four shots take longer than a test's usual limit.
+    p.limit = Duration::from_secs(400);
+    let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
+    let label = std::env::var("RUST_BROWSER_SHOTS_LABEL").unwrap_or_else(|_| "window".into());
+    let url = p.url.clone();
+    let wait = if p.phase.is_multiple_of(PER_SCENE) {
+        2500
+    } else {
+        1500
+    };
+    if p.at.elapsed() < Duration::from_millis(wait) {
+        return Ok(());
+    }
+    let (scene, k) = ((p.phase / PER_SCENE) as usize, p.phase % PER_SCENE);
+    if scene >= SCENES.len() {
+        p.done = true;
+        el.exit();
+        return Ok(());
+    }
+    let name = SCENES[scene];
+    type Part = (&'static str, (f64, f64, f64, f64));
+    fn parts(s: &Session) -> Vec<Part> {
+        let plan = s.current_layout();
+        let mut found = vec![("toolbar", plan.toolbar)];
+        found.extend(plan.page.map(|r| ("page", r)));
+        found.extend(plan.tabs.map(|r| ("tabs", r)));
+        found.extend(plan.library.map(|r| ("library", r)));
+        found
+    }
+    fn view(s: &Session, part: &str) -> Option<ICoreWebView2> {
+        let w = &s.windows[0];
+        match part {
+            "toolbar" => Some(w.toolbar.webview()),
+            "page" => w.tabs.active().map(|t| t.content.engine.view.webview()),
+            "tabs" => w.tabs_view.as_ref().map(|v| v.view.webview()),
+            _ => w.library_view.as_ref().map(|v| v.view.webview()),
+        }
+    }
+    fn cdp(
+        core: &ICoreWebView2,
+        method: &str,
+        params: String,
+        path: Option<PathBuf>,
+    ) -> Result<(), String> {
+        // SAFETY: UI-thread call on one of this fixture's own views.
+        unsafe {
+            core.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from(method),
+                &windows::core::HSTRING::from(params),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |_, json| {
+                    if let Some(path) = &path
+                        && let Ok(value) =
+                            serde_json::from_str::<serde_json::Value>(&json.to_string())
+                        && let Some(data) = value["data"].as_str()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+                    {
+                        let _ = std::fs::write(path, bytes);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|e| format!("{method}: {e}"))
+    }
+    if k == 0 {
+        // Set the scene up.
+        match name {
+            "website" => {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.window
+                    .set_window_level(winit::window::WindowLevel::AlwaysOnTop);
+                let _ = s
+                    .window
+                    .request_inner_size(winit::dpi::LogicalSize::new(1280.0, 760.0));
+                s.command(Command::AddFavorite {
+                    title: "Tile fixture".into(),
+                    url: format!("{url}tile.html"),
+                })
+                .map_err(|e| e.to_string())?;
+                s.command(Command::AddFavorite {
+                    title: "Library".into(),
+                    url: format!("{}?letter", url.replace("127.0.0.1", "localhost")),
+                })
+                .map_err(|e| e.to_string())?;
+                p.command(el, 0, Command::Navigate(format!("{url}tile.html")))?;
+                let folder = p.root.join("blocker");
+                std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+                let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/extensions/blocker");
+                for file in ["manifest.json", "rules.json"] {
+                    std::fs::copy(source.join(file), folder.join(file))
+                        .map_err(|e| e.to_string())?;
+                }
+                p.app
+                    .proxy
+                    .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                        Some(folder),
+                    ))))
+                    .map_err(|_| "proxy")?;
+            }
+            "shield" => {
+                p.command(
+                    el,
+                    0,
+                    Command::SetNewtabBackground(rust_browser::settings::Background::Glow),
+                )?;
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let _ = s.windows[0]
+                    .toolbar
+                    .evaluate_script("document.getElementById('shield').click()");
+            }
+            "library" => {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let _ = s.windows[0]
+                    .toolbar
+                    .evaluate_script("document.getElementById('shield-close').click()");
+                p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            }
+            "vertical-website" => {
+                p.command(el, 0, Command::CloseLibrary)?;
+                p.command(el, 0, Command::SetVerticalTabs(true))?;
+            }
+            "vertical-library" => p.command(el, 0, Command::ShowPanel(Panel::History))?,
+            _ => {
+                p.command(el, 0, Command::CloseLibrary)?;
+                p.command(el, 0, Command::NewTab)?;
+            }
+        }
+        p.next();
+        return Ok(());
+    }
+    let (shot, stage) = (((k - 1) / 3) as usize, (k - 1) % 3);
+    let (theme_name, theme, scale) = SHOTS[shot];
+    let dir = p.root.join("window-shot");
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    match stage {
+        0 => {
+            s.settings.theme = theme;
+            s.last_render.borrow_mut().clear();
+            for side in [&s.windows[0].tabs_view, &s.windows[0].library_view]
+                .into_iter()
+                .flatten()
+            {
+                side.last_render.borrow_mut().clear();
+            }
+            s.render();
+            for (part, (_, _, w, h)) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    let params = serde_json::json!({ "width": w.round() as u32,
+                        "height": h.round() as u32, "deviceScaleFactor": scale, "mobile": false });
+                    cdp(
+                        &core,
+                        "Emulation.setDeviceMetricsOverride",
+                        params.to_string(),
+                        None,
+                    )?;
+                }
+            }
+        }
+        1 => {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            for (part, _) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    cdp(
+                        &core,
+                        "Page.captureScreenshot",
+                        r#"{"format":"png"}"#.into(),
+                        Some(dir.join(format!("{part}.png"))),
+                    )?;
+                }
+            }
+        }
+        _ => {
+            let size = s
+                .window
+                .inner_size()
+                .to_logical::<f64>(s.window.scale_factor());
+            if size.width < 100.0 || size.height < 100.0 {
+                return Err(format!(
+                    "{name}: window is {}x{} (minimized: {:?})",
+                    size.width,
+                    size.height,
+                    s.window.is_minimized()
+                ));
+            }
+            let mut draws = Vec::new();
+            for (part, (x, y, w, h)) in parts(s) {
+                let file = dir.join(format!("{part}.png"));
+                if !file.exists() {
+                    return Err(format!("{name}: no capture of {part}"));
+                }
+                draws.push(format!(
+                    "@('{}',{},{},{},{})",
+                    file.display(),
+                    (x * scale).round(),
+                    (y * scale).round(),
+                    (w * scale).round(),
+                    (h * scale).round()
+                ));
+            }
+            let target = out.join(format!(
+                "{label}-{name}-{theme_name}-{}.png",
+                (scale * 100.0) as u32
+            ));
+            let script = format!(
+                "Add-Type -AssemblyName System.Drawing; $b=New-Object System.Drawing.Bitmap({},{}); $g=[System.Drawing.Graphics]::FromImage($b); foreach($d in @({})){{$i=[System.Drawing.Image]::FromFile($d[0]); $g.DrawImage($i,[int]$d[1],[int]$d[2],[int]$d[3],[int]$d[4]); $i.Dispose()}}; $b.Save('{}',[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $b.Dispose()",
+                (size.width * scale).round(),
+                (size.height * scale).round(),
+                draws.join(","),
+                target.display()
+            );
+            // A capture may still be being written: try a few times.
+            let mut error = String::new();
+            for _ in 0..4 {
+                let output = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                if output.status.success() {
+                    error.clear();
+                    break;
+                }
+                error = String::from_utf8_lossy(&output.stderr)
+                    .chars()
+                    .take(400)
+                    .collect();
+                std::thread::sleep(Duration::from_millis(700));
+            }
+            if !error.is_empty() {
+                return Err(format!("{name}: composing failed: {error}"));
+            }
+            for (part, _) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    cdp(
+                        &core,
+                        "Emulation.clearDeviceMetricsOverride",
+                        "{}".into(),
+                        None,
+                    )?;
+                }
+            }
+            p.log.push(format!("wrote {}", target.display()));
+        }
+    }
+    p.next();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Layout review tool: writes whole-window screenshots to RUST_BROWSER_SHOTS"]
+fn window_screenshots() {
+    let (root, _) = run("window-shots", window_shot_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
