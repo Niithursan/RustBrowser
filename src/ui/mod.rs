@@ -110,6 +110,12 @@ pub enum Command {
     BookmarkCurrent,
     ShowPanel(Panel),
     ClosePanel,
+    /// Close the library column beside the page.
+    CloseLibrary,
+    /// Show or hide the library column (Ctrl+Shift+B).
+    ToggleLibrary,
+    /// The library column's new width, in logical pixels.
+    SetLibraryWidth(f64),
     QueryLibrary(Filter),
     Library(Action),
     OpenSaved {
@@ -178,6 +184,10 @@ pub struct ToolbarState<'a> {
     pub panel: Option<Panel>,
     /// The menu sidebar is open (the toolbar fills the window).
     pub menu_open: bool,
+    /// What the library column beside the page shows, if it is open.
+    pub library_panel: Option<Panel>,
+    /// Tabs are shown in the column at the left (the toolbar has no tab strip).
+    pub vertical_tabs: bool,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
@@ -214,6 +224,7 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
         (0x4a, true, _) => Some(Command::ShowPanel(Panel::Downloads)),
         (0x4f, true, _) if shift => Some(Command::ShowPanel(Panel::Bookmarks)),
+        (0x42, true, _) if shift => Some(Command::ToggleLibrary),
         (0x4c, true, _) | (0x44, _, true) | (0x75, _, _) => Some(Command::FocusAddress),
         (0x52, true, _) | (0x74, _, _) => Some(Command::Reload),
         (0x25, _, true) => Some(Command::Back),

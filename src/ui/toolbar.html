@@ -176,6 +176,18 @@ h3{font:600 15px/1.3 var(--display);margin:20px 0 8px}
 .icon{stroke:ButtonText}
 .icon-menu{fill:ButtonText}
 button:disabled .icon{stroke:GrayText}.tab.active .select{text-decoration:underline}button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible{outline:3px solid Highlight}#location:focus-within{outline:2px solid Highlight}#load-progress::after{background:Highlight}#address-view{background:Field;color:FieldText}button:disabled{color:GrayText}#tab-picker{color:transparent;forced-color-adjust:none}}
+/* Roles: the same trusted document shows the toolbar, the vertical tab column or
+   the library column, chosen by the view's fragment. */
+html[data-role=library] #chrome,html[data-role=tabs] #nav,html[data-role=tabs] #tab-actions,html[data-role=tabs] #menu-backdrop,
+html[data-role=tabs] #zoom-row,html[data-role=tabs] #status,html[data-role=tabs] #notice-row,html[data-role=tabs] #load-progress,
+html[data-role=tabs] #manager,html[data-role=library] #menu-backdrop{display:none!important}
+html[data-role=library] #manager{top:0;padding:16px 16px 24px 20px;border-left:1px solid var(--line)}
+html[data-role=library] #manager>*{max-width:none}
+html[data-role=library] .manager-head h1{font-size:22px}
+#library-resizer{display:none}
+html[data-role=library] #library-resizer{display:block;position:fixed;z-index:5;top:0;bottom:0;left:0;width:8px;height:auto;min-width:8px;padding:0;border:0;border-radius:0;background:transparent;cursor:ew-resize}
+html[data-role=library] #library-resizer:hover,html[data-role=library] #library-resizer:focus-visible{background:var(--line)}
+html[data-role=toolbar][data-vertical=true] #tabrow{display:none}
 #address-menu{position:fixed;z-index:30;min-width:150px;padding:4px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}#address-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:8px 12px;border-radius:4px}#address-menu button:hover,#address-menu button:focus-visible{background:var(--hover)}#address-menu button:disabled{color:var(--secondary)}
 </style></head><body>
 <div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab"><svg class="icon icon-plus" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 6v12M6 12h12"/></svg></button><button type="button" id="tabs-left" aria-label="Scroll tabs left" title="Scroll tabs left"><svg class="icon icon-left" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 7 9 12l5 5"/></svg></button><button type="button" id="tabs-right" aria-label="Scroll tabs right" title="Scroll tabs right"><svg class="icon icon-right" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 7l5 5-5 5"/></svg></button><span id="picker-wrap"><select id="tab-picker" aria-label="All browser tabs" title="All browser tabs"></select><svg class="icon icon-tabs" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="6.5" width="16" height="12" rx="2"/><path d="M4 10h16M9 6.5V10"/></svg></span><button type="button" id="wake-tab">Wake tab</button></div>
@@ -187,7 +199,7 @@ Menu, Keyboard shortcuts: all of them" placeholder="Search or enter address" aut
 <li><kbd>Ctrl+L</kbd>, <kbd>Alt+D</kbd> or <kbd>F6</kbd>: address field</li><li><kbd>F7</kbd>: the page</li><li><kbd>Ctrl+T</kbd>: new tab</li><li><kbd>Ctrl+W</kbd>: close tab</li><li><kbd>Ctrl+Shift+T</kbd>: reopen closed tab</li><li><kbd>Ctrl+Tab</kbd>, <kbd>Ctrl+Shift+Tab</kbd>: next, previous tab</li><li><kbd>Ctrl+1</kbd> to <kbd>Ctrl+9</kbd>: go to a tab</li><li><kbd>Ctrl+N</kbd>: new window</li><li><kbd>Ctrl+Shift+N</kbd>: private window</li><li><kbd>Alt+Left</kbd>, <kbd>Alt+Right</kbd>: back, forward</li><li><kbd>Ctrl+R</kbd> or <kbd>F5</kbd>: reload</li><li><kbd>Escape</kbd>: stop loading</li><li><kbd>Ctrl+F</kbd>: find in page</li><li><kbd>Ctrl+plus</kbd>, <kbd>Ctrl+minus</kbd>, <kbd>Ctrl+0</kbd>: zoom</li><li><kbd>Ctrl+P</kbd>: print</li><li><kbd>Ctrl+D</kbd>: bookmark page</li><li><kbd>Ctrl+Shift+O</kbd>: bookmarks</li><li><kbd>Ctrl+H</kbd>: history</li><li><kbd>Ctrl+J</kbd>: downloads</li><li><kbd>Ctrl+Shift+P</kbd>: pin tab</li>
 </ul></div><div id="menu-backdrop" hidden></div>
 <div id="zoom-row" hidden style="padding:0 16px 4px">Page zoom: <button type="button" id="zoom-level" title="Reset page zoom to 100%"></button></div><div id="status" role="status" aria-live="polite"><svg class="icon icon-warning" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4.5 20 19H4Z"/><path d="M12 10v4M12 16.5v.5"/></svg><span id="status-text">Starting Rust Browser…</span></div><div id="notice-row"><div id="notice" role="status" aria-live="polite"></div><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification">×</button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div><div id="alert" class="visually-hidden" role="alert"></div>
-</div><section id="manager" hidden aria-label="Browser library">
+</div><button type="button" id="library-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the library panel" aria-valuemin="260" aria-valuemax="640" title="Drag, or use the Left and Right arrow keys, to resize"></button><section id="manager" hidden aria-label="Browser library">
 <div class="manager-head"><h1 id="manager-title" tabindex="-1">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
 <div id="library-tools" class="manager-tools"><input id="library-query" aria-label="Search library" placeholder="Search titles and URLs" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><label class="history-only">From <input id="history-from" type="date" aria-label="History from date"></label><label class="history-only">Through <input id="history-until" type="date" aria-label="History through date"></label><button type="button" id="refresh-library">Search / refresh</button><button type="button" id="import-bookmarks" class="bookmarks-only" title="Import an exported bookmarks HTML file from Firefox, Chrome or Edge">Import from file…</button><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only">Clear all history…</button></div>
@@ -207,6 +219,8 @@ Menu, Keyboard shortcuts: all of them" placeholder="Search or enter address" aut
 <script>
 const input=document.getElementById('address'),status=document.getElementById('status'),tabs=document.getElementById('tabs');
 const byId=id=>document.getElementById(id);
+// The part of the browser this view shows: the toolbar, the tab column or the library.
+const ROLE=({'#tabs':'tabs','#library':'library'})[location.hash]||'toolbar';document.documentElement.dataset.role=ROLE;
 let currentPanel=null,librarySignature='',downloadSignature='',libraryData={folders:[],bookmarks:[],history:[]};
 {const option=document.createElement('option');option.value='light';option.textContent='Light';byId('home-theme').append(option);}
 byId('dismiss-notice').onclick=()=>send('dismiss_notice');
@@ -232,7 +246,11 @@ byId('clear-data').onclick=()=>{
     if(![value.history,value.cookies,value.cache,value.session,value.permissions,value.passwords,value.autofill].some(Boolean)){byId('settings-message').textContent='Select at least one category.';return}
     if(window.confirm('Close all tabs in this window and clear the selected categories? Cookies/site storage may sign you out. Bookmarks, downloaded files and library recovery backups remain. This cannot be undone.'))send('clear_data',value);
 };
-byId('close-manager').onclick=()=>send('close_panel');
+byId('close-manager').onclick=()=>send(ROLE==='library'?'close_library':'close_panel');
+{let width=360,start=null;const resizer=byId('library-resizer');const set=w=>{width=Math.max(260,Math.min(640,Math.round(w)));resizer.setAttribute('aria-valuenow',String(width));send('set_library_width',width)};
+ resizer.onpointerdown=e=>{start={x:e.screenX,w:innerWidth};resizer.setPointerCapture(e.pointerId)};
+ resizer.onpointermove=e=>{if(start)set(start.w+(start.x-e.screenX))};resizer.onpointerup=e=>{start=null;if(resizer.hasPointerCapture(e.pointerId))resizer.releasePointerCapture(e.pointerId)};
+ resizer.onkeydown=e=>{if(e.key==='ArrowLeft'){e.preventDefault();set(innerWidth+16)}else if(e.key==='ArrowRight'){e.preventDefault();set(innerWidth-16)}};}
 function queryLibrary(){
     const from=byId('history-from').valueAsNumber,until=byId('history-until').valueAsNumber;
     send('query_library',{query:byId('library-query').value,folder:byId('folder-filter').value===''?null:Number(byId('folder-filter').value),from:Number.isFinite(from)?from/1000:null,until:Number.isFinite(until)?until/1000+86400:null});
@@ -358,7 +376,10 @@ function renderHome(s){
     byId('home-history').hidden=s.private||!settings.show_recent;const recent=byId('recent-list');recent.replaceChildren();if(!s.private&&settings.show_recent){for(const item of s.library.history.slice(0,6)){const link=button(item.title||item.url,()=>send('open_saved',{url:item.url,new_tab:false}));link.className='recent-row';link.title=item.url;recent.append(link)}if(!recent.children.length)recent.textContent='No recent pages.';}
 }
 
-window.render=s=>{
+window.render=incoming=>{
+    // The library column renders its own panel; the toolbar never shows library panels.
+    const s=ROLE==='library'?{...incoming,panel:incoming.library_panel}:incoming;
+    document.documentElement.dataset.vertical=String(!!s.vertical_tabs);
     for(const id of ['find-page','zoom-in','zoom-out','reset-zoom','print-page'])byId(id).disabled=s.busy||!s.page_tools;
     const zoom=s.zoom_percent;byId('zoom-row').hidden=!s.page_tools||zoom==null||zoom===100;byId('zoom-level').textContent=zoom+'% (reset)';byId('zoom-level').setAttribute('aria-label','Page zoom '+zoom+' percent. Reset to 100 percent');
     document.body.dataset.theme=s.settings.theme;byId('automatic-suspension').checked=s.settings.automatic_suspension;byId('suspend-delay').value=String(s.settings.suspend_after_seconds);
@@ -415,7 +436,7 @@ window.render=s=>{
     const signature=JSON.stringify(s.tabs);
     if(signature!==tabSignature){tabSignature=signature;renderTabs(s);}
 };
-let lastChromeHeight=0;new ResizeObserver(()=>{const height=Math.ceil(byId('chrome').getBoundingClientRect().height);if(height!==lastChromeHeight&&height>=80&&height<=320){lastChromeHeight=height;document.documentElement.style.setProperty('--chrome-height',height+'px');send('toolbar_height',height)}}).observe(byId('chrome'));
+let lastChromeHeight=0;if(ROLE==='toolbar')new ResizeObserver(()=>{const height=Math.ceil(byId('chrome').getBoundingClientRect().height);if(height!==lastChromeHeight&&height>=80&&height<=320){lastChromeHeight=height;document.documentElement.style.setProperty('--chrome-height',height+'px');send('toolbar_height',height)}}).observe(byId('chrome'));
 send('ready');
 </script><div id="address-menu" role="menu" aria-label="Address field" hidden><button type="button" role="menuitem" data-op="cut">Cut</button><button type="button" role="menuitem" data-op="copy">Copy</button><button type="button" role="menuitem" data-op="paste">Paste</button><button type="button" role="menuitem" data-op="select_all">Select all</button></div>
 <script>

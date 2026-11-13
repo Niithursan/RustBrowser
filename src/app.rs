@@ -136,12 +136,16 @@ fn build_toolbar(
     private: bool,
     source: u64,
     focused: bool,
+    role: ViewRole,
 ) -> Result<WebView, Box<dyn std::error::Error>> {
     let ipc_proxy = proxy.clone();
     let window_id = window.id();
+    // Every trusted view loads the same local document; the fragment names the part
+    // it shows. Navigation stays limited to this exact URL.
     let toolbar_url = format!(
-        "data:text/html;charset=utf-8;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(ui::HTML)
+        "data:text/html;charset=utf-8;base64,{}{}",
+        base64::engine::general_purpose::STANDARD.encode(ui::HTML),
+        role.fragment()
     );
     let allowed_url = toolbar_url.clone();
     let toolbar = WebViewBuilder::new_with_web_context(context)
@@ -175,6 +179,87 @@ fn build_toolbar(
     engine::accelerators(&toolbar, proxy.clone())?;
     crate::native_activity::watch_toolbar(&toolbar, proxy.clone(), source)?;
     Ok(toolbar)
+}
+
+/// Which part of the trusted browser document a view shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ViewRole {
+    /// Tabs (horizontal), navigation, address line, menu and full panels.
+    Toolbar,
+    /// The tab list in a column at the left of the window (vertical tabs).
+    Tabs,
+    /// Bookmarks, history and downloads in a column beside the page.
+    Library,
+}
+
+impl ViewRole {
+    fn fragment(self) -> &'static str {
+        match self {
+            Self::Toolbar => "",
+            Self::Tabs => "#tabs",
+            Self::Library => "#library",
+        }
+    }
+}
+
+/// A trusted view beside the page (the tab column or the library). Built like the
+/// toolbar, with the same restrictions, and hidden rather than destroyed when unused.
+struct SideView {
+    view: WebView,
+    source: u64,
+    last_render: RefCell<String>,
+}
+
+/// Width of the vertical tab column, in logical pixels.
+const TABS_WIDTH: f64 = 240.0;
+/// Default, smallest and largest library column width, in logical pixels.
+const LIBRARY_WIDTH: f64 = 360.0;
+const LIBRARY_MIN: f64 = 260.0;
+const LIBRARY_MAX: f64 = 640.0;
+/// The page keeps at least this much width beside the columns.
+const PAGE_MIN: f64 = 320.0;
+
+/// Where each view of a window goes. No two shown views ever overlap: the toolbar and
+/// pages are separate windows whose stacking order Windows does not keep.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Layout {
+    toolbar: (f64, f64, f64, f64),
+    page: Option<(f64, f64, f64, f64)>,
+    tabs: Option<(f64, f64, f64, f64)>,
+    library: Option<(f64, f64, f64, f64)>,
+}
+
+/// The layout table (see ARCHITECTURE.md). `full` is a full panel, the new-tab page
+/// or the menu sidebar: the toolbar then covers its whole column and the page and
+/// library are hidden.
+fn layout(
+    width: f64,
+    height: f64,
+    chrome: f64,
+    vertical: bool,
+    library: Option<f64>,
+    full: bool,
+) -> Layout {
+    let left = if vertical {
+        TABS_WIDTH.min(width / 2.0)
+    } else {
+        0.0
+    };
+    let rest = (width - left).max(1.0);
+    let lib = library
+        .filter(|_| !full)
+        .map(|w| {
+            w.clamp(LIBRARY_MIN, LIBRARY_MAX)
+                .min((rest - PAGE_MIN).max(0.0))
+        })
+        .filter(|w| *w >= LIBRARY_MIN.min(rest / 2.0) && *w > 0.0);
+    let body = (height - chrome).max(1.0);
+    Layout {
+        toolbar: (left, 0.0, rest, if full { height } else { chrome }),
+        page: (!full).then_some((left, chrome, (rest - lib.unwrap_or(0.0)).max(1.0), body)),
+        tabs: vertical.then_some((0.0, 0.0, left, height)),
+        library: lib.map(|w| (width - w, chrome, w, body)),
+    }
 }
 
 /// The toolbar keeps failing (or cannot be rebuilt): the window can no longer be
@@ -384,6 +469,14 @@ struct WindowState {
     menu_open: bool,
     /// The menu was asked to open and waits for the page still.
     menu_wanted: bool,
+    /// The vertical tab column, once vertical tabs were used in this window.
+    tabs_view: Option<SideView>,
+    /// The library column, once it was opened in this window.
+    library_view: Option<SideView>,
+    /// What the library column shows (bookmarks, history or downloads), if open.
+    library_panel: Option<Panel>,
+    /// The library column's width; this window and this session only.
+    library_width: f64,
     chrome_height: f64,
     last_render: RefCell<String>,
     last_title: RefCell<String>,
@@ -530,6 +623,88 @@ impl Session {
             "window.showMenuSnapshot&&window.showMenuSnapshot({url})"
         ))?;
         Ok(())
+    }
+
+    /// Open the library column beside the page, showing `panel`, and move keyboard
+    /// focus into it. The page stays visible and usable.
+    fn open_library(&mut self, panel: Panel) -> Result<(), Box<dyn std::error::Error>> {
+        // A full panel would hide the column; leave it for the library.
+        if self.panel.is_some() {
+            self.panel = None;
+        }
+        self.ensure_side(ViewRole::Library)?;
+        self.windows[self.current].library_panel = Some(panel);
+        self.filter = Filter::default();
+        self.activate()?;
+        self.library_action(Action::Refresh)?;
+        self.render();
+        if let Some(side) = &self.windows[self.current].library_view {
+            side.view.focus()?;
+        }
+        Ok(())
+    }
+
+    /// Create the side view for `role` in the window being handled, if missing.
+    fn ensure_side(&mut self, role: ViewRole) -> Result<(), Box<dyn std::error::Error>> {
+        let present = match role {
+            ViewRole::Tabs => self.windows[self.current].tabs_view.is_some(),
+            ViewRole::Library => self.windows[self.current].library_view.is_some(),
+            ViewRole::Toolbar => true,
+        };
+        if present {
+            return Ok(());
+        }
+        let source = next_toolbar_source();
+        let view = build_toolbar(
+            &self.windows[self.current].window,
+            &mut self.toolbar_context,
+            &self.proxy,
+            self.private,
+            source,
+            false,
+            role,
+        )?;
+        view.set_visible(false)?;
+        let side = Some(SideView {
+            view,
+            source,
+            last_render: RefCell::new(String::new()),
+        });
+        match role {
+            ViewRole::Tabs => self.windows[self.current].tabs_view = side,
+            ViewRole::Library => self.windows[self.current].library_view = side,
+            ViewRole::Toolbar => {}
+        }
+        Ok(())
+    }
+
+    /// A side view's own engine process failed: rebuild that view in its window.
+    /// Returns whether `source` named a side view.
+    fn side_failed(&mut self, source: u64) -> bool {
+        let found = self.windows.iter().enumerate().find_map(|(index, w)| {
+            if w.tabs_view.as_ref().is_some_and(|v| v.source == source) {
+                Some((index, ViewRole::Tabs))
+            } else if w.library_view.as_ref().is_some_and(|v| v.source == source) {
+                Some((index, ViewRole::Library))
+            } else {
+                None
+            }
+        });
+        let Some((index, role)) = found else {
+            return false;
+        };
+        self.current = index;
+        self.diagnostics.record(DiagnosticCode::ToolbarFailed);
+        match role {
+            ViewRole::Tabs => self.windows[index].tabs_view = None,
+            ViewRole::Library => self.windows[index].library_view = None,
+            ViewRole::Toolbar => {}
+        }
+        if self.ensure_side(role).is_err() {
+            self.notice = "A browser panel stopped and could not be restarted. Restart Rust Browser; open tabs are saved.".into();
+        }
+        let _ = self.resize();
+        true
     }
 
     /// Ask WebView2 for the state of the user's extensions.
@@ -752,6 +927,7 @@ impl Session {
             self.private,
             source,
             foreground,
+            ViewRole::Toolbar,
         )
         .map_err(|_| "A new window's toolbar could not be created.".to_string())?;
         self.windows.push(WindowState {
@@ -774,6 +950,10 @@ impl Session {
             focus_pending: false,
             menu_open: false,
             menu_wanted: false,
+            tabs_view: None,
+            library_view: None,
+            library_panel: None,
+            library_width: LIBRARY_WIDTH,
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
@@ -1187,6 +1367,7 @@ impl Session {
             private,
             toolbar_source,
             true,
+            ViewRole::Toolbar,
         )?;
         let tab_ids = Rc::new(std::cell::Cell::new(1));
         let first_window = WindowState {
@@ -1213,6 +1394,10 @@ impl Session {
             focus_pending: false,
             menu_open: false,
             menu_wanted: false,
+            tabs_view: None,
+            library_view: None,
+            library_panel: None,
+            library_width: LIBRARY_WIDTH,
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
@@ -1565,6 +1750,7 @@ impl Session {
             self.private,
             next_source,
             focused,
+            ViewRole::Toolbar,
         ) {
             Ok(toolbar) => toolbar,
             Err(_) => {
@@ -1696,29 +1882,49 @@ impl Session {
         Ok(())
     }
 
-    fn resize(&self) -> wry::Result<()> {
+    /// The current layout of the window being handled.
+    fn current_layout(&self) -> Layout {
         let size = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        self.toolbar.set_bounds(Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(
-                size.width,
-                if self.effective_panel().is_some() || self.menu_open {
-                    size.height
-                } else {
-                    self.chrome_height
-                },
-            )
-            .into(),
-        })?;
-        if let Some(tab) = self.tabs.active() {
-            tab.content.engine.view.set_bounds(Rect {
-                position: LogicalPosition::new(0.0, self.chrome_height).into(),
-                size: LogicalSize::new(size.width, (size.height - self.chrome_height).max(1.0))
-                    .into(),
-            })?;
+        let window = &self.windows[self.current];
+        layout(
+            size.width,
+            size.height,
+            self.chrome_height,
+            self.settings.vertical_tabs && window.tabs_view.is_some(),
+            window
+                .library_panel
+                .filter(|_| window.library_view.is_some())
+                .map(|_| window.library_width),
+            self.effective_panel().is_some() || self.menu_open,
+        )
+    }
+
+    fn resize(&self) -> wry::Result<()> {
+        let at = |(x, y, w, h): (f64, f64, f64, f64)| Rect {
+            position: LogicalPosition::new(x, y).into(),
+            size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
+        };
+        let plan = self.current_layout();
+        self.toolbar.set_bounds(at(plan.toolbar))?;
+        if let Some(tab) = self.tabs.active()
+            && let Some(page) = plan.page
+        {
+            tab.content.engine.view.set_bounds(at(page))?;
+        }
+        let window = &self.windows[self.current];
+        for (side, place) in [
+            (&window.tabs_view, plan.tabs),
+            (&window.library_view, plan.library),
+        ] {
+            if let Some(side) = side {
+                if let Some(place) = place {
+                    side.view.set_bounds(at(place))?;
+                }
+                side.view.set_visible(place.is_some())?;
+            }
         }
         Ok(())
     }
@@ -1926,6 +2132,8 @@ impl Session {
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
             menu_open: self.windows[self.current].menu_open,
+            library_panel: self.windows[self.current].library_panel,
+            vertical_tabs: self.current_layout().tabs.is_some(),
             extensions: if self.private {
                 Vec::new()
             } else {
@@ -1959,7 +2167,21 @@ impl Session {
                 {
                     self.diagnostics.record(DiagnosticCode::ToolbarFailed);
                 } else {
-                    *self.last_render.borrow_mut() = json;
+                    *self.last_render.borrow_mut() = json.clone();
+                }
+                let window = &self.windows[self.current];
+                for side in [&window.tabs_view, &window.library_view]
+                    .into_iter()
+                    .flatten()
+                {
+                    if *side.last_render.borrow() != json
+                        && side
+                            .view
+                            .evaluate_script(&format!("window.render && window.render({json})"))
+                            .is_ok()
+                    {
+                        *side.last_render.borrow_mut() = json.clone();
+                    }
                 }
             }
             Err(_) => self.diagnostics.record(DiagnosticCode::ToolbarFailed),
@@ -2341,10 +2563,34 @@ impl Session {
                 if panel == Panel::NewTab {
                     return self.command(Command::Home);
                 }
+                // Bookmarks, history and downloads open beside the page; Privacy &
+                // security stays a full panel.
+                if matches!(panel, Panel::Bookmarks | Panel::History | Panel::Downloads) {
+                    return self.open_library(panel);
+                }
                 self.panel = Some(panel);
                 self.filter = Filter::default();
                 self.activate()?;
                 self.library_action(Action::Refresh)?;
+            }
+            Command::CloseLibrary => {
+                self.windows[self.current].library_panel = None;
+                self.activate()?;
+            }
+            Command::ToggleLibrary => {
+                if self.windows[self.current].library_panel.is_some() {
+                    self.windows[self.current].library_panel = None;
+                    self.activate()?;
+                } else {
+                    return self.open_library(Panel::Bookmarks);
+                }
+            }
+            Command::SetLibraryWidth(width) => {
+                if !width.is_finite() {
+                    return Err("Invalid library width.".into());
+                }
+                self.library_width = width.clamp(LIBRARY_MIN, LIBRARY_MAX);
+                self.resize()?;
             }
             Command::ClosePanel => {
                 self.panel = None;
@@ -2376,9 +2622,7 @@ impl Session {
                         url: tab.url.clone(),
                         folder: None,
                     };
-                    self.panel = Some(Panel::Bookmarks);
-                    self.filter = Filter::default();
-                    self.activate()?;
+                    self.open_library(Panel::Bookmarks)?;
                     self.library_action(action)?;
                 }
             }
@@ -2497,6 +2741,13 @@ impl Session {
             }
             Command::Ready => {
                 self.last_render.borrow_mut().clear();
+                let window = &self.windows[self.current];
+                for side in [&window.tabs_view, &window.library_view]
+                    .into_iter()
+                    .flatten()
+                {
+                    side.last_render.borrow_mut().clear();
+                }
                 self.activate()?;
             }
             Command::FocusAddress => {
@@ -2995,6 +3246,68 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The layout table never lets two shown views overlap and keeps every view inside
+    /// the window, in every combination of size, tab column, library and full panel.
+    #[test]
+    fn shown_views_never_overlap() {
+        let overlap = |a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)| {
+            a.0 < b.0 + b.2 - 0.5
+                && b.0 < a.0 + a.2 - 0.5
+                && a.1 < b.1 + b.3 - 0.5
+                && b.1 < a.1 + a.3 - 0.5
+        };
+        let mut cases = 0;
+        for width in [560.0, 800.0, 1200.0, 1920.0, 2560.0] {
+            for height in [320.0, 820.0, 1440.0] {
+                for chrome in [80.0, 119.0, 160.0] {
+                    for vertical in [false, true] {
+                        for library in [None, Some(200.0), Some(360.0), Some(900.0)] {
+                            for full in [false, true] {
+                                let plan = layout(width, height, chrome, vertical, library, full);
+                                let shown: Vec<_> =
+                                    [Some(plan.toolbar), plan.page, plan.tabs, plan.library]
+                                        .into_iter()
+                                        .flatten()
+                                        .collect();
+                                for (i, a) in shown.iter().enumerate() {
+                                    assert!(
+                                        a.0 >= -0.5
+                                            && a.1 >= -0.5
+                                            && a.0 + a.2 <= width + 0.5
+                                            && a.1 + a.3 <= height + 0.5,
+                                        "outside the window: {a:?} in {width}x{height}"
+                                    );
+                                    for b in &shown[i + 1..] {
+                                        assert!(
+                                            !overlap(*a, *b),
+                                            "{a:?} overlaps {b:?} ({width}x{height}, vertical {vertical}, library {library:?}, full {full})"
+                                        );
+                                    }
+                                }
+                                // A full panel hides the page and the library; otherwise the page shows.
+                                assert_eq!(plan.page.is_none(), full);
+                                if full {
+                                    assert!(plan.library.is_none());
+                                }
+                                assert_eq!(plan.tabs.is_some(), vertical);
+                                cases += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 2);
+    }
+
+    #[test]
+    fn the_library_keeps_room_for_the_page() {
+        let plan = layout(1200.0, 820.0, 119.0, true, Some(LIBRARY_MAX), false);
+        let page = plan.page.unwrap();
+        assert!(page.2 >= PAGE_MIN, "page width {}", page.2);
+        let narrow = layout(560.0, 820.0, 119.0, true, Some(LIBRARY_WIDTH), false);
+        assert!(narrow.page.unwrap().2 >= 1.0);
+    }
     #[test]
     fn the_unsaved_window_notice_names_each_window() {
         let one = unsaved_notice(&["\"Mail\"".into()]);
@@ -3379,7 +3692,15 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::EngineProcess(id, failure) => session.process_failed(id, failure),
-            Event::ToolbarProcess(source, failure) => session.toolbar_failed(source, failure),
+            Event::ToolbarProcess(source, failure) => {
+                // A side view's own process: rebuild it; otherwise the toolbar's rules.
+                let side = failure != crate::native_activity::Failure::Unresponsive
+                    && failure != crate::native_activity::Failure::Helper
+                    && session.side_failed(source);
+                if !side {
+                    session.toolbar_failed(source, failure);
+                }
+            }
             Event::ZoomChanged(id) => {
                 // Read the current controller, never a potentially stale event value.
                 if !session.tabs.active().is_some_and(|tab| tab.id == id) { return; }
@@ -3498,8 +3819,7 @@ impl ApplicationHandler<Event> for App {
                         .borrow_mut()
                         .destination(id, Err("Could not start the folder picker.".into()));
                 }
-                session.panel = Some(Panel::Downloads);
-                let _ = session.activate();
+                let _ = session.open_library(Panel::Downloads);
             }
             Event::BookmarkFile(result) => match result {
                 Ok(None) => {}

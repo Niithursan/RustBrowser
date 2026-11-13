@@ -46,6 +46,9 @@ pub struct Settings {
     /// Extensions the user added from a folder (v0.20). WebView2 keeps whether each
     /// is installed and enabled; this list only says which ones are the user's.
     pub extensions: Vec<SavedExtension>,
+    /// Show tabs as a list in a column at the left of every window (v0.21).
+    /// Missing from older files, so existing profiles keep the tab strip.
+    pub vertical_tabs: bool,
 }
 
 /// Most extensions a profile may add.
@@ -76,6 +79,7 @@ impl Default for Settings {
             autofill: false,
             toolbar_autofill_cleared: false,
             extensions: Vec::new(),
+            vertical_tabs: false,
         }
     }
 }
