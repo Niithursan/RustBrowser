@@ -647,6 +647,17 @@ impl Session {
         Ok(())
     }
 
+    /// Show or hide the tab column of the window being handled, following the
+    /// setting. The column is created the first time it is needed.
+    fn sync_vertical_tabs(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.settings.vertical_tabs {
+            self.ensure_side(ViewRole::Tabs)?;
+        }
+        self.resize()?;
+        self.render();
+        Ok(())
+    }
+
     /// Create the side view for `role` in the window being handled, if missing.
     fn ensure_side(&mut self, role: ViewRole) -> Result<(), Box<dyn std::error::Error>> {
         let present = match role {
@@ -1021,8 +1032,9 @@ impl Session {
         if self.activate().is_err() {
             self.notice = "This window's tabs could not all be shown.".into();
         }
-        let _ = self.resize();
-        self.render();
+        if self.sync_vertical_tabs().is_err() {
+            self.notice = "The tab column could not be shown; tabs stay at the top.".into();
+        }
         let id = self.window.id();
         if foreground {
             self.focused(id);
@@ -1201,6 +1213,9 @@ impl Session {
             session.start_handoff();
             session.clear_toolbar_autofill_once();
             session.refresh_extensions();
+        }
+        if session.sync_vertical_tabs().is_err() {
+            session.notice = "The tab column could not be shown; tabs stay at the top.".into();
         }
         // Reopen the other windows of the restored session, then give focus back to
         // the window that was focused last.
@@ -2395,6 +2410,23 @@ impl Session {
                 self.settings.suspend_after_seconds = seconds;
             }
             Command::SetTheme(theme) => self.settings.theme = theme,
+            Command::SetVerticalTabs(on) => {
+                self.settings.vertical_tabs = on;
+                // Every open window of this process follows the setting at once.
+                let current = self.current;
+                let mut result = Ok(());
+                for index in 0..self.windows.len() {
+                    self.current = index;
+                    if let Err(error) = self.sync_vertical_tabs() {
+                        result = Err(error);
+                    }
+                }
+                self.current = current;
+                if on && let Some(side) = &self.windows[current].tabs_view {
+                    side.view.focus()?;
+                }
+                result?;
+            }
             Command::SetShowRecent(value) => {
                 if self.private && value {
                     return Err("Private windows do not show normal browsing history.".into());
@@ -2796,9 +2828,14 @@ impl Session {
                 self.toolbar.evaluate_script("window.focusAddress()")?;
             }
             Command::FocusTabs => {
-                self.toolbar.focus()?;
-                self.toolbar
-                    .evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
+                let column = self.windows[self.current]
+                    .tabs_view
+                    .as_ref()
+                    .filter(|_| self.current_layout().tabs.is_some())
+                    .map(|side| &side.view);
+                let view = column.unwrap_or(&self.toolbar);
+                view.focus()?;
+                view.evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
             }
             Command::FocusPage => {
                 self.panel = None;

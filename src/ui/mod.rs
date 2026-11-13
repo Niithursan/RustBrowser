@@ -41,6 +41,8 @@ pub enum Command {
     SetSuspendDelay(u64),
     SetTheme(rust_browser::settings::Theme),
     SetShowRecent(bool),
+    /// Show tabs in a column at the left of every window (Settings > Appearance).
+    SetVerticalTabs(bool),
     AddFavorite {
         title: String,
         url: String,
