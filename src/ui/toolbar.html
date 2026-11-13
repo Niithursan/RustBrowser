@@ -102,12 +102,12 @@ input{height:32px;min-width:48px;padding:0 12px;border:1px solid var(--line);bor
 #nav>#reload[hidden],#nav>#stop[hidden]{display:none}
 #bookmark-star{flex-shrink:0;width:30px;height:30px;margin-right:4px;padding:0;border:0;border-radius:15px;background:transparent;display:inline-flex;align-items:center;justify-content:center;color:var(--secondary)}
 #bookmark-star:hover:not(:disabled){background:var(--hover);color:var(--text)}
-#shield{flex-shrink:0;min-width:30px;height:30px;margin-right:4px;padding:0 6px;border:0;border-radius:15px;background:transparent;display:inline-flex;align-items:center;justify-content:center;gap:3px;color:var(--secondary)}
+#shield{flex-shrink:0;min-width:32px;height:32px;margin-right:4px;padding:0 8px;border:0;border-radius:16px;background:transparent;display:inline-flex;align-items:center;justify-content:center;gap:4px;color:var(--secondary)}
 #shield:hover{background:var(--hover);color:var(--text)}
 #shield[aria-expanded=true]{background:var(--pressed);color:var(--text)}
 #shield[data-on=true]{color:var(--accent)}
 #shield-count{font-size:12px;font-weight:600;color:var(--text)}
-#shield-panel{max-height:140px;overflow:auto;margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+#shield-panel{max-height:140px;overflow:auto;margin:0 16px 8px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text)}
 #shield-panel h2{margin:0 0 4px;font-size:14px}
 #shield-panel p{margin:4px 0}
 #shield-panel .shield-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -172,7 +172,7 @@ h3{font:600 15px/1.3 var(--display);margin:20px 0 8px}
 .home-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 #favorite-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
 .favorite-card{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface);overflow-wrap:anywhere}
-.favorite-card .visit{display:flex;align-items:center;gap:10px;width:100%;height:auto;min-height:40px;border:0;background:transparent;padding:0;text-align:left;font-weight:600}
+.favorite-card .visit{display:flex;align-items:center;gap:12px;width:100%;height:auto;min-height:40px;border:0;background:transparent;padding:0;text-align:left;font-weight:600}
 .favorite-card .tile{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);font:700 15px/1 var(--ui)}
 .favorite-card .tile img{width:20px;height:20px}
 /* New-tab backgrounds, made only from the theme's own colours. */
@@ -205,12 +205,12 @@ html[data-role=toolbar][data-vertical=true] #tabrow{display:none}
 html[data-role=tabs] body{background:var(--strip)}
 html[data-role=tabs] #tabrow{flex-direction:column;align-items:stretch;gap:4px;height:100vh;min-height:0;padding:8px;box-sizing:border-box;border-right:1px solid var(--line)}
 html[data-role=tabs] #mode{order:0;align-self:flex-start}
-html[data-role=tabs] #new{order:1;align-self:stretch;justify-content:flex-start;gap:8px;width:auto;padding:0 10px}
+html[data-role=tabs] #new{order:1;align-self:stretch;justify-content:flex-start;gap:8px;width:auto;padding:0 12px}
 html[data-role=tabs] #new::after{content:'New tab';font-size:13px}
 html[data-role=tabs] #tabs{order:2;flex:1 1 auto;flex-direction:column;align-items:stretch;min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}
 html[data-role=tabs] #wake-tab{order:3}
 html[data-role=tabs] #tabs-left,html[data-role=tabs] #tabs-right,html[data-role=tabs] #picker-wrap{display:none}
-html[data-role=tabs] .tab{max-width:none;height:34px;padding:0 4px 0 10px;border-radius:8px}
+html[data-role=tabs] .tab{max-width:none;height:36px;padding:0 4px 0 12px;border-radius:8px}
 html[data-role=tabs] .tab .select,html[data-role=tabs] .tab.pinned .select{flex:1 1 auto;max-width:none;text-align:left}
 html[data-role=tabs] .tab:not(.active)+.tab:not(.active)::before{display:none}
 html[data-role=tabs] .tab.active{box-shadow:inset 3px 0 0 var(--accent)}
