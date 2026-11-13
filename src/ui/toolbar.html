@@ -107,7 +107,7 @@ input{height:32px;min-width:48px;padding:0 12px;border:1px solid var(--line);bor
 #shield[aria-expanded=true]{background:var(--pressed);color:var(--text)}
 #shield[data-on=true]{color:var(--accent)}
 #shield-count{font-size:12px;font-weight:600;color:var(--text)}
-#shield-panel{margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+#shield-panel{max-height:140px;overflow:auto;margin:0 16px 8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 #shield-panel h2{margin:0 0 4px;font-size:14px}
 #shield-panel p{margin:4px 0}
 #shield-panel .shield-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -491,7 +491,8 @@ window.render=incoming=>{
     const signature=JSON.stringify(s.tabs);
     if(signature!==tabSignature){tabSignature=signature;renderTabs(s);}
 };
-let lastChromeHeight=0;if(ROLE==='toolbar')new ResizeObserver(()=>{const height=Math.ceil(byId('chrome').getBoundingClientRect().height);if(height!==lastChromeHeight&&height>=80&&height<=320){lastChromeHeight=height;document.documentElement.style.setProperty('--chrome-height',height+'px');send('toolbar_height',height)}}).observe(byId('chrome'));
+let lastChromeHeight=0;if(ROLE==='toolbar')new ResizeObserver(()=>{// Taller than the toolbar may be: keep the most it may have (the shield panel scrolls).
+const height=Math.min(320,Math.ceil(byId('chrome').getBoundingClientRect().height));if(height!==lastChromeHeight&&height>=80){lastChromeHeight=height;document.documentElement.style.setProperty('--chrome-height',height+'px');send('toolbar_height',height)}}).observe(byId('chrome'));
 send('ready');
 </script><div id="address-menu" role="menu" aria-label="Address field" hidden><button type="button" role="menuitem" data-op="cut">Cut</button><button type="button" role="menuitem" data-op="copy">Copy</button><button type="button" role="menuitem" data-op="paste">Paste</button><button type="button" role="menuitem" data-op="select_all">Select all</button></div>
 <script>
