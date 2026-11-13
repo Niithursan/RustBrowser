@@ -1,5 +1,35 @@
 # Security
 
+## v0.21 shield, side columns and new-tab tiles
+
+- **Shield count.** While at least one extension is added, each content view in a
+  normal window turns on WebView2's DevTools `Network` domain for itself only, with no
+  response, resource or upload buffering (`maxTotalBufferSize`, `maxResourceBufferSize`
+  and `maxPostDataSize` are 0). Two events are read: a failure with
+  `net::ERR_BLOCKED_BY_CLIENT`, and a redirect from a website address into
+  `chrome-extension://`. Addresses are compared and dropped; only a count per page is
+  kept, in memory, and nothing is logged. No DevTools client is exposed to pages or
+  to the toolbar. Removing the last extension turns the domain off again. Private
+  windows never turn it on. The measured cost is in VALIDATION.md.
+- **What the shield claims.** Whether an extension "can block requests" comes from its
+  manifest permissions (`declarativeNetRequest`, `declarativeNetRequestWithHostAccess`,
+  `webRequestBlocking`), read from the folder the user chose (at most 1 MiB); asking
+  for a permission is not proof that it blocks ads, and the panel does not say it is.
+- **Side columns.** The tab column and the library column are trusted views built
+  exactly like the toolbar: the same local document (the role is a URL fragment), the
+  toolbar's separate profile and engine process, password saving and autofill off, no
+  extensions, navigation limited to that exact document, the same content security
+  policy and the same command bridge. They never overlap the page or the toolbar. A
+  failed column is rebuilt at most three times in two minutes, then the window falls
+  back to the tab strip or closes the library. A test checks the profile, engine,
+  form settings, refused navigation and recovery.
+- **Favourite icons.** A favourite keeps its site's icon as a `data:image/png;base64`
+  URL of at most 8 KiB, taken from the same checked PNG bytes as tab icons. It is
+  checked when saved, when settings load (a bad one makes the settings invalid like
+  any other bad favourite) and again by the page before it is shown. No icon is ever
+  fetched by the toolbar. New-tab backgrounds are CSS drawn from the theme tokens; no
+  image is stored or downloaded.
+
 ## v0.21 menu sidebar
 
 - While the menu sidebar is open, the browser captures one JPEG still of the visible
@@ -52,7 +82,8 @@
 
 ### First release
 
-- v0.20.0 is the first published release. Builds remain **unsigned**; Windows
+- v0.20.0 was prepared as the first published release, but the owner postponed the
+  first release (2026-11-12); nothing is published yet. Builds remain **unsigned**; Windows
   SmartScreen warns about an unknown publisher. The release workflow publishes only
   when the owner runs it by hand with the publish input, from an existing tag on
   `main`, with the exact five checked files and the reviewed release notes. See

@@ -1,4 +1,4 @@
-# Owner checklist (about 80 minutes)
+# Owner checklist (about 100 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -321,8 +321,7 @@ Use the disposable owner profile from the bundle.
 5. Turn the extension off in the list, reload the page, then turn it on again.
 6. Open a private window (Ctrl+Shift+N) and open the same page.
 
-**Pass:** uBlock Origin Lite appears in the list as On, the extension button next to
-the address line shows 1; the news page shows clearly fewer ads than without a
+**Pass:** uBlock Origin Lite appears in the list as On; the news page shows clearly fewer ads than without a
 blocker; with the extension off the ads return; the private window shows the ads
 (extensions never run there) and its Extensions section says so. Note the site you
 used. Remove the extension afterwards.
@@ -368,6 +367,70 @@ the exact SmartScreen text you saw.
 
 When you finish, set your usual default browser back (step 12.3) and uninstall the
 validation entry from Apps & Features.
+
+## 31. The shield (4 minutes)
+
+1. With no extension added, click the shield at the end of the address line.
+2. Add uBlock Origin Lite as in step 28, open the same news website, and click the
+   shield again. Then press Escape.
+3. Turn the extension off, reload, and open the shield.
+4. Open a private window and click its shield.
+
+**Pass:** without an extension the panel says none is added and Rust Browser has no
+blocker of its own; with uBlock Origin Lite on, it is listed under "Can block
+requests", the shield shows a number and the panel says how many requests were
+blocked on this page and what it cannot do (which extension, frames from other sites,
+one site); Escape closes it and returns to the shield; the page moves down while the
+panel is open and is never covered; turned off, the panel says so; the private window
+says extensions never run there. Note the number and site.
+
+## 32. The library beside a live page (4 minutes)
+
+1. Open a website that plays a video or updates by itself.
+2. Press Ctrl+Shift+B, then open History and Downloads from the menu.
+3. Keep using the page while the library is open: scroll, click a link.
+4. Drag the library's left edge wider and narrower; then Tab to the edge and press
+   Left and Right.
+5. Open Privacy & security from the menu, then close it.
+
+**Pass:** the page shrinks to the left and keeps playing and responding; nothing is
+drawn over it; the width changes and stops at a sensible minimum and maximum; Privacy
+& security fills the window and, when closed, the library is back.
+
+## 33. Vertical tabs on and off in two windows (5 minutes)
+
+1. Open a second window (Ctrl+N) with two or three tabs in each.
+2. In one window: Menu (⋮) → Privacy & security → Appearance → Show tabs down the
+   side.
+3. In both windows: select, close, pin and drag tabs in the column; press Ctrl+Tab;
+   click a tab and use the Up and Down keys.
+4. Open the library (Ctrl+Shift+B) with the column showing.
+5. Play a video full screen, then leave full screen.
+6. Turn the setting off from the other window.
+
+**Pass:** both windows change at once each time; the column, toolbar, page and library
+never overlap; every tab action works in the column; full screen gives the video the
+whole width under the toolbar; turning it off brings the tab strip back in both.
+
+## 34. New-tab tiles (3 minutes)
+
+1. On the new-tab page add two favourites: a site you then visit, and one you do not.
+2. Visit the first site, then open a new tab.
+3. Change Background to each choice in turn, in two themes.
+
+**Pass:** the visited favourite shows its site's icon, the other a letter; every
+background is readable with its text; nothing is loaded from the internet by the page.
+
+## 35. The menu sidebar from PR #27 (4 minutes)
+
+1. Without a mouse, Tab to Menu (⋮) and press Enter; move through the sidebar with Tab
+   and Shift+Tab; press Escape.
+2. Turn on Narrator and open the menu again.
+3. Turn on a Windows contrast theme and open the menu, the shield and the library.
+
+**Pass:** the sidebar opens and closes with the keyboard and focus returns to ⋮;
+Narrator reads each item; in the contrast theme the sidebar, shield panel and library
+are fully visible with visible focus.
 
 ## Reporting
 

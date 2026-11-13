@@ -96,7 +96,9 @@ and [the daily-driver acceptance record](https://github.com/Niithursan/RustBrows
 
 ## Install a release
 
-Download `rust-browser-v0.20.0-windows-x64-setup.exe` and its `.sha256` file from the
+No release has been published yet: the first release is postponed until the owner
+decides the browser is ready. When there is one, download
+`rust-browser-v<version>-windows-x64-setup.exe` and its `.sha256` file from the
 [Releases page](https://github.com/Niithursan/RustBrowser/releases), check the
 SHA-256 as the release notes show, and run Setup (per user, no administrator rights).
 Builds are unsigned, so Windows SmartScreen warns about an unknown publisher. You
@@ -116,15 +118,36 @@ the next line.
 
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
 address line. At its start, the site-information badge shows the connection and opens
-Privacy & security; at its end, the star bookmarks the page. After the address line
-an extension button appears once you add an extension, showing how many are on. The
-Menu (⋮) at the far right opens a sidebar down the right of the window with everything
+Privacy & security; at its end, the star bookmarks the page and the shield shows ad
+blocking (below). The Menu (⋮) at the far right opens a sidebar down the right of the window with everything
 else: find, zoom, print, pin, move and keep-awake for the current tab, the search
 engine, the list of keyboard shortcuts, bookmarks, history, downloads, Privacy &
 security, new, reopened and private windows, and Exit. While the sidebar is open the
 page beside it is a dimmed still image; click it, press Escape or ⋮ again, or choose
 an item that goes somewhere, and the live page comes back. Every action keeps its
 keyboard shortcut.
+
+The **shield** opens a panel under the address line (the page moves down; nothing is
+drawn over it). It lists the extensions that are on and whether each asks to block
+requests, and how many requests were blocked on the current page, with that number
+on the shield itself. The number comes from WebView2's own network events, only in
+normal windows while you have added an extension. WebView2 does not say which
+extension, or whether the engine itself, blocked a request; requests inside frames
+from other sites are not counted; and blocking cannot be turned off for one site
+(use the extension's own settings). Rust Browser has no ad blocker of its own.
+
+**Bookmarks, history and downloads** open in a library column at the right of the
+page, which shrinks and stays usable. Ctrl+Shift+B shows or hides it; Close in the
+column closes it. Drag its left edge, or focus the edge and use Left and Right, to
+make it 260 to 640 pixels wide; the width lasts for that window until you exit.
+Privacy & security still fills the window.
+
+**Settings > Appearance > Show tabs down the side** (off by default) moves the tab
+list into a column at the left of every open window. It has the same actions as the
+strip: select, close, pin, drag to reorder, + New tab, Ctrl+Tab and the arrow keys
+(Up and Down as well as Left and Right). A private window that is already open keeps
+its own setting until it is closed. In fullscreen the page also takes the room of the
+tab column and the library; the toolbar stays, as it always has.
 
 Under the toolbar a status line says only what is happening (Ready, loading, or what
 went wrong). The keyboard shortcuts are listed in Menu (⋮) → Keyboard shortcuts and in
@@ -193,7 +216,10 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Bookmark the current page | Star at the end of the address line, or Ctrl+D |
 | Choose the search engine | Menu (⋮) → Search with |
 | See every keyboard shortcut | Menu (⋮) → Keyboard shortcuts, or hover the address field |
-| Manage extensions | Extension button after the address line (shown once you add one), or Menu (⋮) → Privacy & security → Extensions |
+| Ad blocking: extensions on and requests blocked | Shield at the end of the address line |
+| Manage extensions | Shield → Manage extensions, or Menu (⋮) → Privacy & security → Extensions |
+| Library beside the page | Ctrl+Shift+B, or Menu (⋮) → Bookmarks, History or Downloads |
+| Tabs down the side | Menu (⋮) → Privacy & security → Appearance → Show tabs down the side |
 | Focus/select address | Ctrl+L, Alt+D, F6 |
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
@@ -380,6 +406,11 @@ Home and new tabs show bundled local UI with search, up to twelve named HTTP(S)
 favorites, Dark/Slate/Plum/Light themes and quick access to bookmarks. Recent history is
 **off by default**; enabling it displays up to six eligible cached library entries.
 It follows history recording/filtering rules and is unavailable in private windows.
+Each favourite is a tile with its site's icon, saved when a tab shows the favourite's
+own page (another page of the same site only fills a missing icon), or the first
+letter of its title. Icons are PNG images of at most 8 KiB kept with the favourite;
+a larger icon is not kept and the tile shows the letter. The page's **Background**
+choice (Plain, Dusk, Glow, Panels) is drawn from the current theme's colours.
 Favorite titles/URLs and themes are saved in normal settings independently of session
 URL retention. Private favorites, themes, pins and tab order last only for that window
 and never read the normal session. No background image is fetched.
