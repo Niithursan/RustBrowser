@@ -265,7 +265,7 @@ byId('show-shortcuts').onclick=()=>{const b=byId('show-shortcuts'),open=b.getAtt
 byId('bookmark-star').onclick=()=>send('bookmark_current');
 // The shield: what WebView2 can tell about ad blocking here, and nothing more.
 let latestShield=null,scrollToExtensions=false;
-function setShield(open,returnFocus){const button=byId('shield');if((button.getAttribute('aria-expanded')==='true')===open)return;button.setAttribute('aria-expanded',String(open));byId('shield-panel').hidden=!open;if(open){renderShield();byId('shield-panel').focus()}else if(returnFocus)button.focus()}
+function setShield(open,returnFocus){const button=byId('shield');if((button.getAttribute('aria-expanded')==='true')===open)return;button.setAttribute('aria-expanded',String(open));byId('shield-panel').hidden=!open;if(open){renderShield();byId('shield-manage').focus()}else if(returnFocus)button.focus()}
 function renderShield(){const s=latestShield;if(!s)return;const on=s.private?[]:s.extensions.filter(e=>e.state==='on');const button=byId('shield');
  const names=list=>list.map(e=>e.name).join(', ');
  const blockers=on.filter(e=>e.blocks===true),others=on.filter(e=>e.blocks===false),unknown=on.filter(e=>e.blocks==null);
@@ -286,7 +286,6 @@ function renderShield(){const s=latestShield;if(!s)return;const on=s.private?[]:
 byId('shield').onclick=()=>setShield(byId('shield').getAttribute('aria-expanded')!=='true',false);
 byId('shield-close').onclick=()=>setShield(false,true);
 byId('shield-manage').onclick=()=>{setShield(false,false);scrollToExtensions=true;send('show_panel','settings')};
-byId('shield-panel').tabIndex=-1;
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&byId('shield').getAttribute('aria-expanded')==='true'){e.preventDefault();setShield(false,true)}});
 byId('save-passwords').onchange=e=>send('set_save_passwords',e.target.checked);
 byId('autofill').onchange=e=>send('set_autofill',e.target.checked);

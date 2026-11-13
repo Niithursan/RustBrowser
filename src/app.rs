@@ -2459,10 +2459,8 @@ impl Session {
                         result = Err(error);
                     }
                 }
+                // Focus stays on the switch the user just used.
                 self.current = current;
-                if on && let Some(side) = &self.windows[current].tabs_view {
-                    side.view.focus()?;
-                }
                 result?;
             }
             Command::SetShowRecent(value) => {
