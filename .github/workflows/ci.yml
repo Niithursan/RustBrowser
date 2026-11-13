@@ -118,6 +118,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_toolbar_polish_states -- --ignored --test-threads=1
       - name: Native menu opens as a sidebar
         run: cargo test --locked --bin rust-browser native_menu_opens_as_a_sidebar -- --ignored --test-threads=1
+      - name: Native library sidebar beside a live page
+        run: cargo test --locked --bin rust-browser native_library_sidebar_beside_a_live_page -- --ignored --test-threads=1
       - name: Native single-instance hand-off between two browser processes
         run: cargo test --locked --test single_instance -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
