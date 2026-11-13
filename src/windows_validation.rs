@@ -3058,3 +3058,98 @@ fn native_shield_does_not_count_frames_from_other_sites() {
     let (root, _) = run("shield-frame", shield_frame_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The open shield panel, with two extensions listed, in a narrow window: all of
+/// it stays inside the toolbar view (scrolling within itself if needed), and the
+/// page starts below it.
+fn shield_narrow_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "on"), (MARKER_A.to_string(), "on")] {
+                let _ = s
+                    .window
+                    .request_inner_size(winit::dpi::LogicalSize::new(520.0, 700.0));
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                p.next();
+            } else if names(s) == [(BLOCKER.to_string(), "on")] && p.marks.is_empty() {
+                p.marks.push(1);
+                add_marker(p, 'a')?;
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding extensions: {:?}", names(s)));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            eval_toolbar(p, "document.getElementById('shield').click()")?;
+            p.next();
+        }
+        3 if p.at.elapsed() > Duration::from_millis(1200) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "narrow shield panel")?;
+            let views = shown_views(s);
+            let (Some(toolbar), Some(page)) = (named(&views, "toolbar"), named(&views, "page"))
+            else {
+                return Err(format!("Toolbar and page should show: {views:?}"));
+            };
+            if (page.top - toolbar.bottom).abs() > 2 {
+                return Err(format!("The page should start below the panel: {views:?}"));
+            }
+            eval_toolbar(
+                p,
+                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let num = |k: &str| r[k].as_f64().unwrap_or(f64::MAX);
+            // Everything of the toolbar, panel included, fits in the toolbar view;
+            // a panel taller than its room scrolls within itself.
+            if num("width") > 700.0
+                || num("panelBottom") > num("height") + 1.0
+                || num("chromeBottom") > num("height") + 1.0
+                || (r["scrolls"] == true && r["overflow"] != "auto")
+            {
+                let s = p.app.session.as_ref().ok_or("No session")?;
+                return Err(format!(
+                    "The shield panel is cut off: {r} (chrome height {}, notice {:?})",
+                    s.chrome_height, s.notice
+                ));
+            }
+            p.log.push(format!("shield: narrow panel fits {r}"));
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_panel_fits_a_narrow_window() {
+    let (root, _) = run("shield-narrow", shield_narrow_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
