@@ -16,12 +16,19 @@ struct Settings020 {
     automatic_suspension: bool,
     suspend_after_seconds: u64,
     theme: String,
-    favorites: Vec<serde_json::Value>,
+    favorites: Vec<Favorite020>,
     show_recent: bool,
     save_passwords: bool,
     autofill: bool,
     toolbar_autofill_cleared: bool,
     extensions: Vec<serde_json::Value>,
+}
+/// A favourite as 0.20 defined it.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Favorite020 {
+    title: String,
+    url: String,
 }
 impl Default for Settings020 {
     fn default() -> Self {
@@ -82,7 +89,8 @@ fn a_0_21_settings_file_is_read_by_0_20_rules() {
     assert_eq!(old.suspend_after_seconds, 600);
     assert_eq!(old.theme, "slate");
     assert_eq!(old.extensions.len(), 1);
-    assert_eq!(old.favorites[0]["url"], "https://example.com/");
+    assert_eq!(old.favorites[0].url, "https://example.com/");
+    assert_eq!(old.favorites[0].title, "Example");
     // And 0.21 reads its own file back unchanged.
     assert_eq!(serde_json::from_str::<Settings>(&text).unwrap(), settings);
 }

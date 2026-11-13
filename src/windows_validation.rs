@@ -2342,7 +2342,7 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 ))
                 || !text("count").starts_with("2 requests blocked on this page")
                 || !text("limits").contains("cannot turn blocking off for one site")
-                || text("focus") != "shield-panel"
+                || text("focus") != "shield-manage"
             {
                 return Err(format!("The shield panel is wrong: {r}"));
             }

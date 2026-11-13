@@ -85,13 +85,15 @@ enum Target {
     Toolbar,
     Tabs,
     Library,
+    /// The toolbar again, at the narrower widths it has beside the tab column.
+    ToolbarBeside,
 }
 
 impl Target {
     /// Prefix for control descriptions from this view, so the views' lists stay apart.
     fn prefix(self) -> &'static str {
         match self {
-            Self::Toolbar => "",
+            Self::Toolbar | Self::ToolbarBeside => "",
             Self::Tabs => "[tabs]",
             Self::Library => "[library]",
         }
@@ -99,7 +101,9 @@ impl Target {
     /// Where a Tab walk in this view starts.
     fn start(self) -> &'static str {
         match self {
-            Self::Toolbar => "document.getElementById('address').focus(); 'ok'",
+            Self::Toolbar | Self::ToolbarBeside => {
+                "document.getElementById('address').focus(); 'ok'"
+            }
             Self::Tabs => "document.getElementById('new').focus(); 'ok'",
             Self::Library => "document.getElementById('close-manager').focus(); 'ok'",
         }
@@ -109,6 +113,7 @@ impl Target {
     fn sizes(self) -> [(f64, u32); 4] {
         match self {
             Self::Toolbar => SCALES,
+            Self::ToolbarBeside => SCALES.map(|(scale, width)| (scale, width - 240)),
             Self::Tabs => [(1.0, 240), (1.25, 240), (1.5, 240), (2.0, 240)],
             Self::Library => [(1.0, 360), (1.25, 260), (1.5, 640), (2.0, 260)],
         }
@@ -129,6 +134,8 @@ enum Step {
     OpenMore,
     ArrowFocus,
     Arrow,
+    /// Open the shield panel with Enter before the second walk.
+    OpenShield,
     /// Vertical tabs on and history beside a live page.
     SideStart,
     SideWait,
@@ -206,7 +213,7 @@ impl Probe {
     fn view<'a>(&self, session: &'a Session) -> Result<&'a wry::WebView, String> {
         let window = &session.windows[0];
         match self.target {
-            Target::Toolbar => Ok(&window.toolbar),
+            Target::Toolbar | Target::ToolbarBeside => Ok(&window.toolbar),
             Target::Tabs => window
                 .tabs_view
                 .as_ref()
@@ -431,7 +438,7 @@ impl Probe {
                                 return Ok(());
                             }
                             self.step = match (self.target, more) {
-                                (Target::Toolbar, false) => Step::OpenMore,
+                                (Target::Toolbar, false) => Step::OpenShield,
                                 (Target::Library, _) => Step::SideWalk(Target::Tabs),
                                 _ => Step::ArrowFocus,
                             };
@@ -441,6 +448,17 @@ impl Probe {
                         }
                     }
                 }
+            }
+            // Open the shield panel with the keyboard; More follows.
+            Step::OpenShield => {
+                if value.is_none() {
+                    self.eval("document.getElementById('shield').focus(); 'ok'")?;
+                    self.at = Instant::now() + Duration::from_secs(3600);
+                    return Ok(());
+                }
+                self.key("Enter", "Enter", 13, false)?;
+                self.at = Instant::now();
+                self.step = Step::OpenMore;
             }
             // Open the More disclosure with the keyboard, then walk again.
             Step::OpenMore => {
@@ -542,12 +560,14 @@ impl Probe {
                     let (scale, _) = target.sizes()[i];
                     self.log.push(format!("{target:?} at {scale}: {report}"));
                     let problems = report["problems"].as_array().map_or(0, Vec::len);
-                    let role = if target == Target::Tabs {
-                        "tabs"
-                    } else {
-                        "library"
+                    // The toolbar's own layout report has no role field; beside the
+                    // column it has no tab strip (back, forward, reload, home,
+                    // address, star, shield and menu remain).
+                    let (role, least) = match target {
+                        Target::Tabs => (serde_json::json!("tabs"), 3),
+                        Target::Library => (serde_json::json!("library"), 5),
+                        _ => (serde_json::Value::Null, 8),
                     };
-                    let least = if target == Target::Tabs { 3 } else { 5 };
                     if report["role"] != role
                         || report["controls"].as_u64().unwrap_or(0) < least
                         || problems > 0
@@ -562,7 +582,11 @@ impl Probe {
                     };
                     self.cdp_done.store(true, Ordering::SeqCst);
                 } else if self.at.elapsed() > Duration::from_millis(300) {
-                    self.eval(SIDE_LAYOUT)?;
+                    self.eval(if target == Target::ToolbarBeside {
+                        LAYOUT
+                    } else {
+                        SIDE_LAYOUT
+                    })?;
                     self.at = Instant::now() + Duration::from_secs(3600);
                 }
             }
@@ -572,10 +596,10 @@ impl Probe {
                     serde_json::json!({}),
                 )?;
                 self.at = Instant::now();
-                self.step = if target == Target::Tabs {
-                    Step::SideScaleSet(Target::Library, 0)
-                } else {
-                    Step::SideWalk(Target::Library)
+                self.step = match target {
+                    Target::Tabs => Step::SideScaleSet(Target::Library, 0),
+                    Target::Library => Step::SideScaleSet(Target::ToolbarBeside, 0),
+                    _ => Step::SideWalk(Target::Library),
                 };
             }
             Step::SideWalk(target) if ready => {
@@ -743,6 +767,9 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         "[tabs]new|",
         "[library]close-manager|",
         "[library]library-resizer|",
+        "shield|",
+        "shield-manage|",
+        "shield-close|",
     ] {
         assert!(
             expected.iter().any(|e| e.starts_with(id)),
