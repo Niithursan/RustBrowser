@@ -2844,7 +2844,61 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     p.marks
                 ));
             }
+            // Page fullscreen with the column and the library open.
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.phase = 19;
+            p.next();
+        }
+        20 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.app
+                .proxy
+                .send_event(Event::Fullscreen(id, true))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        // The toolbar (and its address and origin) stays, as in every fullscreen
+        // page; the tab column and the library give the page their room.
+        21 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "fullscreen")?;
+            let views = shown_views(s);
+            let host = s.windows[0]
+                .window
+                .inner_position()
+                .map_err(|e| e.to_string())?;
+            let width = s.windows[0].window.inner_size().width as i32;
+            let page = named(&views, "page").ok_or("No page")?;
+            if s.windows[0].fullscreen.is_none()
+                || named(&views, "tabs").is_some()
+                || named(&views, "library").is_some()
+                || (page.left - host.x).abs() > 2
+                || ((page.right - page.left) - width).abs() > 2
+            {
+                return Err(format!(
+                    "A fullscreen page should have the whole width: {views:?}"
+                ));
+            }
+            let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.app
+                .proxy
+                .send_event(Event::Fullscreen(id, false))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        22 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "after fullscreen")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() || named(&views, "library").is_none() {
+                return Err(format!(
+                    "The column and library should come back: {views:?}"
+                ));
+            }
+            p.command(el, 0, Command::CloseLibrary)?;
             p.command(el, 1, Command::SetVerticalTabs(false))?;
+            p.phase = 12;
             p.next();
         }
         13 if p.at.elapsed() > Duration::from_millis(1500) => {
