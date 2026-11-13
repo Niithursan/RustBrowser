@@ -2383,7 +2383,7 @@ impl Session {
             Command::DismissNotice => self.notice.clear(),
             Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::ToolbarHeight(height) => {
-                if !height.is_finite() || !(80.0..=320.0).contains(&height) {
+                if !height.is_finite() || !(40.0..=320.0).contains(&height) {
                     return Err("Invalid toolbar size.".into());
                 }
                 self.chrome_height = height;
