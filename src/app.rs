@@ -3054,8 +3054,15 @@ impl Session {
         if let Some((url, icon)) = icon_seen
             && rust_browser::settings::valid_icon(&icon)
         {
+            // The favourite's own page always updates its icon. Another page of
+            // the same site only fills a missing one: pages without an icon of
+            // their own get the engine's generic icon, which must not replace it.
             for favorite in &mut self.settings.favorites {
-                if rust_browser::settings::same_site(&favorite.url, &url) {
+                let exact = favorite.url == url;
+                if exact
+                    || (favorite.icon.is_empty()
+                        && rust_browser::settings::same_site(&favorite.url, &url))
+                {
                     favorite.icon.clone_from(&icon);
                 }
             }
