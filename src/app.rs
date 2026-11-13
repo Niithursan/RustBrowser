@@ -462,6 +462,9 @@ struct WindowState {
     /// A failed toolbar view, hidden and kept for `RETIRE_DELAY` like a closed tab.
     retired_toolbar: Option<(Instant, WebView)>,
     toolbar_restarts: Vec<Instant>,
+    /// Recent rebuilds of the tab column and of the library column, bounded like
+    /// the toolbar's.
+    side_restarts: [Vec<Instant>; 2],
     window: Window,
     notice: String,
     panel: Option<Panel>,
@@ -713,6 +716,17 @@ impl Session {
             ViewRole::Tabs => self.windows[index].tabs_view = None,
             ViewRole::Library => self.windows[index].library_view = None,
             ViewRole::Toolbar => {}
+        }
+        // A column that keeps failing is not rebuilt again: the window falls back
+        // to the tab strip, or closes the library.
+        let budget = &mut self.windows[index].side_restarts[usize::from(role == ViewRole::Library)];
+        if !admit_engine_restart(budget, Instant::now()) {
+            if role == ViewRole::Library {
+                self.windows[index].library_panel = None;
+            }
+            self.notice = "A browser panel keeps stopping and was not restarted again. Restart Rust Browser; open tabs are saved.".into();
+            let _ = self.resize();
+            return true;
         }
         if self.ensure_side(role).is_err() {
             self.notice = "A browser panel stopped and could not be restarted. Restart Rust Browser; open tabs are saved.".into();
@@ -999,6 +1013,7 @@ impl Session {
             toolbar_alerts: 0,
             retired_toolbar: None,
             toolbar_restarts: Vec::new(),
+            side_restarts: [Vec::new(), Vec::new()],
             window,
             notice: String::new(),
             panel: None,
@@ -1444,6 +1459,7 @@ impl Session {
             toolbar_alerts: 0,
             retired_toolbar: None,
             toolbar_restarts: Vec::new(),
+            side_restarts: [Vec::new(), Vec::new()],
             window,
             notice: if recovered {
                 "Session recovery performed. Invalid originals were preserved; the last valid snapshot was used when available.".into()
