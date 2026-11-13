@@ -2453,8 +2453,33 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             }
             p.log
                 .push("shield: panel beside the page, Escape, reset, off".into());
-            p.done = true;
-            el.exit();
+            // Removing every extension stops the counting in open pages.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for id in s
+                .settings
+                .extensions
+                .iter()
+                .map(|e| e.id.clone())
+                .collect::<Vec<_>>()
+            {
+                p.command(el, 0, Command::RemoveExtension(id))?;
+            }
+            p.next();
+        }
+        12 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.extensions.is_empty() {
+                let count = s.tabs.items[0].content.engine.blocked.count();
+                if count.is_some() {
+                    return Err(format!(
+                        "Counting went on after the last extension: {count:?}"
+                    ));
+                }
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Removing extensions: {:?}", names(s)));
+            }
         }
         _ => {}
     }
