@@ -3153,3 +3153,248 @@ fn native_shield_panel_fits_a_narrow_window() {
     let (root, _) = run("shield-narrow", shield_narrow_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The profile folder a view's WebView2 profile lives in.
+fn profile_path(view: &wry::WebView) -> Result<String, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_13;
+    let mut path = windows::core::PWSTR::null();
+    // SAFETY: read-only queries on a live view of this fixture, on its own thread.
+    unsafe {
+        view.webview()
+            .cast::<ICoreWebView2_13>()
+            .and_then(|v| v.Profile())
+            .and_then(|p| p.ProfilePath(&mut path))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(webview2_com::take_pwstr(path))
+}
+
+fn side<'a>(s: &'a Session, role: &str) -> Result<&'a wry::WebView, String> {
+    let window = &s.windows[0];
+    let found = if role == "tabs" {
+        &window.tabs_view
+    } else {
+        &window.library_view
+    };
+    found
+        .as_ref()
+        .map(|v| &v.view)
+        .ok_or_else(|| format!("No {role} view"))
+}
+
+/// The tab and library columns are built like the toolbar: its profile and
+/// engine process, no saved passwords or form data, no way to navigate away from
+/// their own document. When the toolbar's engine ends, both come back with the
+/// toolbar and show the browser's state again.
+fn side_restriction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use super::toolbar_validation::{browser_process, terminate};
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?side")))?;
+            p.command(el, 0, Command::SetVerticalTabs(true))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let page = &s.windows[0].tabs.items[0].content.engine.view;
+            let toolbar = &s.windows[0].toolbar;
+            for role in ["tabs", "library"] {
+                let view = side(s, role)?;
+                let forms = native_security::forms(view).map_err(|e| e.to_string())?;
+                if forms != Forms::default() {
+                    return Err(format!(
+                        "The {role} view saves passwords or forms: {forms:?}"
+                    ));
+                }
+                if profile_path(view)? != profile_path(toolbar)?
+                    || profile_path(view)? == profile_path(page)?
+                {
+                    return Err(format!("The {role} view is not in the toolbar profile"));
+                }
+                if browser_process(view)? != browser_process(toolbar)?
+                    || browser_process(view)? == browser_process(page)?
+                {
+                    return Err(format!(
+                        "The {role} view does not share the toolbar's engine"
+                    ));
+                }
+                // Try to leave the trusted document.
+                view.evaluate_script(&format!(
+                    "location.href={}",
+                    serde_json::to_string(&format!("{url}?escape")).map_err(|e| e.to_string())?
+                ))
+                .map_err(|_| "Script failed")?;
+            }
+            p.next();
+        }
+        3 if p.at.elapsed() > Duration::from_millis(1500) => {
+            eval_tabs_column(
+                p,
+                0,
+                "JSON.stringify([location.protocol,location.hash,document.documentElement.dataset.role,typeof window.render])",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r##"["data:","#tabs","tabs","function"]"## {
+                return Err(format!("The tab column navigated away: {inner}"));
+            }
+            eval_library(
+                p,
+                "JSON.stringify([location.protocol,location.hash,document.documentElement.dataset.role,typeof window.render])",
+            )?;
+            p.next();
+        }
+        5 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r##"["data:","#library","library","function"]"## {
+                return Err(format!("The library column navigated away: {inner}"));
+            }
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            // End the toolbar's engine: the toolbar and both columns go with it.
+            // Each trusted view's source number names that build of it (a new view
+            // can reuse a dropped view's COM address).
+            let w = &s.windows[0];
+            p.marks = vec![
+                w.toolbar_source as usize,
+                w.tabs_view.as_ref().map_or(0, |v| v.source as usize),
+                w.library_view.as_ref().map_or(0, |v| v.source as usize),
+            ];
+            terminate(browser_process(&s.windows[0].toolbar)?)?;
+            p.next();
+        }
+        6 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let w = &s.windows[0];
+            let now = [
+                Some(w.toolbar_source as usize),
+                w.tabs_view.as_ref().map(|v| v.source as usize),
+                w.library_view.as_ref().map(|v| v.source as usize),
+            ];
+            if now
+                .iter()
+                .zip(&p.marks)
+                .all(|(n, old)| n.is_some_and(|n| n != *old))
+            {
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(30) {
+                return Err(format!(
+                    "Not every trusted view was replaced: {now:?} was {:?}",
+                    p.marks
+                ));
+            }
+        }
+        7 if p.at.elapsed() > Duration::from_secs(2) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "after recovery")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() || named(&views, "library").is_none() {
+                return Err(format!("The columns did not come back: {views:?}"));
+            }
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        8 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if r["role"] != "tabs" || r["count"] != s.windows[0].tabs.items.len() {
+                return Err(format!(
+                    "The rebuilt tab column does not show the tabs: {r}"
+                ));
+            }
+            eval_library(
+                p,
+                "JSON.stringify(document.getElementById('manager').hidden?'hidden':document.getElementById('manager-title').textContent)",
+            )?;
+            p.next();
+        }
+        9 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r#""Browsing history""# {
+                return Err(format!(
+                    "The rebuilt library does not show history: {inner}"
+                ));
+            }
+            p.log
+                .push("side views: toolbar restrictions, recovered with the toolbar".into());
+            p.marks.clear();
+            p.next();
+        }
+        // A tab column that keeps failing is rebuilt a bounded number of times;
+        // then the window shows the tab strip again.
+        10 if p.at.elapsed() > Duration::from_millis(400) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(source) = s.windows[0].tabs_view.as_ref().map(|v| v.source) {
+                if p.marks.len() > 8 {
+                    return Err("The tab column was rebuilt without limit".into());
+                }
+                p.marks.push(source as usize);
+                p.app
+                    .proxy
+                    .send_event(Event::ToolbarProcess(
+                        source,
+                        crate::native_activity::Failure::Renderer,
+                    ))
+                    .map_err(|_| "proxy")?;
+                p.at = Instant::now();
+            } else {
+                p.next();
+            }
+        }
+        11 if p.at.elapsed() > Duration::from_millis(600) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "column given up")?;
+            let views = shown_views(s);
+            let (toolbar, page) = (named(&views, "toolbar"), named(&views, "page"));
+            let host = s.windows[0]
+                .window
+                .inner_position()
+                .map_err(|e| e.to_string())?;
+            if named(&views, "tabs").is_some()
+                || toolbar.is_none_or(|t| (t.left - host.x).abs() > 2)
+                || page.is_none_or(|t| (t.left - host.x).abs() > 2)
+                || !s.notice.contains("keeps stopping")
+            {
+                return Err(format!(
+                    "After the last rebuild the strip should return: {views:?}, {:?}",
+                    s.notice
+                ));
+            }
+            p.log.push(format!(
+                "side views: tab column given up after {} more failures",
+                p.marks.len()
+            ));
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; ends only the fixture's own toolbar processes"]
+fn native_side_views_have_the_toolbar_restrictions_and_recover() {
+    let (root, _) = run("side-views", side_restriction_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
