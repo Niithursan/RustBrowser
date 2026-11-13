@@ -49,6 +49,58 @@ pub struct Settings {
     /// Show tabs as a list in a column at the left of every window (v0.21).
     /// Missing from older files, so existing profiles keep the tab strip.
     pub vertical_tabs: bool,
+    /// The new-tab page's background, drawn from the theme's own colours (v0.21).
+    pub newtab_background: Background,
+}
+
+/// New-tab page backgrounds. Each is drawn by the page from the current theme's
+/// colours; no image is stored or downloaded.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Background {
+    /// From the tab strip's colour at the top to the surface.
+    Dusk,
+    /// A soft glow of the theme's accent at the top.
+    Glow,
+    /// From the panel colour to the card colour, corner to corner.
+    Panels,
+    /// The theme's surface colour (also used for names a later version adds;
+    /// serde needs this catch-all to be the last variant).
+    #[default]
+    #[serde(other)]
+    Plain,
+}
+
+/// Largest favourite icon kept, as its `data:image/png;base64,...` text.
+pub const MAX_FAVORITE_ICON: usize = 8 * 1024;
+
+/// Whether `icon` is a favourite icon the toolbar may show: a small PNG data URL.
+pub fn valid_icon(icon: &str) -> bool {
+    icon.len() <= MAX_FAVORITE_ICON
+        && icon
+            .strip_prefix("data:image/png;base64,")
+            .is_some_and(|data| {
+                !data.is_empty()
+                    && data
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+            })
+}
+
+/// Whether two web addresses are on the same site for a favourite's icon: the
+/// same host, ignoring a leading `www.`.
+pub fn same_site(a: &str, b: &str) -> bool {
+    let host = |address: &str| {
+        url::Url::parse(address).ok().and_then(|u| {
+            matches!(u.scheme(), "http" | "https")
+                .then(|| {
+                    u.host_str()
+                        .map(|h| h.trim_start_matches("www.").to_owned())
+                })
+                .flatten()
+        })
+    };
+    matches!((host(a), host(b)), (Some(x), Some(y)) if !x.is_empty() && x == y)
 }
 
 /// Most extensions a profile may add.
@@ -80,6 +132,7 @@ impl Default for Settings {
             toolbar_autofill_cleared: false,
             extensions: Vec::new(),
             vertical_tabs: false,
+            newtab_background: Background::Plain,
         }
     }
 }
@@ -97,6 +150,10 @@ pub enum Theme {
 pub struct Favorite {
     pub title: String,
     pub url: String,
+    /// The site's icon, saved the last time a tab showed it (v0.21); empty for a
+    /// letter tile. Left out of the file when empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
@@ -125,6 +182,7 @@ impl Settings {
                 || item.url.len() > 8192
                 || crate::navigation::address(&item.url).as_deref() != Ok(item.url.as_str())
                 || !urls.insert(&item.url)
+                || (!item.icon.is_empty() && !valid_icon(&item.icon))
             {
                 return Err("Invalid or duplicate favorite.".into());
             }

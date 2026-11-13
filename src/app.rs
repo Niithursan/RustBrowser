@@ -2410,6 +2410,9 @@ impl Session {
                 self.settings.suspend_after_seconds = seconds;
             }
             Command::SetTheme(theme) => self.settings.theme = theme,
+            Command::SetNewtabBackground(background) => {
+                self.settings.newtab_background = background;
+            }
             Command::SetVerticalTabs(on) => {
                 self.settings.vertical_tabs = on;
                 // Every open window of this process follows the setting at once.
@@ -2436,9 +2439,22 @@ impl Session {
             }
             Command::AddFavorite { title, url } => {
                 let mut settings = self.settings.clone();
+                let url = navigation::address(&url)?;
+                // An open tab on the same site lends its icon at once.
+                let icon = self
+                    .windows
+                    .iter()
+                    .flat_map(|w| &w.tabs.items)
+                    .find(|t| {
+                        rust_browser::settings::same_site(&t.url, &url)
+                            && rust_browser::settings::valid_icon(&t.content.state.favicon)
+                    })
+                    .map(|t| t.content.state.favicon.clone())
+                    .unwrap_or_default();
                 settings.favorites.push(rust_browser::settings::Favorite {
                     title: title.trim().into(),
-                    url: navigation::address(&url)?,
+                    url,
+                    icon,
                 });
                 settings.validate()?;
                 self.settings = settings;
@@ -2884,6 +2900,7 @@ impl Session {
             .is_some_and(|tab| tab.url == navigation::HOME);
         let current = self.current;
         let mut library_notice = None;
+        let mut icon_seen = None;
         let Some(tab) = self.windows[current].tabs.get_mut(id) else {
             return;
         };
@@ -2912,6 +2929,7 @@ impl Session {
             }
             PageEvent::Changed => {}
             PageEvent::Favicon(data) => {
+                icon_seen = Some((tab.url.clone(), data.clone()));
                 tab.content.state.favicon = data;
             }
             PageEvent::Title(title) => {
@@ -2990,6 +3008,17 @@ impl Session {
             .is_some_and(|tab| tab.url == navigation::HOME);
         if was_local != is_local {
             let _ = self.activate();
+        }
+        // Favourites on this site keep the icon for their tile. An icon too large
+        // to keep leaves the tile showing a letter.
+        if let Some((url, icon)) = icon_seen
+            && rust_browser::settings::valid_icon(&icon)
+        {
+            for favorite in &mut self.settings.favorites {
+                if rust_browser::settings::same_site(&favorite.url, &url) {
+                    favorite.icon.clone_from(&icon);
+                }
+            }
         }
         self.persist();
         self.start_engine_clear();
