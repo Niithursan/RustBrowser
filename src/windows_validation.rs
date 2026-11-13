@@ -1994,3 +1994,202 @@ fn native_menu_opens_as_a_sidebar() {
     let (root, _) = run("sidebar", sidebar_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Where every shown view of the first window is on screen (physical pixels):
+/// toolbar, active page and the side views. Each view sits in its own host window
+/// (its controller's parent), whose screen rectangle is the view's real place.
+fn shown_views(s: &Session) -> Vec<(&'static str, windows::Win32::Foundation::RECT)> {
+    let w = &s.windows[0];
+    let mut views: Vec<(&'static str, &wry::WebView)> = vec![("toolbar", &w.toolbar)];
+    if let Some(tab) = w.tabs.active() {
+        views.push(("page", &tab.content.engine.view));
+    }
+    if let Some(side) = &w.tabs_view {
+        views.push(("tabs", &side.view));
+    }
+    if let Some(side) = &w.library_view {
+        views.push(("library", &side.view));
+    }
+    views
+        .into_iter()
+        .filter(|(_, v)| view_visible(v))
+        .filter_map(|(name, v)| {
+            let mut host = windows::Win32::Foundation::HWND::default();
+            let mut r = windows::Win32::Foundation::RECT::default();
+            // SAFETY: read-only queries on this fixture's own controller and its host.
+            unsafe {
+                v.controller().ParentWindow(&mut host).ok()?;
+                windows::Win32::UI::WindowsAndMessaging::GetWindowRect(host, &mut r).ok()?;
+            }
+            Some((name, r))
+        })
+        .collect()
+}
+
+/// No two shown views overlap (the stacking order of the toolbar and page windows
+/// is not kept by Windows, so an overlap could hide either).
+fn check_no_overlap(s: &Session, step: &str) -> Result<(), String> {
+    let views = shown_views(s);
+    for (i, (a, ra)) in views.iter().enumerate() {
+        for (b, rb) in &views[i + 1..] {
+            let x = ra.right.min(rb.right) - ra.left.max(rb.left);
+            let y = ra.bottom.min(rb.bottom) - ra.top.max(rb.top);
+            if x > 1 && y > 1 {
+                return Err(format!("{step}: {a} {ra:?} overlaps {b} {rb:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn named(
+    views: &[(&'static str, windows::Win32::Foundation::RECT)],
+    name: &str,
+) -> Option<windows::Win32::Foundation::RECT> {
+    views.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
+}
+
+/// Run `script` in the first window's library view; the answer lands in `p.result`.
+fn eval_library(p: &mut Probe, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[0]
+        .library_view
+        .as_ref()
+        .ok_or("No library view")?
+        .view
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Library script failed".to_string())
+}
+
+/// Bookmarks, history and downloads open beside a live page: the page shrinks,
+/// stays visible and still navigates; the column resizes, toggles and gives way to
+/// a full panel; nothing overlaps.
+fn library_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?library")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "library open")?;
+            let views = shown_views(s);
+            let (page, library) = (named(&views, "page"), named(&views, "library"));
+            let (Some(page), Some(library)) = (page, library) else {
+                return Err(format!("Page and library should both show: {views:?}"));
+            };
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            if (library.right - toolbar.right).abs() > 2 || (page.right - library.left).abs() > 2 {
+                return Err(format!(
+                    "The library should sit at the right, beside the page: {views:?}"
+                ));
+            }
+            if s.panel.is_some() || s.windows[0].library_panel != Some(Panel::History) {
+                return Err("History did not open in the library column".into());
+            }
+            eval_library(
+                p,
+                "JSON.stringify([document.documentElement.dataset.role,document.getElementById('manager').hidden,document.getElementById('manager-title').textContent,getComputedStyle(document.getElementById('chrome')).display])",
+            )?;
+            p.next();
+        }
+        3 => {
+            let answer = p.result.lock().unwrap().clone();
+            if let Some(text) = answer {
+                let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+                if inner != r#"["library",false,"Browsing history","none"]"# {
+                    return Err(format!("The library view shows the wrong part: {inner}"));
+                }
+                // The page is usable while the library is open.
+                p.command(el, 0, Command::Navigate(format!("{url}?beside")))?;
+                p.next();
+            }
+        }
+        4 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.tabs.items[0].url.ends_with("?beside") || s.windows[0].library_panel.is_none() {
+                return Err("The page did not navigate beside the library".into());
+            }
+            p.command(el, 0, Command::SetLibraryWidth(500.0))?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let library = named(&views, "library").ok_or("No library")?;
+            let want = (500.0 * s.window.scale_factor()).round() as i32;
+            if ((library.right - library.left) - want).abs() > 2 {
+                return Err(format!("The library did not resize to 500: {views:?}"));
+            }
+            check_no_overlap(s, "library resized")?;
+            // A full panel takes the window; the library comes back after it.
+            p.command(el, 0, Command::ShowPanel(Panel::Settings))?;
+            p.next();
+        }
+        6 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "library").is_some() || named(&views, "page").is_some() {
+                return Err(format!(
+                    "A full panel should hide the page and library: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "full panel")?;
+            p.command(el, 0, Command::ClosePanel)?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "library").is_none() || named(&views, "page").is_none() {
+                return Err(format!(
+                    "The library did not return after the full panel: {views:?}"
+                ));
+            }
+            p.command(el, 0, Command::ToggleLibrary)?;
+            p.next();
+        }
+        8 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let page = named(&views, "page").ok_or("No page")?;
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            if named(&views, "library").is_some() || (page.right - toolbar.right).abs() > 2 {
+                return Err(format!(
+                    "Closing the library should give the page the width back: {views:?}"
+                ));
+            }
+            p.log.push(
+                "library: beside a live page, resized, toggled, gives way to a full panel".into(),
+            );
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_library_sidebar_beside_a_live_page() {
+    let (root, _) = run("library", library_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
