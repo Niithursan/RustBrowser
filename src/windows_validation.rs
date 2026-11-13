@@ -2003,7 +2003,15 @@ fn native_menu_opens_as_a_sidebar() {
 /// toolbar, active page and the side views. Each view sits in its own host window
 /// (its controller's parent), whose screen rectangle is the view's real place.
 fn shown_views(s: &Session) -> Vec<(&'static str, windows::Win32::Foundation::RECT)> {
-    let w = &s.windows[0];
+    shown_views_in(s, 0)
+}
+
+/// Bounds of every shown view of window `index` (see `shown_views`).
+fn shown_views_in(
+    s: &Session,
+    index: usize,
+) -> Vec<(&'static str, windows::Win32::Foundation::RECT)> {
+    let w = &s.windows[index];
     let mut views: Vec<(&'static str, &wry::WebView)> = vec![("toolbar", &w.toolbar)];
     if let Some(tab) = w.tabs.active() {
         views.push(("page", &tab.content.engine.view));
@@ -2033,7 +2041,11 @@ fn shown_views(s: &Session) -> Vec<(&'static str, windows::Win32::Foundation::RE
 /// No two shown views overlap (the stacking order of the toolbar and page windows
 /// is not kept by Windows, so an overlap could hide either).
 fn check_no_overlap(s: &Session, step: &str) -> Result<(), String> {
-    let views = shown_views(s);
+    check_no_overlap_in(s, 0, step)
+}
+
+fn check_no_overlap_in(s: &Session, index: usize, step: &str) -> Result<(), String> {
+    let views = shown_views_in(s, index);
     for (i, (a, ra)) in views.iter().enumerate() {
         for (b, rb) in &views[i + 1..] {
             let x = ra.right.min(rb.right) - ra.left.max(rb.left);
@@ -2493,5 +2505,361 @@ fn shield_cost_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> 
 #[ignore = "Measurement only; run by hand with --nocapture"]
 fn native_shield_cost_probe() {
     let (root, _) = run("shield-cost", shield_cost_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Run `script` in window `index`'s tab column; the answer lands in `p.result`.
+fn eval_tabs_column(p: &mut Probe, index: usize, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[index]
+        .tabs_view
+        .as_ref()
+        .ok_or("No tab column")?
+        .view
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Tab column script failed".to_string())
+}
+
+fn answer(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = p.result.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    serde_json::from_str(&inner)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// Drag with the left mouse button inside `view`, from and to points given in its
+/// CSS pixels. The messages go only to this fixture's own render widget for the
+/// view; no global input or cursor movement is used.
+fn drag_in(
+    view: &wry::WebView,
+    scale: f64,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, RECT, WPARAM},
+        UI::WindowsAndMessaging::{
+            EnumChildWindows, GetClassNameW, GetWindowRect, IsWindowVisible, SendMessageW,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+        },
+    };
+    unsafe extern "system" fn find(hwnd: HWND, state: LPARAM) -> windows::core::BOOL {
+        let mut name = [0u16; 128];
+        // SAFETY: synchronous enumeration with a live, stack-owned output list.
+        unsafe {
+            let len = GetClassNameW(hwnd, &mut name) as usize;
+            if String::from_utf16_lossy(&name[..len]) == "Chrome_RenderWidgetHostHWND"
+                && IsWindowVisible(hwnd).as_bool()
+            {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    (*(state.0 as *mut Vec<(HWND, RECT)>)).push((hwnd, rect));
+                }
+            }
+        }
+        windows::core::BOOL(1)
+    }
+    let point = |(x, y): (f64, f64)| {
+        let (x, y) = ((x * scale).round() as i32, (y * scale).round() as i32);
+        LPARAM(((x as u16 as u32) | ((y as u16 as u32) << 16)) as isize)
+    };
+    // SAFETY: the controller, its descendants and the synchronous messages belong
+    // only to this disposable fixture; enumeration ends before the list is dropped.
+    unsafe {
+        let controller = view.controller();
+        let mut parent = HWND::default();
+        controller
+            .ParentWindow(&mut parent)
+            .map_err(|e| e.to_string())?;
+        let mut place = RECT::default();
+        GetWindowRect(parent, &mut place).map_err(|e| e.to_string())?;
+        let mut widgets: Vec<(HWND, RECT)> = Vec::new();
+        let _ = EnumChildWindows(
+            Some(parent),
+            Some(find),
+            LPARAM(&mut widgets as *mut _ as isize),
+        );
+        // The column's own widget fills its host window.
+        let (hwnd, _) = widgets
+            .into_iter()
+            .find(|(_, r)| (r.left - place.left).abs() <= 2 && (r.top - place.top).abs() <= 2)
+            .ok_or("The tab column's render widget was not found")?;
+        const MK_LBUTTON: usize = 1;
+        let _ = SendMessageW(hwnd, WM_MOUSEMOVE, Some(WPARAM(0)), Some(point(from)));
+        let _ = SendMessageW(
+            hwnd,
+            WM_LBUTTONDOWN,
+            Some(WPARAM(MK_LBUTTON)),
+            Some(point(from)),
+        );
+        for step in 1..=8 {
+            let t = f64::from(step) / 8.0;
+            let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+            let _ = SendMessageW(
+                hwnd,
+                WM_MOUSEMOVE,
+                Some(WPARAM(MK_LBUTTON)),
+                Some(point(at)),
+            );
+        }
+        let _ = SendMessageW(hwnd, WM_LBUTTONUP, Some(WPARAM(0)), Some(point(to)));
+    }
+    Ok(())
+}
+
+/// The tab column's state, as JSON.
+const COLUMN_REPORT: &str = r#"(()=>{const tabs=[...document.querySelectorAll('#tabs .tab')];const rect=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]};return JSON.stringify({role:document.documentElement.dataset.role,orientation:document.getElementById('tabs').getAttribute('aria-orientation'),count:tabs.length,titles:tabs.map(t=>t.querySelector('.select').textContent),labels:tabs.map(t=>t.querySelector('.select').getAttribute('aria-label')),rects:tabs.map(rect),nav:getComputedStyle(document.getElementById('nav')).display,focus:document.hasFocus()&&document.activeElement?document.activeElement.getAttribute('role'):null,selected:document.activeElement?document.activeElement.getAttribute('aria-selected'):null})})()"#;
+
+/// The tab column in each window: placed at the left beside the toolbar and page,
+/// never over them; the same tab actions, Up and Down keys, focus, pinned tabs
+/// and drag reordering; switching it off gives both windows the strip back.
+fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?first")))?;
+            p.command(el, 0, Command::NewTab)?;
+            p.command(el, 0, Command::Navigate(format!("{url}?second")))?;
+            p.app
+                .proxy
+                .send_event(Event::Command(Command::NewWindow))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.len() == 2 && s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 1, Command::Navigate(format!("{url}?window-two")))?;
+            p.command(el, 0, Command::SetVerticalTabs(true))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(1500)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.settings.vertical_tabs {
+                return Err("The setting did not change".into());
+            }
+            for index in 0..2 {
+                check_no_overlap_in(s, index, &format!("vertical, window {index}"))?;
+                let views = shown_views_in(s, index);
+                let (Some(tabs), Some(toolbar), Some(page)) = (
+                    named(&views, "tabs"),
+                    named(&views, "toolbar"),
+                    named(&views, "page"),
+                ) else {
+                    return Err(format!(
+                        "Window {index} should show the column, toolbar and page: {views:?}"
+                    ));
+                };
+                let want = (240.0 * s.windows[index].window.scale_factor()).round() as i32;
+                let host = s.windows[index]
+                    .window
+                    .inner_position()
+                    .map_err(|e| e.to_string())?;
+                if (tabs.left - host.x).abs() > 2
+                    || ((tabs.right - tabs.left) - want).abs() > 2
+                    || (toolbar.left - tabs.right).abs() > 2
+                    || (page.left - tabs.right).abs() > 2
+                {
+                    return Err(format!(
+                        "Window {index}: the column should sit at the left, 240 wide, beside the toolbar and page: {views:?}"
+                    ));
+                }
+            }
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        3 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if r["role"] != "tabs"
+                || r["orientation"] != "vertical"
+                || r["count"] != 2
+                || r["nav"] != "none"
+            {
+                return Err(format!("The column shows the wrong part: {r}"));
+            }
+            // The strip is gone from the toolbar.
+            let active = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.marks = vec![active as usize];
+            eval_toolbar(
+                p,
+                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display)",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            if text != r#""\"none\"""# {
+                return Err(format!("The toolbar still shows the tab strip: {text}"));
+            }
+            // Keyboard: focus moves to the column, and Down selects the next tab.
+            p.command(el, 0, Command::FocusTabs)?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        6 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            if r["focus"] != "tab" || r["selected"] != "true" {
+                return Err(format!(
+                    "Focus should be on the active tab in the column: {r}"
+                ));
+            }
+            eval_tabs_column(
+                p,
+                0,
+                "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));JSON.stringify(0)",
+            )?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let before = p.marks[0];
+            let now = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            let expected = s
+                .tabs
+                .items
+                .iter()
+                .position(|t| t.id as usize == before)
+                .map(|i| s.windows[0].tabs.items[(i + 1) % s.windows[0].tabs.items.len()].id);
+            if Some(now) != expected {
+                return Err(format!(
+                    "Down should select the next tab: {before} -> {now}"
+                ));
+            }
+            // Pinned tabs keep their full title in the column.
+            p.command(el, 0, Command::PinActive)?;
+            p.next();
+        }
+        8 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        9 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let pinned = s
+                .tabs
+                .items
+                .iter()
+                .position(|t| t.pinned)
+                .ok_or("Nothing pinned")?;
+            let title = r["titles"][pinned].as_str().unwrap_or("");
+            let label = r["labels"][pinned].as_str().unwrap_or("");
+            if title != s.windows[0].tabs.items[pinned].title
+                || title.chars().count() <= 5
+                || !label.ends_with(", pinned")
+            {
+                return Err(format!("A pinned tab should show its whole title: {r}"));
+            }
+            // Unpin, then drag the second tab above the first.
+            p.command(el, 0, Command::PinActive)?;
+            p.next();
+        }
+        10 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        11 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            p.marks = s.windows[0]
+                .tabs
+                .items
+                .iter()
+                .map(|t| t.id as usize)
+                .collect();
+            let rect = |i: usize| -> Result<(f64, f64), String> {
+                let a = &r["rects"][i];
+                let (x, y, w, h) = (a[0].as_f64(), a[1].as_f64(), a[2].as_f64(), a[3].as_f64());
+                match (x, y, w, h) {
+                    (Some(x), Some(y), Some(w), Some(h)) => Ok((x + w / 3.0, y + h / 2.0)),
+                    _ => Err(format!("No tab rectangle: {r}")),
+                }
+            };
+            let (from, to) = (rect(1)?, rect(0)?);
+            let scale = s.windows[0].window.scale_factor();
+            let view = &s.windows[0].tabs_view.as_ref().ok_or("No column")?.view;
+            drag_in(view, scale, from, to)?;
+            p.next();
+        }
+        12 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let now: Vec<usize> = s.windows[0]
+                .tabs
+                .items
+                .iter()
+                .map(|t| t.id as usize)
+                .collect();
+            let want = vec![p.marks[1], p.marks[0]];
+            if now != want {
+                return Err(format!(
+                    "Dragging should move the second tab first: {:?} -> {now:?}",
+                    p.marks
+                ));
+            }
+            p.command(el, 1, Command::SetVerticalTabs(false))?;
+            p.next();
+        }
+        13 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for index in 0..2 {
+                check_no_overlap_in(s, index, &format!("horizontal, window {index}"))?;
+                let views = shown_views_in(s, index);
+                let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+                let page = named(&views, "page").ok_or("No page")?;
+                if named(&views, "tabs").is_some() || (page.left - toolbar.left).abs() > 2 {
+                    return Err(format!(
+                        "Window {index} should give the page its width back: {views:?}"
+                    ));
+                }
+            }
+            if s.settings.vertical_tabs {
+                return Err("The setting did not turn off".into());
+            }
+            eval_toolbar(
+                p,
+                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display)",
+            )?;
+            p.next();
+        }
+        14 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            if text == r#""\"none\"""# {
+                return Err("The tab strip did not come back".into());
+            }
+            p.log
+                .push("vertical tabs: two windows, keys, focus, pin, drag, off".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_vertical_tabs_in_two_windows() {
+    let (root, _) = run("vertical", vertical_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
