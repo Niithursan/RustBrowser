@@ -44,9 +44,31 @@ pub fn valid_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| (b'a'..=b'p').contains(&b))
 }
 
-/// Check that `folder` holds an unpacked extension before WebView2 sees it.
-/// Returns the manifest's version for display.
-pub fn check_folder(folder: &Path) -> Result<String, String> {
+/// Whether a manifest asks for a permission that lets an extension block or
+/// redirect requests (what a content blocker needs). Asking is not proof that it
+/// blocks ads; it is what Rust Browser can tell without running it.
+pub fn asks_to_block(manifest: &serde_json::Value) -> bool {
+    const BLOCKING: [&str; 3] = [
+        "declarativeNetRequest",
+        "declarativeNetRequestWithHostAccess",
+        "webRequestBlocking",
+    ];
+    manifest
+        .get("permissions")
+        .and_then(|p| p.as_array())
+        .is_some_and(|list| {
+            list.iter()
+                .any(|p| p.as_str().is_some_and(|p| BLOCKING.contains(&p)))
+        })
+}
+
+/// Whether the extension in `folder` asks to block requests, if its manifest can
+/// still be read (extensions added before v0.21 did not record it).
+pub fn folder_asks_to_block(folder: &Path) -> Option<bool> {
+    read_manifest(folder).ok().map(|m| asks_to_block(&m))
+}
+
+fn read_manifest(folder: &Path) -> Result<serde_json::Value, String> {
     if !folder.is_dir() {
         return Err("Choose the extension's folder (the one containing manifest.json).".into());
     }
@@ -60,8 +82,15 @@ pub fn check_folder(folder: &Path) -> Result<String, String> {
     let text = std::fs::read(&manifest)
         .map_err(|_| "The extension's manifest.json could not be read.".to_string())?;
     let text = text.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&text);
-    let value: serde_json::Value = serde_json::from_slice(text)
-        .map_err(|_| "This folder's manifest.json is not valid JSON.".to_string())?;
+    serde_json::from_slice(text)
+        .map_err(|_| "This folder's manifest.json is not valid JSON.".to_string())
+}
+
+/// Check that `folder` holds an unpacked extension before WebView2 sees it.
+/// Returns the manifest's version for display and whether it asks to block
+/// requests.
+pub fn check_folder(folder: &Path) -> Result<(String, bool), String> {
+    let value = read_manifest(folder)?;
     let version = value.get("version").and_then(|v| v.as_str());
     let manifest_version = value.get("manifest_version").and_then(|v| v.as_u64());
     match (
@@ -69,7 +98,9 @@ pub fn check_folder(folder: &Path) -> Result<String, String> {
         version,
         manifest_version,
     ) {
-        (Some(_), Some(version), Some(2 | 3)) => Ok(version.chars().take(32).collect()),
+        (Some(_), Some(version), Some(2 | 3)) => {
+            Ok((version.chars().take(32).collect(), asks_to_block(&value)))
+        }
         _ => Err("This folder's manifest.json is not a valid extension manifest.".into()),
     }
 }
@@ -314,6 +345,32 @@ mod tests {
     }
 
     #[test]
+    fn only_blocking_permissions_count_as_asking_to_block() {
+        let ask = |json: &str| asks_to_block(&serde_json::from_str(json).unwrap());
+        assert!(ask(r#"{"permissions":["declarativeNetRequest"]}"#));
+        assert!(ask(
+            r#"{"permissions":["storage","declarativeNetRequestWithHostAccess"]}"#
+        ));
+        assert!(ask(
+            r#"{"permissions":["webRequest","webRequestBlocking"]}"#
+        ));
+        assert!(!ask(r#"{"permissions":["webRequest","storage"]}"#));
+        assert!(!ask(
+            r#"{"optional_permissions":["declarativeNetRequest"]}"#
+        ));
+        assert!(!ask(r#"{"content_scripts":[]}"#));
+        assert!(!ask(r#"{"permissions":"declarativeNetRequest"}"#));
+        let fixtures =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions");
+        assert_eq!(folder_asks_to_block(&fixtures.join("blocker")), Some(true));
+        assert_eq!(
+            folder_asks_to_block(&fixtures.join("marker-a")),
+            Some(false)
+        );
+        assert_eq!(folder_asks_to_block(&fixtures.join("missing")), None);
+    }
+
+    #[test]
     fn folders_without_a_valid_manifest_are_refused() {
         let root = std::env::temp_dir().join(format!(
             "rust-browser-ext-check-{}-{}",
@@ -341,7 +398,7 @@ mod tests {
             "\u{feff}{\"name\":\"Test\",\"version\":\"1.2.3\",\"manifest_version\":3}",
         )
         .unwrap();
-        assert_eq!(check_folder(&root).unwrap(), "1.2.3");
+        assert_eq!(check_folder(&root).unwrap(), ("1.2.3".to_string(), false));
         let big = format!(
             "{{\"name\":\"x\",\"version\":\"1\",\"manifest_version\":3,\"pad\":\"{}\"}}",
             "a".repeat(MAX_MANIFEST as usize)

@@ -267,17 +267,22 @@ byId('bookmark-star').onclick=()=>send('bookmark_current');
 let latestShield=null,scrollToExtensions=false;
 function setShield(open,returnFocus){const button=byId('shield');if((button.getAttribute('aria-expanded')==='true')===open)return;button.setAttribute('aria-expanded',String(open));byId('shield-panel').hidden=!open;if(open){renderShield();byId('shield-panel').focus()}else if(returnFocus)button.focus()}
 function renderShield(){const s=latestShield;if(!s)return;const on=s.private?[]:s.extensions.filter(e=>e.state==='on');const button=byId('shield');
- let state,count='',limits;
- if(s.private){state='Private windows never run extensions, so no extension blocks anything here.';limits='Rust Browser has no ad blocker of its own.'}
- else if(!s.extensions.length){state='No extension is added. Rust Browser has no ad blocker of its own; add one you trust, such as a content blocker you downloaded, in Privacy & security.';limits=''}
- else if(!on.length){state='Your extensions are turned off, so none can block anything in this window.';limits=''}
- else{state='On in this window: '+on.map(e=>e.name).join(', ')+'.';
-  count=s.blocked==null?'The blocked-request count is not available for this page.':(s.blocked===1?'1 request':s.blocked+' requests')+' blocked on this page by your extensions.';
-  limits='The count includes every request an extension stopped for this page, without saying which extension stopped it. Requests inside embedded frames from other sites may not be counted. Rust Browser cannot turn blocking off for one site: WebView2 can only turn an extension on or off everywhere. Use the extension\'s own settings for site exceptions.'}
- byId('shield-state').textContent=state;byId('shield-count-text').textContent=count;byId('shield-count-text').hidden=!count;byId('shield-limits').textContent=limits;byId('shield-limits').hidden=!limits;
- const counted=on.length&&s.blocked!=null&&s.blocked>0;byId('shield-count').textContent=counted?String(Math.min(s.blocked,999))+(s.blocked>999?'+':''):'';
- button.dataset.on=String(on.length>0);
- const label='Ad blocking: '+(s.private?'private window, no extensions':on.length?(counted?s.blocked+' blocked on this page':'extensions on'):'no extension on');button.setAttribute('aria-label',label);button.title=label}
+ const names=list=>list.map(e=>e.name).join(', ');
+ const blockers=on.filter(e=>e.blocks===true),others=on.filter(e=>e.blocks===false),unknown=on.filter(e=>e.blocks==null);
+ let state=[],count='',limits='';
+ if(s.private)state=['Private windows never run extensions, so no extension blocks anything here. Rust Browser has no ad blocker of its own.'];
+ else if(!s.extensions.length)state=['No extension is added. Rust Browser has no ad blocker of its own; add a content blocker you trust in Privacy & security.'];
+ else if(!on.length)state=['Your extensions are turned off, so none can block anything in this window.'];
+ else{
+  if(blockers.length)state.push('Can block requests: '+names(blockers)+'.');
+  if(unknown.length)state.push('Rust Browser cannot tell whether '+names(unknown)+' can block requests: its folder could not be read.');
+  if(others.length)state.push((blockers.length||unknown.length?'On, but not asking to block requests: ':'No extension on in this window asks to block requests, so none blocks ads here. On: ')+names(others)+'.');
+  count=s.blocked==null?'The blocked-request count is not available for this page.':(s.blocked===1?'1 request':s.blocked+' requests')+' blocked on this page.';
+  limits='WebView2 reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. Rust Browser cannot turn blocking off for one site: WebView2 can only turn an extension on or off everywhere. Use the extension\'s own settings for site exceptions.'}
+ byId('shield-state').textContent=state.join(' ');byId('shield-count-text').textContent=count;byId('shield-count-text').hidden=!count;byId('shield-limits').textContent=limits;byId('shield-limits').hidden=!limits;
+ const counted=on.length>0&&s.blocked!=null&&s.blocked>0;byId('shield-count').textContent=counted?String(Math.min(s.blocked,999))+(s.blocked>999?'+':''):'';
+ button.dataset.on=String(blockers.length>0);
+ const label='Ad blocking: '+(s.private?'private window, no extensions':counted?s.blocked+' blocked on this page':blockers.length?'an extension that can block requests is on':'no extension that blocks requests is on');button.setAttribute('aria-label',label);button.title=label}
 byId('shield').onclick=()=>setShield(byId('shield').getAttribute('aria-expanded')!=='true',false);
 byId('shield-close').onclick=()=>setShield(false,true);
 byId('shield-manage').onclick=()=>{setShield(false,false);scrollToExtensions=true;send('show_panel','settings')};

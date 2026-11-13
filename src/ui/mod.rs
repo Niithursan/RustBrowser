@@ -166,6 +166,8 @@ pub struct ExtensionRow {
     pub folder: String,
     /// "on", "off" or "missing" (no longer installed in the profile).
     pub state: &'static str,
+    /// Whether it asks to block requests; `None` when Rust Browser cannot tell.
+    pub blocks: Option<bool>,
 }
 
 #[derive(Serialize)]

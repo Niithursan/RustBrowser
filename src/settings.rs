@@ -114,6 +114,10 @@ pub struct SavedExtension {
     pub version: String,
     /// The folder it was added from, shown so the user knows what was added.
     pub folder: String,
+    /// Whether its manifest asks to block or redirect requests (v0.21). Missing
+    /// for extensions added before 0.21 until their folder is read again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<bool>,
 }
 
 impl Default for Settings {

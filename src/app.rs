@@ -541,7 +541,7 @@ struct Session {
     /// announced to the user (so the notice is shown once).
     unsaved_windows: Vec<WindowId>,
     /// A folder being added as an extension, with its manifest version.
-    pending_extension: Option<(PathBuf, String)>,
+    pending_extension: Option<(PathBuf, String, bool)>,
     /// The user's extensions as WebView2 last reported them (website profile).
     extensions: Vec<native_extensions::Info>,
     /// Whether `extensions` has been read from WebView2 since startup.
@@ -751,6 +751,19 @@ impl Session {
         if self.private {
             return;
         }
+        // Extensions added before 0.21 did not record whether they ask to block
+        // requests; their folder's manifest (at most 1 MiB each) is read once.
+        let mut learned = false;
+        for saved in &mut self.settings.extensions {
+            if saved.blocks.is_none() {
+                saved.blocks =
+                    native_extensions::folder_asks_to_block(std::path::Path::new(&saved.folder));
+                learned |= saved.blocks.is_some();
+            }
+        }
+        if learned {
+            self.persist();
+        }
         let ids = self
             .settings
             .extensions
@@ -783,6 +796,7 @@ impl Session {
                         None if self.extensions_listed => "missing",
                         None => "off",
                     },
+                    blocks: saved.blocks,
                 }
             })
             .collect()
@@ -799,7 +813,7 @@ impl Session {
                 }
                 match native_extensions::check_folder(&folder) {
                     Ok(version) => {
-                        self.pending_extension = Some((folder.clone(), version));
+                        self.pending_extension = Some((folder.clone(), version.0, version.1));
                         if let Some(tab) = self.tabs.active()
                             && let Err(message) = native_extensions::add(
                                 &tab.content.engine.view,
@@ -823,11 +837,12 @@ impl Session {
                 {
                     self.extension_added = Some(Ok(info.id.clone()));
                 }
-                let version = self
+                let (version, blocks) = self
                     .pending_extension
                     .take()
-                    .map(|(_, version)| version)
-                    .unwrap_or_default();
+                    .map_or((String::new(), None), |(_, version, blocks)| {
+                        (version, Some(blocks))
+                    });
                 if !self.settings.extensions.iter().any(|e| e.id == info.id) {
                     self.settings
                         .extensions
@@ -840,6 +855,7 @@ impl Session {
                                 .filter(|c| !c.is_control())
                                 .take(1024)
                                 .collect(),
+                            blocks,
                         });
                 }
                 self.notice = format!(
