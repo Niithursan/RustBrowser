@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # exact pinned v0.19 upgrade fixture, never a mutable release download
+          fetch-depth: 0 # exact pinned v0.20 upgrade fixture, never a mutable release download
       - name: Install Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -174,8 +174,8 @@ jobs:
       - name: Cache immutable upgrade-fixture build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/rust-browser-install-baseline/target-v019
-          key: installer-fixture-v8-383a6de418de554c3e0a55265a22b9fcaf6c2f0e-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
+          path: ${{ runner.temp }}/rust-browser-install-baseline/target-v020
+          key: installer-fixture-v9-4ece8eeb9b0a2b1c65a79fb994f1ee7ca9b49042-${{ runner.os }}-${{ runner.arch }}-rust-1.99.1
       - name: Installer lifecycle, profile preservation and artifact verification
         id: installer
         shell: powershell
