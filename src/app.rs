@@ -1971,14 +1971,17 @@ impl Session {
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
         let window = &self.windows[self.current];
+        // A fullscreen page keeps the toolbar (its address and origin) but takes
+        // the room of the tab column and the library.
+        let fullscreen = window.fullscreen.is_some();
         layout(
             size.width,
             size.height,
             self.chrome_height,
-            self.settings.vertical_tabs && window.tabs_view.is_some(),
+            self.settings.vertical_tabs && window.tabs_view.is_some() && !fullscreen,
             window
                 .library_panel
-                .filter(|_| window.library_view.is_some())
+                .filter(|_| window.library_view.is_some() && !fullscreen)
                 .map(|_| window.library_width),
             self.effective_panel().is_some() || self.menu_open,
         )
