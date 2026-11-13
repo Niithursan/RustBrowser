@@ -109,7 +109,12 @@ pub fn watch(
     id: TabId,
 ) -> windows::core::Result<()> {
     if blocked.watching.replace(true) {
-        return Ok(());
+        // Handlers are in place; counting may have been stopped.
+        return if blocked.counting.get() {
+            Ok(())
+        } else {
+            enable(view, blocked, proxy, id)
+        };
     }
     // SAFETY: registration and callbacks run in this content view's UI apartment;
     // the handlers keep only an Rc to the count and an event proxy.
@@ -159,9 +164,23 @@ pub fn watch(
                 })),
                 &mut token,
             )?;
-        // No response bodies or upload data are kept for DevTools.
-        let (b, p) = (blocked, proxy);
-        core.CallDevToolsProtocolMethod(
+    }
+    enable(view, blocked, proxy, id)
+}
+
+/// Turn the engine's network events on for `view`. No response bodies or upload
+/// data are kept for DevTools.
+fn enable(
+    view: &WebView,
+    blocked: Rc<Blocked>,
+    proxy: EventLoopProxy<Event>,
+    id: TabId,
+) -> windows::core::Result<()> {
+    let (b, p) = (blocked, proxy);
+    // SAFETY: a DevTools call on this content view in its UI apartment; the handler
+    // keeps only an Rc to the count and an event proxy.
+    unsafe {
+        view.webview().CallDevToolsProtocolMethod(
             &HSTRING::from("Network.enable"),
             &HSTRING::from(
                 r#"{"maxTotalBufferSize":0,"maxResourceBufferSize":0,"maxPostDataSize":0}"#,
@@ -173,6 +192,24 @@ pub fn watch(
                 }
                 Ok(())
             })),
+        )
+    }
+}
+
+/// Stop counting in `view` (the last extension was removed): the engine's
+/// network events, and their cost on every request, are turned off again.
+pub fn stop(view: &WebView, blocked: &Blocked) -> windows::core::Result<()> {
+    if !blocked.watching.get() {
+        return Ok(());
+    }
+    blocked.counting.set(false);
+    blocked.count.set(0);
+    // SAFETY: a DevTools call on this content view in its UI apartment.
+    unsafe {
+        view.webview().CallDevToolsProtocolMethod(
+            &HSTRING::from("Network.disable"),
+            &HSTRING::from("{}"),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),
         )
     }
 }

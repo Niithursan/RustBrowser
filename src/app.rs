@@ -911,6 +911,13 @@ impl Session {
                 self.settings.extensions.retain(|e| e.id != id);
                 self.extensions.retain(|e| e.id != id);
                 self.notice = "Extension removed.".into();
+                if self.settings.extensions.is_empty() {
+                    // Nothing left to count for: stop the engine's network events.
+                    for tab in self.windows.iter().flat_map(|w| &w.tabs.items) {
+                        let engine = &tab.content.engine;
+                        let _ = native_shield::stop(&engine.view, &engine.blocked);
+                    }
+                }
                 self.persist();
             }
             Reply::Removed(_, Err(message)) => self.notice = message,
