@@ -1,4 +1,4 @@
-# Rust Browser 0.20.0
+# Rust Browser 0.21.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
