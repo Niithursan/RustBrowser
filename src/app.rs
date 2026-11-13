@@ -2,6 +2,7 @@ use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
     native_background, native_downloads, native_extensions, native_popup, native_security,
+    native_shield,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
@@ -54,6 +55,8 @@ pub enum Event {
     MenuSnapshot(WindowId, Option<String>),
     /// An extension operation finished.
     Extension(native_extensions::Reply),
+    /// The count of requests extensions stopped changed for a tab.
+    Blocked(TabId),
     /// The one-time toolbar autofill cleanup finished (true when it succeeded).
     ToolbarAutofillCleared(bool),
     EngineCleared {
@@ -707,6 +710,31 @@ impl Session {
         true
     }
 
+    /// Pages count the requests extensions stop only where extensions run (normal
+    /// windows) and only once the user added one: the engine's network events cost
+    /// a little on every request.
+    fn counts_blocked(&self) -> bool {
+        !self.private && !self.settings.extensions.is_empty()
+    }
+
+    /// Start counting in every open page (after the first extension is added).
+    fn count_blocked_everywhere(&self) {
+        if !self.counts_blocked() {
+            return;
+        }
+        for window in &self.windows {
+            for tab in &window.tabs.items {
+                let engine = &tab.content.engine;
+                let _ = native_shield::watch(
+                    &engine.view,
+                    engine.blocked.clone(),
+                    self.proxy.clone(),
+                    tab.id,
+                );
+            }
+        }
+    }
+
     /// Ask WebView2 for the state of the user's extensions.
     fn refresh_extensions(&mut self) {
         if self.private {
@@ -809,6 +837,7 @@ impl Session {
                 );
                 self.persist();
                 self.refresh_extensions();
+                self.count_blocked_everywhere();
             }
             Reply::Added(Err(message)) => {
                 #[cfg(test)]
@@ -1100,6 +1129,7 @@ impl Session {
             | Event::EngineProcess(tab, _)
             | Event::ZoomChanged(tab)
             | Event::FindResult(tab, _)
+            | Event::Blocked(tab)
             | Event::DownloadRequested(_, tab)
             | Event::SuspensionResult { id: tab, .. } => {
                 self.select_tab(*tab);
@@ -1589,6 +1619,11 @@ impl Session {
         )?;
         engine::accelerators(&engine.view, self.proxy.clone())?;
         native_popup::install(&engine.view, self.popups.clone(), self.proxy.clone(), id)?;
+        if self.counts_blocked() {
+            // Without the count the shield says it is unavailable; the page still works.
+            let _ =
+                native_shield::watch(&engine.view, engine.blocked.clone(), self.proxy.clone(), id);
+        }
         Ok(engine)
     }
 
@@ -2134,6 +2169,11 @@ impl Session {
             menu_open: self.windows[self.current].menu_open,
             library_panel: self.windows[self.current].library_panel,
             vertical_tabs: self.current_layout().tabs.is_some(),
+            blocked: if self.counts_blocked() {
+                active.content.engine.blocked.count()
+            } else {
+                None
+            },
             extensions: if self.private {
                 Vec::new()
             } else {
@@ -2156,6 +2196,7 @@ impl Session {
                 })
                 .collect(),
         };
+        active.content.engine.blocked.rendered();
         match serde_json::to_string(&state) {
             Ok(json) => {
                 let changed = *self.last_render.borrow() != json;
@@ -3834,6 +3875,8 @@ impl ApplicationHandler<Event> for App {
                 Err(message) => session.notice = message,
             },
             Event::Extension(reply) => session.extension_reply(reply),
+            // Shown by the render that follows every event.
+            Event::Blocked(_) => {}
             Event::MenuSnapshot(_, data) => {
                 if let Err(error) = session.show_menu(data) {
                     session.notice = format!("Error: {error}");

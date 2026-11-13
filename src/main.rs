@@ -27,6 +27,8 @@ mod native_installation;
 mod native_popup;
 #[cfg(windows)]
 mod native_security;
+#[cfg(windows)]
+mod native_shield;
 #[cfg(all(windows, test))]
 mod native_validation;
 #[cfg(all(windows, test))]

@@ -188,6 +188,9 @@ pub struct ToolbarState<'a> {
     pub library_panel: Option<Panel>,
     /// Tabs are shown in the column at the left (the toolbar has no tab strip).
     pub vertical_tabs: bool,
+    /// Requests extensions stopped for the active page, as the engine reported
+    /// them; `None` when nothing is counted (no extension added, or a private window).
+    pub blocked: Option<u32>,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,

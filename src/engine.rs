@@ -22,6 +22,8 @@ use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows, WebView
 pub struct Engine {
     pub view: WebView,
     pub activity: std::rc::Rc<crate::native_activity::Activity>,
+    /// Requests extensions stopped for this view's document (the shield).
+    pub blocked: std::rc::Rc<crate::native_shield::Blocked>,
     progress: std::rc::Rc<NavigationProgress>,
 }
 pub struct Options {
@@ -590,6 +592,7 @@ impl Engine {
         Ok(Self {
             view,
             activity,
+            blocked: Default::default(),
             progress,
         })
     }
