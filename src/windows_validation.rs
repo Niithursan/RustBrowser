@@ -787,6 +787,17 @@ fn restore_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         .collect::<Vec<_>>()
                 ));
             }
+            // Every restored window follows the saved vertical-tabs setting (v0.21),
+            // with its column beside the toolbar and page, never over them.
+            for index in 0..s.windows.len() {
+                let views = shown_views_in(s, index);
+                if s.windows[index].tabs_view.is_none() || named(&views, "tabs").is_none() {
+                    return Err(format!(
+                        "Restored window {index} has no tab column: {views:?}"
+                    ));
+                }
+                check_no_overlap_in(s, index, &format!("restored window {index}"))?;
+            }
             p.app.user_event(el, Event::Command(Command::ExitBrowser));
             // Hiding the windows lets Windows activate another one, as it does on
             // a foreground desktop. That must not change what Exit saved.
@@ -821,6 +832,10 @@ fn native_multiple_windows_restore_and_exit() {
                     ..Default::default()
                 },
             ],
+            settings: rust_browser::settings::Settings {
+                vertical_tabs: true,
+                ..Default::default()
+            },
             ..Snapshot::default()
         };
         storage::save(&root.join("session.json"), &snapshot).unwrap();
@@ -829,6 +844,7 @@ fn native_multiple_windows_restore_and_exit() {
     assert_eq!(saved.other_windows.len(), 2);
     assert_eq!(saved.tabs.len(), 2);
     assert_eq!(saved.pinned, vec![true, false]);
+    assert!(saved.settings.vertical_tabs);
     let _ = std::fs::remove_dir_all(root);
 }
 
