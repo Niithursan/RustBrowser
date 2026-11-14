@@ -1,5 +1,16 @@
 # Development checkpoint
 
+## v0.21: shield, library sidebar, vertical tabs and new-tab tiles (Claude Code)
+
+Branch `feat/v0.21-brave-style` from verified main `4ece8ee`; draft PR #28. Scratch
+`<workspace>/work/v21b` (gates, mutation, screenshot and owner scripts). Version
+0.21.0, draft release notes. All 54 local gates passed on `f8ea7e9`; 34 of 35
+mutations caught (see VALIDATION.md). Owner decisions applied: counting switch on by
+default, favourite icons 8 KiB, private windows follow vertical tabs read-only.
+
+Next: CI on the final head, owner bundle, owner checklist 31 to 35. Do not merge, tag
+or publish.
+
 ## v0.21: toolbar polish and menu sidebar (Claude Code, in progress)
 
 Branch `feat/v0.21-toolbar-polish` from verified origin/main `d4cf1af` (CI

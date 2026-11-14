@@ -1,5 +1,131 @@
 # Validation
 
+## v0.21 shield, library sidebar, vertical tabs and new-tab tiles
+
+Baseline `4ece8ee` (PR #27 squash merge); CI 43298035619 and security 43298035506
+passed before branching. Branch `feat/v0.21-brave-style`. Version 0.21.0 (not
+released; `release-notes/v0.21.0.md` is a draft). Profile path, session format 1 and
+SQLite schema 3 unchanged; new settings are optional fields (`vertical_tabs`,
+`newtab_background`, `count_blocked`, a favourite's `icon`, an extension's `blocks`), and a test reads
+a 0.21 file with 0.20's rules. One Windows 11 Pro x64 machine, WebView2 157. Local
+results only in this section; hosted results for the final head are in the pull
+request.
+
+### The shield: what WebView2 exposes (established before building it)
+
+- `ICoreWebView2BrowserExtension` has only Id, Name, IsEnabled, Enable and Remove;
+  `ICoreWebView2Profile7` only adds and lists extensions. No blocked count, and no
+  per-site switch (Enable is profile-wide).
+- The DevTools `Network` domain on a page's own view reports what a client stopped.
+  With every host mapped to a local logging server, the test blocker (a
+  declarativeNetRequest rule) produced `Network.loadingFailed` with
+  `net::ERR_BLOCKED_BY_CLIENT` for 2 of 2 blocked requests, none reaching the server.
+  uBlock Origin Lite 2026.1110.1816 stopped 3 ad requests: 1 reported as
+  `ERR_BLOCKED_BY_CLIENT`, 2 as a redirect from the ad address into
+  `chrome-extension://.../web_accessible_resources/`. Counting both gives 3 of 3, in two
+  runs. Neither event names the extension.
+- A request the blocker stops inside a frame from another site (a `localhost` frame
+  in a `127.0.0.1` page) is not reported to the page's view: the frame loads, its
+  script is stopped, the count stays 0 (`native_shield_does_not_count_frames_from_other_sites`).
+- Not ruled out: whether WebView2's own tracking prevention ever reports
+  `ERR_BLOCKED_BY_CLIENT`. The panel therefore says the count may include requests the
+  engine blocks itself.
+
+### Cost of counting (`native_shield_cost_probe`, run by hand)
+
+A local page of 300 requests, loaded 12 times alternating between a tab that counts
+and one that does not: about 313 ms without and 349 ms with counting (+35 ms, about
+11%), in three runs, and the same difference with the two tabs swapped (two runs).
+Without the request-sent event the cost is unchanged: it comes from enabling the
+Network domain. Real sites have network time this local page does not, so the share
+there is likely lower; that was not measured. Counting runs only while an extension
+is added, in normal windows, and stops when the last one is removed.
+
+### Reproduced defects and fixes
+
+Each was shown failing by a test before the fix and passing after it.
+
+1. **The toolbar script stopped in every view**: the new `render` parameter clashed
+   with a `const` of the same name. Found when the library column showed nothing;
+   `validation/test_toolbar_script.py` (Node `--check`) now parses every inline script.
+2. **The shield called every extension an ad blocker** and its count said "by your
+   extensions" (advisor review). Each extension now records whether its manifest asks
+   to block requests; the shield suite has a content-script extension on beside the
+   blocker.
+3. **The shield panel was cut off in a narrow window** (4 of 4 runs): opening it made
+   the toolbar measure 398 pixels, and the height report ignored anything over 320, so
+   the toolbar kept its old height. The report now keeps 320 at most and the panel is
+   at most 140 pixels and scrolls. Either change alone fixes the case.
+4. **A 44-pixel empty band under the toolbar beside the tab column**: without the
+   strip the toolbar is about 76 pixels, under the 80 the height report accepted. The
+   minimum is now 40.
+5. **Another page of a site replaced a favourite's icon** with the engine's generic
+   one. Only the favourite's own address now replaces it.
+6. **A fullscreen page stayed between the tab column and the library**; it now takes
+   their room (the toolbar stays, as documented since earlier versions).
+7. **Failed side columns were rebuilt without limit**; now three times in two minutes,
+   then the strip returns or the library closes.
+8. **Focus**: turning on vertical tabs moved focus to the column; the shield panel's
+   section was focused but outside the Tab order. Both fixed.
+9. **Contrast**: the Glow background at 16% accent left muted text at 4.36:1 in the
+   dark theme; it is 10% now (lowest 4.76:1).
+10. Counting stayed on after the last extension was removed; it now stops.
+
+Test-only findings: a new view can reuse a dropped view's COM address, so recovery is
+checked by the views' own build numbers; `WebView::url()` is empty for the side views'
+data URLs, so their document is checked from inside it.
+
+### Automated evidence
+
+All 54 local gates passed on `f8ea7e9` (`work/v21b/production-gates.json`): format,
+Clippy, 154 regular tests (46 native tests are ignored there and run on their own),
+both builds, 35 native suites each in its own process plus the two-process suite,
+three daily runs, sampler and launcher fixtures, Python tests, imports, portable
+package, installer lifecycle upgrading from 0.20.0 built from `4ece8ee` with its own
+Setup script, release metadata, static-build restoration, owner bundle tests and
+`cargo audit`. Later commits change documentation only.
+
+Owner decisions applied before the final push: the shield's counting is a switch,
+Privacy & security > Extensions > Count blocked requests, on by default, and off
+removes the three handlers from every page (tested: no page listens, the shield says
+counting is off, turning it on listens again); private windows follow the
+vertical-tabs setting read-only (`native_private_windows_follow_vertical_tabs_read_only`:
+only that value is taken from a normal profile that also has a favourite and a theme,
+both switches are refused, and the normal session file is unchanged byte for byte).
+
+New native suites: `native_library_sidebar_beside_a_live_page`,
+`native_shield_counts_what_an_extension_blocks`,
+`native_shield_does_not_count_frames_from_other_sites`,
+`native_shield_panel_fits_a_narrow_window`, `native_vertical_tabs_in_two_windows`
+(two windows, keys, focus, pinned, a real drag by mouse messages to the column's own
+widget, fullscreen), `native_newtab_tiles_and_background` and
+`native_side_views_have_the_toolbar_restrictions_and_recover`. Extended:
+keyboard-reachability and scaled layout (the tab and library columns at four scales,
+the toolbar beside the column, the shield by keyboard), contrast (every new-tab
+background stop and the shield), the multiple-window restore suite (three restored
+windows follow vertical tabs), and the private-window extension suite (no counting).
+No assertion was weakened or removed.
+
+Mutation checks (`work/v21b/mutate.py`), each run against its suite:
+
+35 mutations, re-run on the final code: 34 caught. Shield (11): no failure events
+counted, no reset on a new page, panel laid over the page, Escape ignored, the
+limits text claiming a per-site switch, a made-up count (missed at first; the suite
+then gained a check of the toolbar's 0 on the next page), no counting in tabs open
+before the first extension, every extension treated as a blocker, counting kept
+after the last extension, the switch ignored, the listener kept when off. Vertical
+tabs (7), tiles (5), keyboard and scaled layout (4), restore (2), side columns (2),
+private windows (3). Not caught: removing both narrow-window panel fixes. The cut-off
+panel reproduced 4 of 4 times before the fixes, but on the final layout the panel fits
+in the toolbar even without them; the fixes stay as safeguards and the suite still
+checks the panel is open, complete and its buttons reachable.
+
+### Not tested here
+
+Narrator, a contrast theme and real mouse use on the new views (owner checklist 31
+to 35); a real 150% display (scaling was emulated per view); uBlock Origin Lite in the
+product on real sites; the count on real sites with many frames.
+
 ## v0.21 toolbar polish and menu sidebar
 
 Baseline `d4cf1af` (PR #26 squash merge); CI 43136087446 and security 43136087955

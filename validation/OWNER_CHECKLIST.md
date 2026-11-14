@@ -373,16 +373,19 @@ validation entry from Apps & Features.
 1. With no extension added, click the shield at the end of the address line.
 2. Add uBlock Origin Lite as in step 28, open the same news website, and click the
    shield again. Then press Escape.
-3. Turn the extension off, reload, and open the shield.
-4. Open a private window and click its shield.
+3. Turn the extension off, reload, and open the shield. Turn it on again.
+4. Turn off Privacy & security > Extensions > Count blocked requests, reload the news
+   page and open the shield; turn it back on.
+5. Open a private window and click its shield.
 
 **Pass:** without an extension the panel says none is added and Rust Browser has no
 blocker of its own; with uBlock Origin Lite on, it is listed under "Can block
 requests", the shield shows a number and the panel says how many requests were
 blocked on this page and what it cannot do (which extension, frames from other sites,
 one site); Escape closes it and returns to the shield; the page moves down while the
-panel is open and is never covered; turned off, the panel says so; the private window
-says extensions never run there. Note the number and site.
+panel is open and is never covered; turned off, the panel says so; with counting off
+the shield says counting is off and shows no number; the private window says
+extensions never run there. Note the number and site.
 
 ## 32. The library beside a live page (4 minutes)
 
@@ -406,11 +409,14 @@ drawn over it; the width changes and stops at a sensible minimum and maximum; Pr
    click a tab and use the Up and Down keys.
 4. Open the library (Ctrl+Shift+B) with the column showing.
 5. Play a video full screen, then leave full screen.
-6. Turn the setting off from the other window.
+6. Open a private window (Ctrl+Shift+N).
+7. Turn the setting off from a normal window, then open another private window.
 
 **Pass:** both windows change at once each time; the column, toolbar, page and library
 never overlap; every tab action works in the column; full screen gives the video the
-whole width under the toolbar; turning it off brings the tab strip back in both.
+whole width under the toolbar; the private window shows tabs down the side and its
+switch cannot be changed there; turning it off brings the tab strip back in both
+normal windows, and the new private window has the strip.
 
 ## 34. New-tab tiles (3 minutes)
 
