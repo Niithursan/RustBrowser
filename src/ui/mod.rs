@@ -267,6 +267,26 @@ pub fn repeatable(command: &Command) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn action_feedback_respects_reduced_motion() {
+        assert!(
+            HTML.contains("button,select,input{font:inherit;color:inherit;transition:"),
+            "interactive controls should animate state changes"
+        );
+        let reduced = HTML
+            .split("@media(prefers-reduced-motion:reduce){")
+            .nth(1)
+            .expect("reduced-motion media query");
+        assert!(
+            reduced.starts_with("button,select,input{transition:none!important}"),
+            "reduced-motion preferences disable control transitions"
+        );
+        assert!(
+            reduced.contains("button:active:not(:disabled){transform:none}"),
+            "reduced-motion preferences disable button movement"
+        );
+    }
+
     /// Custom properties declared in `selector{...}` blocks of the shipped CSS.
     fn tokens(selector: &str) -> std::collections::HashMap<String, String> {
         let mut found = std::collections::HashMap::new();

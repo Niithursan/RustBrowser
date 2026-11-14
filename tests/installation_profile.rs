@@ -37,6 +37,7 @@ fn prepare(root: &Path) {
     db.apply(Action::SaveFolder {
         id: None,
         name: "Upgrade fixture".into(),
+        parent_id: None,
     })
     .unwrap();
     let folder = db.query(&Filter::default()).unwrap().folders[0].id;

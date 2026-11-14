@@ -35,6 +35,7 @@ fn bookmarks_folders_edit_search_remove_and_restart() {
     db.apply(Action::SaveFolder {
         id: None,
         name: "Research".into(),
+        parent_id: None,
     })
     .unwrap();
     let folder = db.query(&Filter::default()).unwrap().folders[0].id;
@@ -72,6 +73,7 @@ fn bookmarks_folders_edit_search_remove_and_restart() {
     db.apply(Action::SaveFolder {
         id: Some(folder),
         name: "Work".into(),
+        parent_id: None,
     })
     .unwrap();
     drop(db);
@@ -88,6 +90,103 @@ fn bookmarks_folders_edit_search_remove_and_restart() {
     );
     db.apply(Action::RemoveBookmark { id }).unwrap();
     assert!(db.query(&Filter::default()).unwrap().bookmarks.is_empty());
+}
+
+#[test]
+fn nested_folders_round_trip_filter_and_reject_cycles() {
+    let profile = Profile::new();
+    let (mut db, _) = Database::open(&profile.db()).unwrap();
+    db.apply(Action::SaveFolder {
+        id: None,
+        name: "Reading".into(),
+        parent_id: None,
+    })
+    .unwrap();
+    let reading = db.query(&Filter::default()).unwrap().folders[0].id;
+    db.apply(Action::SaveFolder {
+        id: None,
+        name: "Research".into(),
+        parent_id: Some(reading),
+    })
+    .unwrap();
+    let research = db
+        .query(&Filter::default())
+        .unwrap()
+        .folders
+        .into_iter()
+        .find(|folder| folder.name == "Research")
+        .unwrap();
+    assert_eq!(research.path, ["Reading", "Research"]);
+    db.apply(Action::SaveFolder {
+        id: None,
+        name: "Reading".into(),
+        parent_id: Some(reading),
+    })
+    .unwrap();
+    db.apply(Action::SaveFolder {
+        id: None,
+        name: "Reading".into(),
+        parent_id: Some(research.id),
+    })
+    .unwrap();
+    let child_with_same_name = db
+        .query(&Filter::default())
+        .unwrap()
+        .folders
+        .into_iter()
+        .find(|folder| folder.parent_id == Some(research.id))
+        .unwrap();
+    assert_eq!(
+        child_with_same_name.path,
+        ["Reading", "Research", "Reading"]
+    );
+
+    db.apply(Action::SaveBookmark {
+        id: None,
+        title: "Paper".into(),
+        url: "https://example.com/paper".into(),
+        folder: Some(research.id),
+    })
+    .unwrap();
+    let filtered = db
+        .query(&Filter {
+            folder: Some(research.id),
+            ..Filter::default()
+        })
+        .unwrap();
+    assert_eq!(filtered.bookmarks.len(), 1);
+    assert_eq!(filtered.bookmarks[0].folder, Some(research.id));
+
+    assert!(
+        db.apply(Action::SaveFolder {
+            id: Some(reading),
+            name: "Reading".into(),
+            parent_id: Some(research.id),
+        })
+        .is_err(),
+        "a folder cannot be moved inside its own descendant"
+    );
+    assert!(
+        db.apply(Action::RemoveFolder { id: research.id }).is_err(),
+        "removing a folder must not create duplicate siblings"
+    );
+    db.apply(Action::SaveFolder {
+        id: Some(child_with_same_name.id),
+        name: "Archive".into(),
+        parent_id: Some(research.id),
+    })
+    .unwrap();
+    db.apply(Action::RemoveFolder { id: research.id }).unwrap();
+    let data = db.query(&Filter::default()).unwrap();
+    assert!(
+        data.folders
+            .iter()
+            .find(|folder| folder.id == child_with_same_name.id)
+            .is_some_and(|folder| {
+                folder.parent_id == Some(reading) && folder.path == ["Reading", "Archive"]
+            })
+    );
+    assert!(data.bookmarks[0].folder.is_none());
 }
 
 fn visit(key: &str, url: &str, timestamp: i64) -> Action {
@@ -156,7 +255,8 @@ fn invalid_inputs_and_sql_text_are_handled_as_data() {
     assert!(
         db.apply(Action::SaveFolder {
             id: None,
-            name: " ".into()
+            name: " ".into(),
+            parent_id: None,
         })
         .is_err()
     );
@@ -181,6 +281,7 @@ fn invalid_inputs_and_sql_text_are_handled_as_data() {
     db.apply(Action::SaveFolder {
         id: None,
         name: "'); DROP TABLE bookmarks;--".into(),
+        parent_id: None,
     })
     .unwrap();
     assert!(
@@ -244,4 +345,39 @@ fn schema_migration_corruption_recovery_and_future_schema_preservation() {
         .find(|p| p.to_string_lossy().contains(".corrupt-"))
         .unwrap();
     assert_eq!(fs::read(backup).unwrap(), b"not a database");
+}
+
+#[test]
+fn schema_v3_folder_migration_preserves_existing_bookmarks() {
+    let p = Profile::new();
+    let connection = rusqlite::Connection::open(p.db()).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE folders(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE COLLATE NOCASE);
+             CREATE TABLE bookmarks(id INTEGER PRIMARY KEY,title TEXT NOT NULL,url TEXT NOT NULL UNIQUE,
+                 folder INTEGER REFERENCES folders(id) ON DELETE SET NULL);
+             CREATE TABLE visits(id INTEGER PRIMARY KEY,event_key TEXT NOT NULL UNIQUE,url TEXT NOT NULL,
+                 title TEXT NOT NULL,visited_at INTEGER NOT NULL);
+             CREATE TABLE permissions(origin TEXT NOT NULL,capability TEXT NOT NULL,decision TEXT NOT NULL,
+                 PRIMARY KEY(origin,capability));
+             INSERT INTO folders(id,name) VALUES(7,'Research');
+             INSERT INTO bookmarks(id,title,url,folder) VALUES(9,'Saved','https://example.com/',7);
+             PRAGMA user_version=3;",
+        )
+        .unwrap();
+    drop(connection);
+
+    let (db, recovered) = Database::open(&p.db()).unwrap();
+    assert!(!recovered);
+    let data = db.query(&Filter::default()).unwrap();
+    assert_eq!(data.bookmarks.len(), 1);
+    assert_eq!(data.bookmarks[0].folder, Some(7));
+    assert_eq!(data.folders[0].id, 7);
+    assert_eq!(data.folders[0].parent_id, None);
+    assert_eq!(data.folders[0].path, ["Research"]);
+    drop(db);
+
+    let connection = rusqlite::Connection::open(p.db()).unwrap();
+    let mut check = connection.prepare("PRAGMA foreign_key_check").unwrap();
+    assert!(check.query([]).unwrap().next().unwrap().is_none());
 }
