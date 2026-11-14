@@ -487,3 +487,79 @@ fn schema_v3_folder_migration_preserves_existing_bookmarks() {
     let mut check = connection.prepare("PRAGMA foreign_key_check").unwrap();
     assert!(check.query([]).unwrap().next().unwrap().is_none());
 }
+
+#[test]
+fn folder_dropdowns_and_the_current_pages_bookmark() {
+    use rust_browser::library::BarItem;
+    let profile = Profile::new();
+    let (mut db, _) = Database::open(&profile.db()).unwrap();
+    for (name, parent_id) in [("Work", None), ("Deep", Some(1))] {
+        db.apply(Action::SaveFolder {
+            id: None,
+            name: name.into(),
+            parent_id,
+        })
+        .unwrap();
+    }
+    let folders = db.query(&Filter::default()).unwrap().folders;
+    let work = folders.iter().find(|f| f.name == "Work").unwrap().id;
+    let deep = folders.iter().find(|f| f.name == "Deep").unwrap().id;
+    for (title, url, folder) in [
+        ("Second", "https://example.com/2", Some(work)),
+        ("First", "https://example.com/1", Some(work)),
+        ("Elsewhere", "https://example.com/3", None),
+    ] {
+        db.apply(Action::SaveBookmark {
+            id: None,
+            title: title.into(),
+            url: url.into(),
+            folder,
+        })
+        .unwrap();
+    }
+    let data = db
+        .query(&Filter {
+            menu_folder: Some(work),
+            page: Some("https://example.com/3".into()),
+            ..Filter::default()
+        })
+        .unwrap();
+    let menu = data.menu.unwrap();
+    assert_eq!(menu.name, "Work");
+    // Subfolders first, then bookmarks in the order they were added.
+    assert_eq!(
+        menu.items,
+        vec![
+            BarItem::Folder {
+                id: deep,
+                name: "Deep".into()
+            },
+            BarItem::Link {
+                id: 1,
+                title: "Second".into(),
+                url: "https://example.com/2".into()
+            },
+            BarItem::Link {
+                id: 2,
+                title: "First".into(),
+                url: "https://example.com/1".into()
+            },
+        ]
+    );
+    assert_eq!(data.page_bookmark.unwrap().title, "Elsewhere");
+    // Without them nothing extra is read; a removed folder has no dropdown.
+    let plain = db.query(&Filter::default()).unwrap();
+    assert!(plain.menu.is_none() && plain.page_bookmark.is_none());
+    let gone = db
+        .query(&Filter {
+            menu_folder: Some(9999),
+            page: Some("https://not-bookmarked.example/".into()),
+            ..Filter::default()
+        })
+        .unwrap();
+    assert!(gone.menu.is_none() && gone.page_bookmark.is_none());
+    // The toolbar cannot set them: they are not read from its JSON.
+    let sent: Filter =
+        serde_json::from_str(r#"{"menu_folder":1,"page":"https://example.com/3"}"#).unwrap();
+    assert!(sent.menu_folder.is_none() && sent.page.is_none());
+}

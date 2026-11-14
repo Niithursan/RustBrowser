@@ -29,14 +29,14 @@ the first time they are needed and hidden, not destroyed, when not shown.
 
 Where each goes comes from one pure function, `layout()`, of the window size, the
 toolbar height, whether vertical tabs and the library are on, and whether a full
-panel, the new-tab page or the menu sidebar fills the window:
+panel, the new-tab page or an open dropdown fills the window:
 
 | State | Tab column | Toolbar | Page | Library |
 | --- | --- | --- | --- | --- |
 | Normal | none | full width, top | below the toolbar | none |
 | Vertical tabs | left, 240 wide, full height | right of the column, top | right of the column, below the toolbar | none |
 | Library open | as above | as above | narrower by the library width | right, below the toolbar |
-| Full panel, new tab, menu | as above | its column, full height | hidden | hidden |
+| Full panel, new tab, dropdown | as above | its column, full height | hidden | hidden |
 | Page fullscreen | hidden | full width, top | full width, below the toolbar | hidden |
 
 The library keeps at least 320 pixels for the page. A unit test checks 720
@@ -47,9 +47,20 @@ under the browser window, and PR #27 found that Windows does not keep their stac
 order: a view laid over another can end up underneath it. So no view is ever placed
 over another; anything beside the page takes its own space and the page shrinks or
 moves. That is why vertical tabs are a column of their own rather than a panel that
-slides over the page, why the library is a column rather than a drawer, and why the
-shield panel pushes the page down instead of floating over it. (The menu sidebar uses
-a still image of the page instead, PR #27.)
+slides over the page, and why the library is a column rather than a drawer.
+
+**Dropdowns.** The menu, the site-information badge, the star, the shield and the
+bookmarks-bar folders open dropdowns under their buttons. A dropdown is part of the
+toolbar document, so while one is open the toolbar view fills its column and the page
+view is hidden; the toolbar shows a JPEG still of the page (WebView2
+`CapturePreview`, kept in memory only) dimmed behind the dropdown. Over a full panel
+such as the new-tab page there is no still and the panel stays visible behind it. Only
+one dropdown is open; switching between dropdowns does not reload the still. A folder
+dropdown asks the library worker for that folder's contents (`Filter::menu_folder`,
+set by the browser only) and the star's dropdown reads the current page's bookmark
+(`Filter::page`). A borderless popup window above the browser window was considered
+and not used: it would add a new kind of window; the still keeps every view side by
+side.
 
 ## Navigation completion and cancellation
 

@@ -531,6 +531,8 @@ struct Session {
     settings: Settings,
     library_data: Data,
     filter: Filter,
+    /// The bookmark folder an open bookmarks-bar dropdown shows.
+    menu_folder: Option<i64>,
     revision: u64,
     run_id: String,
     downloads: native_downloads::Shared,
@@ -1531,6 +1533,7 @@ impl Session {
             settings: snapshot.settings,
             library_data: Data::default(),
             filter: Filter::default(),
+            menu_folder: None,
             revision: 0,
             run_id: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2542,8 +2545,7 @@ impl Session {
                 if !self.library_data.folders.iter().any(|f| f.id == id) {
                     return Err("That bookmark folder no longer exists.".into());
                 }
-                self.open_library(Panel::Bookmarks)?;
-                self.filter.folder = Some(id);
+                self.menu_folder = Some(id);
                 self.library_action(Action::Refresh)?;
             }
             Command::SetShowRecent(value) => {
@@ -2590,6 +2592,9 @@ impl Session {
             }
             Command::SetMenuOpen(open) => {
                 self.menu_wanted = open;
+                if !open {
+                    self.menu_folder = None;
+                }
                 if !open {
                     if self.menu_open {
                         self.menu_open = false;
@@ -2827,8 +2832,10 @@ impl Session {
                         url: tab.url.clone(),
                         folder: None,
                     };
-                    self.open_library(Panel::Bookmarks)?;
                     self.library_action(action)?;
+                    // The star's dropdown edits or removes it; the reply names it.
+                    self.toolbar
+                        .evaluate_script("window.openStar&&window.openStar()")?;
                 }
             }
             Command::OpenSaved { url, new_tab } => {
@@ -3175,10 +3182,17 @@ impl Session {
             return Err("Private windows do not write bookmarks or history.".into());
         }
         self.revision += 1;
+        let mut filter = self.filter.clone();
+        filter.menu_folder = self.menu_folder;
+        filter.page = self
+            .tabs
+            .active()
+            .filter(|tab| navigation::allowed(&tab.url))
+            .map(|tab| tab.url.clone());
         self.library.submit(library_worker::Job {
             revision: self.revision,
             action,
-            filter: self.filter.clone(),
+            filter,
         })?;
         Ok(())
     }
