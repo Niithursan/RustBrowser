@@ -2453,8 +2453,62 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             }
             p.log
                 .push("shield: panel beside the page, Escape, reset, off".into());
-            // Removing every extension stops the counting in open pages.
+            // The switch in Privacy & security: off removes the listener.
+            p.command(el, 0, Command::SetCountBlocked(false))?;
+            p.phase = 19;
+            p.next();
+        }
+        20 if p.at.elapsed() > Duration::from_millis(500) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[0].content.engine;
+            if engine.blocked.listening()
+                || engine.blocked.count().is_some()
+                || s.settings.count_blocked
+            {
+                return Err("Counting off should remove the listener".into());
+            }
+            p.command(
+                el,
+                0,
+                Command::Navigate(format!("{url}shield.html?counting-off")),
+            )?;
+            p.next();
+        }
+        21 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].content.engine.blocked.listening() {
+                return Err("A page listened with counting off".into());
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        22 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            if r["badge"] != ""
+                || !r["count"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("Counting blocked requests is off")
+            {
+                return Err(format!("The shield should say counting is off: {r}"));
+            }
+            p.command(el, 0, Command::SetCountBlocked(true))?;
+            p.next();
+        }
+        23 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[0].content.engine;
+            if !engine.blocked.listening() || engine.blocked.count().is_none() {
+                return Err("Counting on again should listen again".into());
+            }
+            // Removing every extension stops the counting in open pages.
             for id in s
                 .settings
                 .extensions
@@ -2464,13 +2518,14 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             {
                 p.command(el, 0, Command::RemoveExtension(id))?;
             }
+            p.phase = 11;
             p.next();
         }
         12 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             if s.settings.extensions.is_empty() {
                 let count = s.tabs.items[0].content.engine.blocked.count();
-                if count.is_some() {
+                if count.is_some() || s.tabs.items[0].content.engine.blocked.listening() {
                     return Err(format!(
                         "Counting went on after the last extension: {count:?}"
                     ));
@@ -3782,5 +3837,79 @@ fn window_shot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> 
 #[ignore = "Layout review tool: writes whole-window screenshots to RUST_BROWSER_SHOTS"]
 fn window_screenshots() {
     let (root, _) = run("window-shots", window_shot_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A private window takes one setting from the normal profile, read-only: tabs
+/// down the side. Nothing else is read (favourites, theme), the switch is refused
+/// there, and the normal session file is never written.
+fn private_vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.private {
+                return Err("The fixture did not start a private window".into());
+            }
+            if !s.settings.vertical_tabs
+                || !s.settings.favorites.is_empty()
+                || s.settings.theme != rust_browser::settings::Settings::default().theme
+            {
+                return Err(format!(
+                    "A private window should take only vertical tabs: {:?}",
+                    s.settings
+                ));
+            }
+            if s.command(Command::SetVerticalTabs(false)).is_ok()
+                || s.command(Command::SetCountBlocked(false)).is_ok()
+            {
+                return Err("A private window changed a setting it only reads".into());
+            }
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() {
+                return Err(format!(
+                    "The private window should show the tab column: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "private vertical")?;
+            p.log
+                .push("private: vertical tabs read from the normal profile only".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real private window"]
+fn native_private_windows_follow_vertical_tabs_read_only() {
+    let (root, _) = run("private-vertical", private_vertical_steps, |root, _| {
+        let snapshot = Snapshot {
+            settings: rust_browser::settings::Settings {
+                vertical_tabs: true,
+                theme: rust_browser::settings::Theme::Plum,
+                favorites: vec![rust_browser::settings::Favorite {
+                    title: "Normal favourite".into(),
+                    url: "https://example.com/".into(),
+                    icon: String::new(),
+                }],
+                ..Default::default()
+            },
+            ..Snapshot::default()
+        };
+        storage::save(&root.join("session.json"), &snapshot).unwrap();
+        std::fs::copy(root.join("session.json"), root.join("session-before.json")).unwrap();
+    });
+    let before = std::fs::read(root.join("session-before.json")).unwrap();
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert!(saved.settings.vertical_tabs && saved.settings.favorites.len() == 1);
+    // Nothing was written to the normal session.
+    let after = std::fs::read(root.join("session.json")).unwrap();
+    assert_eq!(before, after);
     let _ = std::fs::remove_dir_all(root);
 }

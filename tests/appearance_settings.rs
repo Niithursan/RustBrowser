@@ -63,6 +63,7 @@ fn a_0_20_settings_file_loads_with_the_tab_strip() {
     assert!(!settings.vertical_tabs);
     assert_eq!(settings.newtab_background, Background::Plain);
     assert!(settings.favorites[0].icon.is_empty());
+    assert!(settings.count_blocked, "counting is on when the field is missing");
     // Everything 0.20 saved is kept.
     assert_eq!(settings.suspend_after_seconds, 600);
     assert!(settings.save_passwords && settings.toolbar_autofill_cleared);
