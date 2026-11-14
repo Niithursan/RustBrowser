@@ -66,6 +66,10 @@ struct Harness {
     last_navigation_issue: Option<String>,
     root: std::path::PathBuf,
     lease: Option<PrivateLease>,
+    /// Whether the request to allow reached the browser as a prompt, and how many
+    /// times it has been made.
+    allow_prompted: bool,
+    allow_requests: u32,
 }
 impl Harness {
     fn eval(&mut self, private: bool, script: &str) -> Result<(), String> {
@@ -165,8 +169,8 @@ impl Harness {
                 self.phase = 8;
             }
             8 => {
-                let result: String =
-                    serde_json::from_str(&value).map_err(|_| "Invalid permission response")?;
+                let result: String = serde_json::from_str(&value)
+                    .map_err(|_| format!("Invalid permission response: {value:?}"))?;
                 if result == "pending" {
                     self.phase = 7;
                 } else if result == "denied" {
@@ -183,6 +187,8 @@ impl Harness {
                 }
             }
             9 => {
+                self.allow_prompted = false;
+                self.allow_requests += 1;
                 self.eval(false,"Notification.requestPermission().then(value=>window.v04Permission=value);'requested'")?;
                 self.phase = 10;
             }
@@ -191,13 +197,20 @@ impl Harness {
                 self.phase = 11;
             }
             11 => {
-                let result: String =
-                    serde_json::from_str(&value).map_err(|_| "Invalid permission result")?;
+                let result: String = serde_json::from_str(&value)
+                    .map_err(|_| format!("Invalid permission result: {value:?}"))?;
                 if result == "pending" {
                     self.phase = 10;
                 } else if result == "granted" {
                     self.phase = 12;
                     event_loop.exit();
+                } else if result == "denied" && !self.allow_prompted && self.allow_requests < 5 {
+                    // WebView2 does not always mark a script's request as made by the
+                    // user (seen on a busy machine right after the reload), and the
+                    // browser rightly denies those without asking. Ask again: only a
+                    // request that reached a prompt counts.
+                    self.eval(false, "window.v04Permission=undefined;'reset'")?;
+                    self.phase = 9;
                 } else {
                     return Err(
                         "Explicit native permission allow did not reach the test page".into(),
@@ -325,6 +338,7 @@ impl ApplicationHandler<Event> for Harness {
                             event_loop.exit();
                         }
                     } else if matches!(self.phase, 10 | 11) {
+                        self.allow_prompted = true;
                         if self
                             .permissions
                             .borrow_mut()
@@ -349,7 +363,9 @@ impl ApplicationHandler<Event> for Harness {
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Err(error) = self.advance(event_loop) {
-            self.failure = Some(error);
+            // Keep the first failure: the loop can run again before it exits, and a
+            // later error would otherwise hide the cause.
+            self.failure.get_or_insert(error);
             event_loop.exit();
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(
@@ -390,6 +406,8 @@ fn native_private_storage_and_confirmed_engine_deletion() {
         last_navigation_issue: None,
         root: root.clone(),
         lease: None,
+        allow_prompted: false,
+        allow_requests: 0,
     };
     let run = event_loop.run_app(&mut app);
     let failure = app.failure.clone();
