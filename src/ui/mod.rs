@@ -49,7 +49,8 @@ pub enum Command {
     SetCountBlocked(bool),
     /// Show the bookmarks bar under the address line (Settings > Appearance).
     SetBookmarksBar(bool),
-    /// A folder on the bookmarks bar: open the library column showing it.
+    /// A folder on the bookmarks bar (or inside its dropdown): list its contents
+    /// in the dropdown, as `library.menu`.
     OpenBookmarkFolder(i64),
     AddFavorite {
         title: String,
@@ -70,7 +71,8 @@ pub enum Command {
     /// Close every window and keep them all for the next start.
     ExitBrowser,
     SetRestoreSession(bool),
-    /// The menu (the toolbar's ⋮ button) opened or closed as a sidebar.
+    /// A dropdown (the menu, the star, the shield, site information or a
+    /// bookmarks-bar folder) opened or closed over a still of the page.
     SetMenuOpen(bool),
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,

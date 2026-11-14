@@ -1835,7 +1835,7 @@ fn eval_toolbar(p: &mut Probe, script: &str) -> Result<(), String> {
 }
 
 /// The toolbar state the polish defines, as JSON.
-const POLISH_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const shown=e=>!!e&&!e.hidden&&e.getClientRects().length>0;const tab=document.querySelector('.tab.active .select');return JSON.stringify({reload:shown(b('reload')),stop:shown(b('stop')),status:b('status').textContent.trim(),role:b('status').getAttribute('role'),address:b('address').title,picker:b('tab-picker').tagName+'|'+b('tab-picker').getAttribute('aria-label'),pickerShown:shown(b('tab-picker')),shortcuts:shown(b('show-shortcuts'))||!!b('show-shortcuts'),tabTitle:tab?tab.title:'',tabLabel:tab?tab.getAttribute('aria-label'):''})})()"#;
+const POLISH_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const shown=e=>!!e&&!e.hidden&&e.getClientRects().length>0;const tab=document.querySelector('.tab.active .select');return JSON.stringify({reload:shown(b('reload')),stop:shown(b('stop')),status:!!b('status'),address:b('address').title,picker:b('tab-picker').tagName+'|'+b('tab-picker').getAttribute('aria-label'),pickerShown:shown(b('tab-picker')),shortcuts:shown(b('show-shortcuts'))||!!b('show-shortcuts'),tabTitle:tab?tab.title:'',tabLabel:tab?tab.getAttribute('aria-label'):''})})()"#;
 
 fn polish_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
     let Some(text) = p.result.lock().unwrap().clone() else {
@@ -1874,8 +1874,7 @@ fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         r["reload"] == true && r["stop"] == false,
                         "idle shows reload, not stop",
                     ),
-                    (r["status"] == "Ready", "the status line says only Ready"),
-                    (r["role"] == "status", "the status row keeps role=status"),
+                    (r["status"] == false, "there is no status row"),
                     (
                         r["address"]
                             .as_str()
@@ -1981,8 +1980,8 @@ fn view_visible(view: &wry::WebView) -> bool {
     unsafe { view.controller().IsVisible(&mut visible) }.is_ok() && visible.as_bool()
 }
 
-/// The menu opens as a vertical sidebar: the toolbar fills the window over a still
-/// of the page, the live page is hidden, and Escape restores the page.
+/// The menu opens as a dropdown under its button: the toolbar fills the window over
+/// a still of the page, the live page is hidden, and Escape restores the page.
 fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
@@ -2024,7 +2023,7 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 }
                 eval_toolbar(
                     p,
-                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),i=document.getElementById('menu-snapshot');return JSON.stringify({right:Math.round(innerWidth-m.right),tall:m.height>innerHeight/2,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,still:!!i&&i.src.startsWith('data:image/jpeg;base64,')})})()",
+                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),b=document.getElementById('more').getBoundingClientRect(),i=document.getElementById('menu-snapshot');return JSON.stringify({under:m.top>=b.bottom&&m.top-b.bottom<12,aligned:Math.abs(m.right-b.right)<=1,inside:m.bottom<=innerHeight&&m.left>=0,full:m.top<=0||m.bottom>=innerHeight-1&&m.height>innerHeight*0.95,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,expanded:document.getElementById('more').getAttribute('aria-expanded'),still:!!i&&i.src.startsWith('data:image/jpeg;base64,')})})()",
                 )?;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(10) {
@@ -2033,14 +2032,18 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         3 => {
             if let Some(r) = polish_report(p)? {
-                if r["right"] != 0 || r["tall"] != true || r["narrow"] != true || r["shown"] != true
+                if r["under"] != true
+                    || r["aligned"] != true
+                    || r["inside"] != true
+                    || r["full"] != false
+                    || r["narrow"] != true
+                    || r["shown"] != true
+                    || r["expanded"] != "true"
                 {
-                    return Err(format!(
-                        "The menu is not a right-hand vertical sidebar: {r}"
-                    ));
+                    return Err(format!("The menu is not a dropdown under its button: {r}"));
                 }
                 if r["still"] != true {
-                    return Err(format!("No page still behind the sidebar: {r}"));
+                    return Err(format!("No page still behind the menu: {r}"));
                 }
                 let s = p.app.session.as_mut().ok_or("No session")?;
                 if s.windows[0]
@@ -2068,7 +2071,8 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     return Err(format!("The toolbar did not shrink back: {bounds:?}"));
                 }
                 p.log.push(
-                    "menu: right-hand sidebar over a page still; Escape restores the page".into(),
+                    "menu: a dropdown under its button over a page still; Escape restores the page"
+                        .into(),
                 );
                 p.done = true;
                 el.exit();
@@ -2083,7 +2087,7 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 
 #[test]
 #[ignore = "Requires Windows/WebView2; opens a real window"]
-fn native_menu_opens_as_a_sidebar() {
+fn native_menu_opens_as_a_dropdown() {
     let (root, _) = run("sidebar", sidebar_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
@@ -2375,9 +2379,9 @@ fn shield_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
 }
 
 /// The shield counts exactly the requests the test blocker stops on a page, shows
-/// that count at the end of the address line and in its panel (which takes its own
-/// space above the page), says what it cannot do, closes with Escape, and starts
-/// again at zero on the next page.
+/// that count at the end of the address line and in its dropdown (over a still of
+/// the page), says what it cannot do, closes with Escape, and starts again at zero
+/// on the next page.
 fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
@@ -2441,20 +2445,10 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         3 if p.at.elapsed() > Duration::from_millis(800) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            check_no_overlap(s, "shield panel open")?;
-            let views = shown_views(s);
-            let (toolbar, page) = (named(&views, "toolbar"), named(&views, "page"));
-            let (Some(toolbar), Some(page)) = (toolbar, page) else {
-                return Err(format!(
-                    "The page should stay shown under the panel: {views:?}"
-                ));
-            };
-            if (page.top - toolbar.bottom).abs() > 2 {
-                return Err(format!(
-                    "The page should move down below the panel: {views:?}"
-                ));
+            check_no_overlap(s, "shield dropdown open")?;
+            if !s.windows[0].menu_open || view_visible(&s.tabs.items[0].content.engine.view) {
+                return Err("The shield dropdown should show over a still of the page".into());
             }
-            p.marks.push((toolbar.bottom - toolbar.top).max(0) as usize);
             eval_toolbar(p, SHIELD_REPORT)?;
             p.next();
         }
@@ -2487,15 +2481,10 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         5 if p.at.elapsed() > Duration::from_millis(600) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            let views = shown_views(s);
-            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
-            let open = p.marks.first().copied().unwrap_or(0);
-            if (toolbar.bottom - toolbar.top).max(0) as usize >= open {
-                return Err(format!(
-                    "Closing the panel should give the page its room back: {views:?}"
-                ));
+            if s.windows[0].menu_open || !view_visible(&s.tabs.items[0].content.engine.view) {
+                return Err("Closing the dropdown should show the live page again".into());
             }
-            check_no_overlap(s, "shield panel closed")?;
+            check_no_overlap(s, "shield dropdown closed")?;
             eval_toolbar(p, SHIELD_REPORT)?;
             p.next();
         }
@@ -2585,7 +2574,7 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 return Err(format!("The shield should say no blocker is on: {r}"));
             }
             p.log
-                .push("shield: panel beside the page, Escape, reset, off".into());
+                .push("shield: dropdown over a page still, Escape, reset, off".into());
             // The switch in Privacy & security: off removes the listener.
             p.command(el, 0, Command::SetCountBlocked(false))?;
             p.phase = 19;
@@ -3399,18 +3388,13 @@ fn shield_narrow_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
         }
         3 if p.at.elapsed() > Duration::from_millis(1200) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            check_no_overlap(s, "narrow shield panel")?;
-            let views = shown_views(s);
-            let (Some(toolbar), Some(page)) = (named(&views, "toolbar"), named(&views, "page"))
-            else {
-                return Err(format!("Toolbar and page should show: {views:?}"));
-            };
-            if (page.top - toolbar.bottom).abs() > 2 {
-                return Err(format!("The page should start below the panel: {views:?}"));
+            check_no_overlap(s, "narrow shield dropdown")?;
+            if !s.windows[0].menu_open {
+                return Err("The shield dropdown did not open".into());
             }
             eval_toolbar(
                 p,
-                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({buttonsBottom:list.querySelector('.shield-actions').getBoundingClientRect().bottom,open:!list.hidden,lines:document.getElementById('shield-state').textContent.length+document.getElementById('shield-limits').textContent.length,last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
+                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({buttonsBottom:list.querySelector('.dropdown-actions').getBoundingClientRect().bottom,open:!list.hidden,lines:document.getElementById('shield-state').textContent.length+document.getElementById('shield-limits').textContent.length,last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
             )?;
             p.next();
         }
@@ -4149,18 +4133,29 @@ fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let waited = p.at.elapsed();
     match p.phase {
         0 if waited > Duration::from_secs(1) => {
-            p.s()?.windows[0]
+            let s = p.s()?;
+            s.windows[0]
                 .toolbar
                 .evaluate_script(RECORD_GROWTH)
                 .map_err(|_| "Record script failed".to_string())?;
+            // Windows with animations turned off (CI runners) ask for reduced
+            // motion; this part checks the animation itself.
+            toolbar_cdp(
+                s,
+                "Emulation.setEmulatedMedia",
+                serde_json::json!({ "features": [{ "name": "prefers-reduced-motion", "value": "no-preference" }] }),
+            )?;
+            p.next();
+        }
+        1 if waited > Duration::from_millis(300) => {
             p.command(el, 0, Command::NewTab)?;
             p.next();
         }
-        1 if waited > Duration::from_millis(700) => {
+        2 if waited > Duration::from_millis(700) => {
             eval_toolbar(p, "JSON.stringify(window.__grown)")?;
             p.next();
         }
-        2 => {
+        3 => {
             if let Some(grown) = polish_report(p)? {
                 let s = p.s()?;
                 let new = s.tabs.items.last().ok_or("No tab")?.id;
@@ -4175,15 +4170,15 @@ fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 p.next();
             }
         }
-        3 if waited > Duration::from_millis(300) => {
+        4 if waited > Duration::from_millis(300) => {
             p.command(el, 0, Command::NewTab)?;
             p.next();
         }
-        4 if waited > Duration::from_millis(700) => {
+        5 if waited > Duration::from_millis(700) => {
             eval_toolbar(p, "JSON.stringify(window.__grown)")?;
             p.next();
         }
-        5 => {
+        6 => {
             if let Some(grown) = polish_report(p)? {
                 let s = p.s()?;
                 if s.tabs.items.len() != 3 || grown.as_array().map(Vec::len) != Some(1) {
@@ -4206,6 +4201,10 @@ fn native_new_tabs_grow_into_the_tab_strip() {
     let (root, _) = run("tab-growth", tab_growth_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The open folder dropdown: its rows, whether it sits under its button, and
+/// whether its first row is the way back.
+const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel'),rows=[...p.querySelectorAll('button')],a=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.getAttribute('aria-expanded')==='true'),r=p.getBoundingClientRect(),q=a?a.getBoundingClientRect():{bottom:-99,left:-99};return JSON.stringify({rows:rows.map(b=>b.textContent),back:!!rows[0]&&rows[0].classList.contains('folder-back'),under:!p.hidden&&r.top>=q.bottom&&r.top-q.bottom<12&&Math.abs(r.left-q.left)<=1,expanded:a?a.getAttribute('aria-expanded'):''})})()";
 
 /// The bookmarks bar's buttons as `{labels, hidden}` JSON (only the shown buttons).
 const BAR_REPORT: &str = "JSON.stringify({hidden:document.getElementById('bookmarks-bar').hidden,labels:[...document.querySelectorAll('#bar-items .bar-item')].filter(b=>!b.hidden).map(b=>b.textContent),setting:document.getElementById('bookmarks-bar-setting').checked})";
@@ -4233,7 +4232,7 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let height = p.s()?.chrome_height as usize;
             p.marks.push(height);
             let file = format!(
-                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
+                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><H3>Deep</H3><DL><p><DT><A HREF=\"{url}?deep\">Deep link</A></DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
             );
             p.app
                 .proxy
@@ -4280,39 +4279,76 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         4 => {
             let s = p.s()?;
-            let work = s
-                .library_data
-                .folders
-                .iter()
-                .find(|f| f.name == "Work")
-                .map(|f| f.id);
-            if work.is_some()
-                && s.filter.folder == work
-                && s.windows[0].library_panel == Some(Panel::Bookmarks)
+            let open = s.windows[0].menu_open && s.windows[0].library_panel.is_none();
+            if open
                 && s.library_data
-                    .bookmarks
-                    .iter()
-                    .map(|b| b.title.as_str())
-                    .eq(["Work link"])
+                    .menu
+                    .as_ref()
+                    .is_some_and(|m| m.name == "Work")
             {
-                p.marks.push(work.unwrap_or_default() as usize);
-                eval_library(p, "document.getElementById('folder-filter').value")?;
+                eval_toolbar(p, FOLDER_REPORT)?;
                 p.next();
             } else if waited > Duration::from_secs(10) {
-                return Err("The bar folder did not open in the library".into());
+                return Err("The bar folder did not open as a dropdown".into());
             }
         }
         5 => {
-            let Some(value) = p.result.lock().unwrap().clone() else {
-                return Ok(());
-            };
-            if value != format!("\"{}\"", p.marks[1]) {
-                return Err(format!("The library does not show the folder: {value}"));
+            if let Some(r) = polish_report(p)? {
+                if r["rows"] != serde_json::json!(["Deep", "Work link"])
+                    || r["under"] != true
+                    || r["expanded"] != "true"
+                {
+                    return Err(format!("Wrong folder dropdown: {r}"));
+                }
+                if view_visible(&p.s()?.tabs.items[0].content.engine.view) {
+                    return Err("The live page stayed visible under the dropdown".into());
+                }
+                eval_toolbar(p, "document.querySelector('#folder-panel button').click()")?;
+                p.next();
             }
-            p.command(el, 0, Command::SetBookmarksBar(false))?;
-            p.next();
         }
         6 => {
+            let s = p.s()?;
+            if s.library_data
+                .menu
+                .as_ref()
+                .is_some_and(|m| m.name == "Deep")
+            {
+                eval_toolbar(p, FOLDER_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The subfolder did not open in the dropdown".into());
+            }
+        }
+        7 => {
+            if let Some(r) = polish_report(p)? {
+                // A way back (named after the open folder), then its bookmark.
+                if r["rows"] != serde_json::json!(["Deep", "Deep link"]) || r["back"] != true {
+                    return Err(format!("Wrong subfolder dropdown: {r}"));
+                }
+                eval_toolbar(
+                    p,
+                    "[...document.querySelectorAll('#folder-panel button')].at(-1).click()",
+                )?;
+                p.next();
+            }
+        }
+        8 => {
+            let s = p.s()?;
+            if s.tabs.items[0].url.ends_with("?deep")
+                && !s.windows[0].menu_open
+                && view_visible(&s.tabs.items[0].content.engine.view)
+            {
+                p.command(el, 0, Command::SetBookmarksBar(false))?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "The dropdown bookmark did not open: {}",
+                    s.tabs.items[0].url
+                ));
+            }
+        }
+        9 => {
             let s = p.s()?;
             if s.chrome_height as usize == first {
                 check_no_overlap(s, "bar hidden")?;
@@ -4322,13 +4358,13 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 return Err(format!("The toolbar did not shrink: {}", s.chrome_height));
             }
         }
-        7 => {
+        10 => {
             if let Some(r) = polish_report(p)? {
                 if r["hidden"] != true || r["setting"] != false || p.s()?.settings.bookmarks_bar {
                     return Err(format!("The setting did not hide the bar: {r}"));
                 }
                 p.log.push(
-                    "bar: imported bookmarks on a bar; links, folders and the setting work".into(),
+                    "bar: imported bookmarks on a bar; links, folder dropdowns and the setting work".into(),
                 );
                 p.done = true;
                 el.exit();
@@ -4343,5 +4379,156 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_imported_bookmarks_show_on_the_bookmarks_bar() {
     let (root, _) = run("bookmarks-bar", bar_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The star and site-information dropdowns as JSON.
+const STAR_REPORT: &str = "(()=>{const b=id=>document.getElementById(id),p=b('star-panel'),s=b('site-panel'),r=p.getBoundingClientRect(),a=b('bookmark-star').getBoundingClientRect(),t=s.getBoundingClientRect(),c=b('security').getBoundingClientRect();return JSON.stringify({star:!p.hidden,starUnder:r.top>=a.bottom&&r.top-a.bottom<12&&r.right<=innerWidth,title:b('star-title').textContent,name:b('star-name').value,enabled:!b('star-name').disabled,focus:document.activeElement&&document.activeElement.id,site:!s.hidden,siteUnder:t.top>=c.bottom&&t.top-c.bottom<12&&Math.abs(t.left-c.left)<=1,siteTitle:b('site-title').textContent,siteOrigin:b('site-origin').textContent})})()";
+
+/// Ctrl+D bookmarks the page and opens the star's dropdown to rename it, move it or
+/// remove it; the site badge opens connection information under itself. Both show
+/// over a still of the page and close with Escape.
+fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    let waited = p.at.elapsed();
+    let page_bookmarks = |s: &Session| -> Vec<(i64, String)> {
+        s.library_data
+            .page_bookmark
+            .iter()
+            .map(|b| (b.id, b.title.clone()))
+            .collect()
+    };
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?star")))?;
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            if s.tabs.items[0].url.ends_with("?star") && !s.tabs.items[0].content.state.loading {
+                // Ctrl+D reaches the browser as this command.
+                p.command(el, 0, Command::BookmarkCurrent)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The page did not load".into());
+            }
+        }
+        2 => {
+            let s = p.s()?;
+            if s.windows[0].menu_open
+                && page_bookmarks(s).len() == 1
+                && waited > Duration::from_millis(500)
+            {
+                if s.windows[0].library_panel.is_some() {
+                    return Err("The star opened the library column".into());
+                }
+                eval_toolbar(p, STAR_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The star's dropdown did not open with the new bookmark".into());
+            }
+        }
+        3 => {
+            if let Some(r) = polish_report(p)? {
+                if r["star"] != true
+                    || r["starUnder"] != true
+                    || r["title"] != "Bookmarked"
+                    || r["enabled"] != true
+                    || r["focus"] != "star-name"
+                    || r["name"].as_str().is_none_or(str::is_empty)
+                {
+                    return Err(format!("Wrong star dropdown: {r}"));
+                }
+                if view_visible(&p.s()?.tabs.items[0].content.engine.view) {
+                    return Err("The live page stayed visible under the dropdown".into());
+                }
+                eval_toolbar(
+                    p,
+                    "document.getElementById('star-name').value='Renamed star';document.getElementById('star-done').click()",
+                )?;
+                p.next();
+            }
+        }
+        4 => {
+            let s = p.s()?;
+            if page_bookmarks(s)
+                .first()
+                .is_some_and(|(_, t)| t == "Renamed star")
+                && !s.windows[0].menu_open
+            {
+                // Again: the page is already bookmarked; Remove deletes it.
+                p.command(el, 0, Command::BookmarkCurrent)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "Done did not rename the bookmark: {:?}",
+                    page_bookmarks(s)
+                ));
+            }
+        }
+        5 if waited > Duration::from_millis(800) => {
+            let s = p.s()?;
+            if !s.windows[0].menu_open || page_bookmarks(s).len() != 1 {
+                return Err("The star's dropdown did not open again".into());
+            }
+            eval_toolbar(p, "document.getElementById('star-remove').click()")?;
+            p.next();
+        }
+        6 => {
+            let s = p.s()?;
+            if page_bookmarks(s).is_empty() && !s.windows[0].menu_open {
+                eval_toolbar(p, "document.getElementById('security').click()")?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("Remove did not delete the bookmark".into());
+            }
+        }
+        7 if waited > Duration::from_millis(800) => {
+            if !p.s()?.windows[0].menu_open {
+                return Err("The site dropdown did not open".into());
+            }
+            eval_toolbar(p, STAR_REPORT)?;
+            p.next();
+        }
+        8 => {
+            if let Some(r) = polish_report(p)? {
+                if r["site"] != true
+                    || r["siteUnder"] != true
+                    || r["star"] != false
+                    || r["siteTitle"] != "Not encrypted"
+                    || !r["siteOrigin"].as_str().is_some_and(|o| url.starts_with(o))
+                {
+                    return Err(format!("Wrong site dropdown: {r}"));
+                }
+                eval_toolbar(
+                    p,
+                    "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+                )?;
+                p.next();
+            }
+        }
+        9 => {
+            let s = p.s()?;
+            if !s.windows[0].menu_open
+                && s.effective_panel().is_none()
+                && view_visible(&s.tabs.items[0].content.engine.view)
+            {
+                p.log
+                    .push("dropdowns: star (save, rename, remove) and site information".into());
+                p.done = true;
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err("Escape did not close the site dropdown".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_star_and_site_information_open_as_dropdowns() {
+    let (root, _) = run("star-site", star_site_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }

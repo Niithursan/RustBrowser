@@ -117,18 +117,26 @@ when it is pinned, loading or asleep; hovering it shows its title, with its stat
 the next line.
 
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
-address line. At its start, the site-information badge shows the connection and opens
-Privacy & security; at its end, the star bookmarks the page and the shield shows ad
-blocking (below). The Menu (⋮) at the far right opens a sidebar down the right of the window with everything
-else: find, zoom, print, pin, move and keep-awake for the current tab, the search
-engine, the list of keyboard shortcuts, bookmarks, history, downloads, Privacy &
-security, new, reopened and private windows, and Exit. While the sidebar is open the
-page beside it is a dimmed still image; click it, press Escape or ⋮ again, or choose
-an item that goes somewhere, and the live page comes back. Every action keeps its
-keyboard shortcut.
+address line. At its start, the site-information badge shows the connection; at its
+end, the star bookmarks the page and the shield shows ad blocking (below). The Menu (⋮)
+at the far right holds everything else: find, zoom, print, pin, move and keep-awake for
+the current tab, the search engine, the list of keyboard shortcuts, bookmarks, history,
+downloads, Privacy & security, new, reopened and private windows, and Exit. Every
+action keeps its keyboard shortcut.
 
-The **shield** opens a panel under the address line (the page moves down; nothing is
-drawn over it). It lists the extensions that are on and whether each asks to block
+The menu, the site-information badge, the star, the shield and each folder on the
+bookmarks bar open a **dropdown** under their button. While one is open the page behind
+it is a dimmed still image (a live page cannot be drawn under a dropdown reliably; see
+ARCHITECTURE.md). Press Escape, click outside it or click its button again, or choose
+an item that goes somewhere, and the live page comes back. Another dropdown's button
+switches straight to that dropdown.
+
+- **Site information** shows whether the connection is encrypted, the site's origin
+  and what that means, with a button for Privacy & security.
+- **Star** (or Ctrl+D) saves the page as a bookmark, or finds it if it is already
+  saved, and lets you rename it, choose its folder, remove it, or open All bookmarks.
+
+The **shield**'s dropdown lists the extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
 normal windows while you have added an extension and **Count blocked requests**
@@ -152,9 +160,11 @@ from normal windows, read-only: they read nothing else from the normal profile,
 cannot change it, and never write settings. In fullscreen the page also takes the room of the
 tab column and the library; the toolbar stays, as it always has.
 
-Under the toolbar a status line says only what is happening (Ready, loading, or what
-went wrong). The keyboard shortcuts are listed in Menu (⋮) → Keyboard shortcuts and in
-the tooltip of the address field.
+There is no status line under the toolbar: the thin bar at the bottom of the toolbar
+shows loading, reload turns into stop while a page loads, and WebView2 shows its own
+error page when a site cannot be reached. Screen readers still hear navigation
+failures. The keyboard shortcuts are listed in Menu (⋮) → Keyboard shortcuts and in the
+tooltip of the address field.
 
 Tab icons come from WebView2 as image data checked by the browser; the toolbar never
 loads anything from a website. All icons are drawn for this project. The four themes,
@@ -283,12 +293,11 @@ Website navigation, redirects, fragments and History API changes
 update the address field. Editing the field pauses updates until focus leaves it.
 Back/forward use WebView2's actual history, rather than a separate Rust URL list.
 
-The status line reports connecting/loading, completion, invalid input, blocked
-schemes and native WebView2 navigation errors (including a numeric error status).
-WebView2 also displays its built-in network and certificate error pages. No
-certificate validation bypass is installed. An HTTP error response such as 404,
-429 or 500 is a completed navigation: the status line says the website answered
-with that code, and it is not counted as a connection failure. A navigation that
+Native WebView2 navigation errors are announced to screen readers, and WebView2
+displays its built-in network and certificate error pages. Invalid input and blocked
+schemes show a notice. No certificate validation bypass is installed. An HTTP error
+response such as 404, 429 or 500 is a completed navigation: the site's own page is
+shown, and it is not counted as a connection failure. A navigation that
 turns into a download, or a page link to an app address such as `mailto:`, leaves
 the current page and its status unchanged; a blocked app link shows a notice.
 
@@ -653,7 +662,8 @@ and [asynchronous browsing data clearing](https://learn.microsoft.com/en-us/micr
 
 ## Bookmarks and history
 
-Ctrl+D saves the current tab once and opens the bookmark manager. The manager supports
+Ctrl+D (or the star) saves the current tab once and opens the star's dropdown to
+rename it, move it to a folder or remove it. The bookmark manager supports
 adding/editing titles and HTTP(S) URLs, removing bookmarks, nested folders, moving a
 bookmark with its folder selector, searching titles/URLs and opening entries in the
 current or a new tab. Folder selectors show the full path. Removing a folder moves its
@@ -670,10 +680,11 @@ Show bookmarks bar, on by default) shows, in the order they were added:
 3. the subfolders of that bar folder, then the other top-level folders.
 
 Click a bookmark to open it in the current tab, or Ctrl+click or middle-click it for a
-new tab. A folder opens the library column showing that folder. Buttons that do not
-fit in one row are hidden; **All bookmarks** at the right opens the library. The bar
-is hidden while there is nothing to show, and in private windows. It has no drop-down
-folder menus and bookmarks cannot be dragged onto it or reordered on it.
+new tab. A folder opens a dropdown listing its subfolders and bookmarks (up to 200;
+the library shows the rest); a subfolder opens in the same dropdown, with its name at
+the top to go back. Buttons that do not fit in one row are hidden; **All bookmarks** at
+the right opens the library. The bar is hidden while there is nothing to show, and in
+private windows. Bookmarks cannot be dragged onto it or reordered on it.
 
 History records successful top-level navigation completions with titles, URLs and
 timestamps, independently of WebView2's native back/forward stack. Repeated completion

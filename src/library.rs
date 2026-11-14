@@ -27,6 +27,13 @@ pub struct Filter {
     pub folder: Option<i64>,
     pub from: Option<i64>,
     pub until: Option<i64>,
+    /// The folder a bookmarks-bar dropdown shows. Set by the browser only.
+    #[serde(skip)]
+    pub menu_folder: Option<i64>,
+    /// The current page's address, for its bookmark (the star's dropdown). Set by
+    /// the browser only.
+    #[serde(skip)]
+    pub page: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -108,7 +115,22 @@ pub struct Data {
     pub history: Vec<Visit>,
     /// What the bookmarks bar shows, whatever the library's search and filter.
     pub bar: Vec<BarItem>,
+    /// The folder a bookmarks-bar dropdown shows, when one was asked for.
+    pub menu: Option<FolderMenu>,
+    /// The bookmark for the current page, if it has one.
+    pub page_bookmark: Option<Bookmark>,
 }
+
+/// One folder's contents for a dropdown: subfolders, then links (oldest first).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FolderMenu {
+    pub id: i64,
+    pub name: String,
+    pub parent_id: Option<i64>,
+    pub items: Vec<BarItem>,
+}
+/// Most links listed in one folder's dropdown; the library shows the rest.
+pub const MAX_MENU_LINKS: usize = 200;
 
 /// The folder an import puts the exporting browser's own bookmarks bar in
 /// (marked `PERSONAL_TOOLBAR_FOLDER` in the file, whatever its translated name).
@@ -736,6 +758,41 @@ impl Database {
         Ok(rows)
     }
 
+    /// Folder `id`'s subfolders and links, or `None` if it no longer exists.
+    fn folder_menu(&self, folders: &[Folder], id: i64) -> Result<Option<FolderMenu>> {
+        let Some(folder) = folders.iter().find(|f| f.id == id) else {
+            return Ok(None);
+        };
+        let mut children: Vec<&Folder> =
+            folders.iter().filter(|f| f.parent_id == Some(id)).collect();
+        children.sort_by_key(|f| f.id);
+        let mut items: Vec<BarItem> = children
+            .into_iter()
+            .map(|f| BarItem::Folder {
+                id: f.id,
+                name: f.name.clone(),
+            })
+            .collect();
+        let links = self
+            .connection
+            .prepare("SELECT id,title,url FROM bookmarks WHERE folder=?1 ORDER BY id LIMIT ?2")?
+            .query_map(params![id, MAX_MENU_LINKS as i64], |r| {
+                Ok(BarItem::Link {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    url: r.get(2)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        items.extend(links);
+        Ok(Some(FolderMenu {
+            id,
+            name: folder.name.clone(),
+            parent_id: folder.parent_id,
+            items,
+        }))
+    }
+
     pub fn query(&self, filter: &Filter) -> Result<Data> {
         if filter.query.len() > 512
             || filter
@@ -778,12 +835,36 @@ impl Database {
             }
         }
         let bar = bar_items(&folders, self.bar_links(&folders)?);
+        let menu = match filter.menu_folder {
+            Some(id) => self.folder_menu(&folders, id)?,
+            None => None,
+        };
+        let page_bookmark = match filter.page.as_deref().map(bookmark_url) {
+            Some(Ok(url)) => self
+                .connection
+                .query_row(
+                    "SELECT id,title,url,folder FROM bookmarks WHERE url=?1",
+                    [url],
+                    |r| {
+                        Ok(Bookmark {
+                            id: r.get(0)?,
+                            title: r.get(1)?,
+                            url: r.get(2)?,
+                            folder: r.get(3)?,
+                        })
+                    },
+                )
+                .optional()?,
+            _ => None,
+        };
         Ok(Data {
             permissions,
             bookmarks,
             folders,
             history,
             bar,
+            menu,
+            page_bookmark,
         })
     }
 }

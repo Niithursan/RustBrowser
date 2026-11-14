@@ -164,9 +164,10 @@ impl Probe {
                 {
                     return Err("HTTP 404 was recorded as a navigation failure".into());
                 }
-                // Announced politely as status text, not assertively as an error.
+                // Not announced as an error; the page shows the site's own 404 page
+                // (the toolbar has no status row).
                 s.render();
-                self.eval_in(true, "document.getElementById('alert').textContent==='' && document.getElementById('status').className==='' && document.getElementById('status').getAttribute('role')==='status' && document.getElementById('status').textContent.includes('HTTP 404')")?;
+                self.eval_in(true, "document.getElementById('alert').textContent==='' && !document.getElementById('status')")?;
                 self.phase = 18;
             }
             18 if value.is_some() => {

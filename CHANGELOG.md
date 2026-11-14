@@ -2,16 +2,26 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Dropdowns: the menu (⋮), the site-information badge, the star, the shield and each
+  bookmarks-bar folder open a dropdown under their button instead of a sidebar, a
+  full page, the library column or a panel that pushed the page down. While one is
+  open the page behind it is a dimmed still image. The star (and Ctrl+D) saves the
+  page and lets you rename it, move it or remove it from its dropdown; a folder lists
+  its subfolders and bookmarks, and subfolders open in the same dropdown.
+- The status line under the toolbar ("Ready") is gone. Loading shows in the progress
+  bar and the reload/stop button, connection errors on WebView2's own error page, and
+  failures are still announced to screen readers.
+- Library query results gain `menu` (a folder's contents) and `page_bookmark`;
+  `Filter` gains browser-only `menu_folder` and `page`.
 - Bookmarks bar under the address line in normal windows (Settings > Appearance >
   Show bookmarks bar, on by default). It shows the bookmarks in a top-level
   Bookmarks bar / Bookmarks Toolbar / Favorites bar folder (where imports put the
-  other browser's bar), then unfiled bookmarks, then folders; a folder opens the
-  library column filtered to it. Imported bookmarks show without importing again.
+  other browser's bar), then unfiled bookmarks, then folders; a folder opens a
+  dropdown listing it. Imported bookmarks show without importing again.
   An import names a translated bar folder "Bookmarks bar". New optional settings
   field `bookmarks_bar`; library query results gain a `bar` list.
-- Shield at the end of the address line. Its panel opens above the page (the page
-  moves down) and shows which of your extensions ask to block requests, which do not,
-  and how many requests were blocked on the current page, read from WebView2's own
+- Shield at the end of the address line. Its dropdown shows which of your extensions
+  ask to block requests, which do not, and how many requests were blocked on the current page, read from WebView2's own
   network events. It does not say which extension blocked a request, does not count
   requests inside frames from other sites, and cannot turn blocking off for one site;
   the panel says so. Counting runs only in normal windows while an extension is added
@@ -44,11 +54,7 @@
   Profile path and session format 1 are unchanged; SQLite library schema 4 migrates
   existing data.
 - Draft release notes in `release-notes/v0.21.0.md`; nothing is tagged or released.
-- The menu (⋮) opens as a vertical sidebar on the right. While it is open the page
-  beside it is a dimmed still image; Escape, ⋮, a click on the page or an item that
-  goes somewhere closes it.
-- Toolbar polish from a design audit: the status line shows only the message; the
-  keyboard shortcuts move to Menu > Keyboard shortcuts and the address field's
+- Toolbar polish from a design audit: the keyboard shortcuts move to Menu > Keyboard shortcuts and the address field's
   tooltip; reload and stop swap places while a page loads; the all-tabs list is an
   icon button; the pin, loading, sleep, warning and tab-scroll symbols are icons from
   the toolbar's own set; tab tooltips put the state on its own line; disabled
