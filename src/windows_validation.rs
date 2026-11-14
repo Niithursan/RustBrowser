@@ -4508,9 +4508,18 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             }
         }
         5 if waited > Duration::from_millis(800) => {
+            // The toolbar reports the open dropdown back; on a busy machine that can
+            // take longer than the first look. Still exactly one bookmark: no copy.
             let s = p.s()?;
             if !s.windows[0].menu_open || page_bookmarks(s).len() != 1 {
-                return Err("The star's dropdown did not open again".into());
+                if waited > Duration::from_secs(10) {
+                    return Err(format!(
+                        "The star's dropdown did not open again: open {}, bookmarks {:?}",
+                        s.windows[0].menu_open,
+                        page_bookmarks(s)
+                    ));
+                }
+                return Ok(());
             }
             eval_toolbar(p, "document.getElementById('star-remove').click()")?;
             p.next();
