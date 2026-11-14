@@ -1036,6 +1036,9 @@ fn bookmark_fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
+/// The library's folder choices and bookmark rows (their folder paths), as JSON.
+const LIBRARY_PATHS: &str = "JSON.stringify({folders:[...document.getElementById('folder-filter').options].map(o=>o.textContent),parents:[...document.getElementById('folder-parent').options].map(o=>o.textContent),rows:[...document.querySelectorAll('#library-results .row .secondary')].map(e=>e.textContent)})";
+
 /// A chosen file's bytes reach the library in one import with a summary; a file
 /// that is not an export is refused and changes nothing.
 fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
@@ -1097,48 +1100,38 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err("The import did not preserve the nested folder path.".into());
                 }
-                eval_library(
-                    p,
-                    "JSON.stringify({folders:[...document.getElementById('folder-filter').options].map(o=>o.textContent),parents:[...document.getElementById('folder-parent').options].map(o=>o.textContent),rows:[...document.querySelectorAll('#library-results .row .secondary')].map(e=>e.textContent)})",
-                )?;
+                eval_library(p, LIBRARY_PATHS)?;
                 p.next();
+                p.marks = vec![0];
             } else if p.at.elapsed() > Duration::from_secs(10) {
                 return Err(format!("The import never finished: {:?}", s.notice));
             }
         }
+        // The library view was created in phase 0 and may still be loading, or not
+        // yet showing the import, when first asked: ask again until it shows the
+        // nested path, and fail if it still does not after 10s.
         2 => {
+            let waited = p.at.elapsed();
             let value = p.result.lock().map_err(|_| "Result lock failed")?.take();
-            if let Some(value) = value {
-                let inner: String =
-                    serde_json::from_str(&value).map_err(|e| format!("{e}: {value}"))?;
-                let report: serde_json::Value =
-                    serde_json::from_str(&inner).map_err(|e| format!("{e}: {inner}"))?;
-                let folder_options = report["folders"]
-                    .as_array()
-                    .ok_or("Folder options are missing")?;
-                let parent_options = report["parents"]
-                    .as_array()
-                    .ok_or("Folder parent options are missing")?;
-                let rows = report["rows"]
-                    .as_array()
-                    .ok_or("Bookmark rows are missing")?;
-                if !folder_options
-                    .iter()
-                    .any(|option| option == "Bookmarks bar / Work")
-                    || !parent_options
-                        .iter()
-                        .any(|option| option == "Bookmarks bar / Work")
-                    || !rows.iter().any(|row| {
-                        row.as_str().is_some_and(|row| {
-                            row.starts_with("Bookmarks bar / Work · ")
-                                && row.contains("docs.example.com/guide")
-                        })
-                    })
-                {
-                    return Err(format!(
-                        "Nested bookmark UI did not render its path: {report}"
-                    ));
-                }
+            let report = value
+                .and_then(|value| serde_json::from_str::<String>(&value).ok())
+                .and_then(|inner| serde_json::from_str::<serde_json::Value>(&inner).ok());
+            let has = |key: &str, wanted: &dyn Fn(&str) -> bool| {
+                report.as_ref().is_some_and(|r| {
+                    r[key]
+                        .as_array()
+                        .is_some_and(|items| items.iter().any(|i| i.as_str().is_some_and(wanted)))
+                })
+            };
+            let work = |option: &str| option == "Bookmarks bar / Work";
+            if has("folders", &work)
+                && has("parents", &work)
+                && has("rows", &|row| {
+                    row.starts_with("Bookmarks bar / Work · ")
+                        && row.contains("docs.example.com/guide")
+                })
+            {
+                p.marks.clear();
                 p.app
                     .proxy
                     .send_event(Event::BookmarkFile(Ok(Some(
@@ -1146,8 +1139,17 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     ))))
                     .map_err(|_| "proxy")?;
                 p.next();
-            } else if p.at.elapsed() > Duration::from_secs(10) {
-                return Err("The nested bookmark UI did not finish rendering.".into());
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "The nested bookmark UI did not render its path: {report:?}"
+                ));
+            } else {
+                // At most one question every 300ms; a lost answer is simply asked again.
+                let asked = Duration::from_millis(p.marks.first().copied().unwrap_or(0) as u64);
+                if waited.saturating_sub(asked) > Duration::from_millis(300) {
+                    eval_library(p, LIBRARY_PATHS)?;
+                    p.marks = vec![waited.as_millis() as usize];
+                }
             }
         }
         3 => {
