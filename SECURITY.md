@@ -9,8 +9,9 @@
   `net::ERR_BLOCKED_BY_CLIENT`, and a redirect from a website address into
   `chrome-extension://`. Addresses are compared and dropped; only a count per page is
   kept, in memory, and nothing is logged. No DevTools client is exposed to pages or
-  to the toolbar. Removing the last extension turns the domain off again. Private
-  windows never turn it on. The measured cost is in VALIDATION.md.
+  to the toolbar. Turning off Privacy & security > Extensions > Count blocked
+  requests, or removing the last extension, removes the three event handlers from
+  every page and turns the domain off. Private windows never turn it on. The measured cost is in VALIDATION.md.
 - **What the shield claims.** Whether an extension "can block requests" comes from its
   manifest permissions (`declarativeNetRequest`, `declarativeNetRequestWithHostAccess`,
   `webRequestBlocking`), read from the folder the user chose (at most 1 MiB); asking
@@ -23,6 +24,11 @@
   failed column is rebuilt at most three times in two minutes, then the window falls
   back to the tab strip or closes the library. A test checks the profile, engine,
   form settings, refused navigation and recovery.
+- **Private windows and vertical tabs.** A private window reads one value from the
+  normal profile's session file when it opens, read-only: whether tabs go down the
+  side. Nothing else is read (favourites, history, theme and the rest stay default),
+  the switch is refused in a private window, and private windows never write the
+  normal session; a test compares the file byte for byte.
 - **Favourite icons.** A favourite keeps its site's icon as a `data:image/png;base64`
   URL of at most 8 KiB, taken from the same checked PNG bytes as tab icons. It is
   checked when saved, when settings load (a bad one makes the settings invalid like

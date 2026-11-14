@@ -7,20 +7,23 @@
   and how many requests were blocked on the current page, read from WebView2's own
   network events. It does not say which extension blocked a request, does not count
   requests inside frames from other sites, and cannot turn blocking off for one site;
-  the panel says so. Counting runs only in normal windows while an extension is added.
+  the panel says so. Counting runs only in normal windows while an extension is added
+  and Privacy & security > Extensions > Count blocked requests (on by default) is on;
+  off removes the listener from every page.
 - Bookmarks, history and downloads open in a library column at the right, beside the
   page, which stays usable (Ctrl+Shift+B, the menu, Ctrl+Shift+O, Ctrl+H, Ctrl+J).
   Drag its edge or use the arrow keys on it to resize it (260 to 640 pixels); its
   width lasts for the window and session. Privacy & security stays a full panel.
 - Settings > Appearance > Show tabs down the side (off by default): the tab list moves
   to a column at the left of every open window, with the same actions, dragging,
-  pinned tabs, keys (Up and Down too) and names for Narrator.
+  pinned tabs, keys (Up and Down too) and names for Narrator. Private windows follow
+  it read-only.
 - New-tab favourites are tiles with the site's icon, saved when you visit the
   favourite's page, or the first letter of the title. The new-tab page has an optional
   background (Plain, Dusk, Glow, Panels) drawn from the theme's own colours.
 - A page in fullscreen keeps the toolbar but takes the room of the tab column and the
   library.
-- New optional settings fields (`vertical_tabs`, `newtab_background`, a favourite's
+- New optional settings fields (`vertical_tabs`, `newtab_background`, `count_blocked`, a favourite's
   `icon`, an extension's `blocks`); 0.20 reads files that contain them. Profile path,
   session format 1 and SQLite schema 3 are unchanged.
 - Draft release notes in `release-notes/v0.21.0.md`; nothing is tagged or released.

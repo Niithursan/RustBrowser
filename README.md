@@ -131,7 +131,9 @@ The **shield** opens a panel under the address line (the page moves down; nothin
 drawn over it). It lists the extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
-normal windows while you have added an extension. WebView2 does not say which
+normal windows while you have added an extension and **Count blocked requests**
+(Privacy & security > Extensions, on by default) is on; turned off, no page listens
+for blocked requests at all. WebView2 does not say which
 extension, or whether the engine itself, blocked a request; requests inside frames
 from other sites are not counted; and blocking cannot be turned off for one site
 (use the extension's own settings). Rust Browser has no ad blocker of its own.
@@ -145,8 +147,9 @@ Privacy & security still fills the window.
 **Settings > Appearance > Show tabs down the side** (off by default) moves the tab
 list into a column at the left of every open window. It has the same actions as the
 strip: select, close, pin, drag to reorder, + New tab, Ctrl+Tab and the arrow keys
-(Up and Down as well as Left and Right). A private window that is already open keeps
-its own setting until it is closed. In fullscreen the page also takes the room of the
+(Up and Down as well as Left and Right). Private windows follow this one setting
+from normal windows, read-only: they read nothing else from the normal profile,
+cannot change it, and never write settings. In fullscreen the page also takes the room of the
 tab column and the library; the toolbar stays, as it always has.
 
 Under the toolbar a status line says only what is happening (Ready, loading, or what
