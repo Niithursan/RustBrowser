@@ -124,14 +124,19 @@ impl Probe {
             self.step = Instant::now();
         } else if self.step.elapsed() > Duration::from_secs(15) {
             // Say where the active tab was, so a CI failure explains itself.
-            let state = self.app.session.as_ref().and_then(|s| s.tabs.active()).map(|t| {
-                (
-                    t.url.clone(),
-                    t.content.engine.view.url().ok(),
-                    t.content.state.loading,
-                    t.content.state.message.clone(),
-                )
-            });
+            let state = self
+                .app
+                .session
+                .as_ref()
+                .and_then(|s| s.tabs.active())
+                .map(|t| {
+                    (
+                        t.url.clone(),
+                        t.content.engine.view.url().ok(),
+                        t.content.state.loading,
+                        t.content.state.message.clone(),
+                    )
+                });
             return Err(format!(
                 "Page tool step {} did not complete: {state:?}",
                 self.phase
