@@ -4048,16 +4048,25 @@ fn back_to_new_tab_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), Stri
             if s.tabs.items.len() != 1 || s.tabs.items[0].url != navigation::HOME {
                 return Err(format!("Expected one new tab: {:?}", urls(&s.windows[0])));
             }
+            // The back entry is the new tab's blank document, so it must have finished
+            // loading first: a navigation that starts while it is still loading replaces
+            // it instead of adding to the history. A slow machine is not done at 1s.
+            if s.tabs.items[0].content.state.loading {
+                if p.started.elapsed() > Duration::from_secs(20) {
+                    return Err("The new tab's blank document did not finish loading".into());
+                }
+                return Ok(());
+            }
             p.command(el, 0, Command::Navigate(format!("{url}?back-home")))?;
             p.next();
         }
         1 => {
             let s = p.s()?;
             let tab = &s.tabs.items[0];
-            if tab.url.ends_with("?back-home") && !tab.content.state.loading {
-                if !tab.content.state.back {
-                    return Err("The page has no back entry to the new tab".into());
-                }
+            let loaded = tab.url.ends_with("?back-home") && !tab.content.state.loading;
+            // WebView2 reports history changes in an event of their own, separate from
+            // the load: wait for the back entry rather than reading it once.
+            if loaded && tab.content.state.back {
                 // Engine-initiated, like the mouse's back button: no toolbar command.
                 tab.content
                     .engine
@@ -4066,7 +4075,11 @@ fn back_to_new_tab_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), Stri
                     .map_err(|_| "Back script failed".to_string())?;
                 p.next();
             } else if waited > Duration::from_secs(10) {
-                return Err(format!("The page did not load: {}", tab.url));
+                return Err(if loaded {
+                    "The page has no back entry to the new tab".into()
+                } else {
+                    format!("The page did not load: {}", tab.url)
+                });
             }
         }
         2 => {
