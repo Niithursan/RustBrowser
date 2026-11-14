@@ -116,8 +116,18 @@ jobs:
         run: cargo test --locked --bin rust-browser native_address_enter_navigates_without_a_go_button -- --ignored --test-threads=1
       - name: Native toolbar polish states
         run: cargo test --locked --bin rust-browser native_toolbar_polish_states -- --ignored --test-threads=1
-      - name: Native menu opens as a sidebar
-        run: cargo test --locked --bin rust-browser native_menu_opens_as_a_sidebar -- --ignored --test-threads=1
+      - name: Native menu opens as a dropdown
+        run: cargo test --locked --bin rust-browser native_menu_opens_as_a_dropdown -- --ignored --test-threads=1
+      - name: Native menu keeps the new-tab page visible
+        run: cargo test --locked --bin rust-browser native_menu_keeps_the_new_tab_page_visible -- --ignored --test-threads=1
+      - name: Native back to the start of a new tab
+        run: cargo test --locked --bin rust-browser native_back_to_the_start_of_a_new_tab_shows_the_new_tab_page -- --ignored --test-threads=1
+      - name: Native new tabs grow into the tab strip
+        run: cargo test --locked --bin rust-browser native_new_tabs_grow_into_the_tab_strip -- --ignored --test-threads=1
+      - name: Native bookmarks bar
+        run: cargo test --locked --bin rust-browser native_imported_bookmarks_show_on_the_bookmarks_bar -- --ignored --test-threads=1
+      - name: Native star and site information dropdowns
+        run: cargo test --locked --bin rust-browser native_star_and_site_information_open_as_dropdowns -- --ignored --test-threads=1
       - name: Native library sidebar beside a live page
         run: cargo test --locked --bin rust-browser native_library_sidebar_beside_a_live_page -- --ignored --test-threads=1
       - name: Native shield counts what an extension blocks

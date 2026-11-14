@@ -134,7 +134,8 @@ enum Step {
     OpenMore,
     ArrowFocus,
     Arrow,
-    /// Open the shield panel with Enter before the second walk.
+    /// Open the shield's dropdown with Enter before the second walk; the menu's
+    /// dropdown (only one is open at a time) gets a third walk.
     OpenShield,
     /// Vertical tabs on and history beside a live page.
     SideStart,
@@ -169,6 +170,8 @@ struct Probe {
     target: Target,
     /// A website for the side views to sit beside.
     server: Option<super::compat_validation::Server>,
+    /// The walk with the shield's dropdown open is done; the menu's comes next.
+    shield_walked: bool,
 }
 
 fn decode(value: &str) -> String {
@@ -439,6 +442,10 @@ impl Probe {
                             }
                             self.step = match (self.target, more) {
                                 (Target::Toolbar, false) => Step::OpenShield,
+                                (Target::Toolbar, true) if !self.shield_walked => {
+                                    self.shield_walked = true;
+                                    Step::OpenMore
+                                }
                                 (Target::Library, _) => Step::SideWalk(Target::Tabs),
                                 _ => Step::ArrowFocus,
                             };
@@ -449,7 +456,7 @@ impl Probe {
                     }
                 }
             }
-            // Open the shield panel with the keyboard; More follows.
+            // Open the shield's dropdown with the keyboard and walk; then the menu's.
             Step::OpenShield => {
                 if value.is_none() {
                     self.eval("document.getElementById('shield').focus(); 'ok'")?;
@@ -458,7 +465,7 @@ impl Probe {
                 }
                 self.key("Enter", "Enter", 13, false)?;
                 self.at = Instant::now();
-                self.step = Step::OpenMore;
+                self.step = Step::Expected(true);
             }
             // Open the More disclosure with the keyboard, then walk again.
             Step::OpenMore => {
@@ -694,6 +701,7 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         log: Vec::new(),
         target: Target::Toolbar,
         server: None,
+        shield_walked: false,
     };
     let _ = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
