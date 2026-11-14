@@ -376,7 +376,7 @@ function renderDownloads(records){
         if(item.total>0){node.bar.max=item.total;node.bar.value=item.received}else{node.bar.removeAttribute('value')}
     }
 }
-let editing=false,activeId=null,tabSignature='',lastAlert='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null;
+let editing=false,activeId=null,tabSignature='',lastAlert='';const tabNodes=new Map();let latestTabs=[],homeSignature='',shownTabId=null,tabsShown=false;
 function send(action,value){window.ipc.postMessage(JSON.stringify({action,value}));}
 for(const action of ['back','forward','reload','stop','home'])document.getElementById(action).onclick=()=>send(action);
 document.getElementById('new').onclick=()=>send('new_tab');
@@ -408,7 +408,7 @@ const PIN_ICON='<svg class="icon icon-pin" viewBox="0 0 24 24" aria-hidden="true
 let menuTabId=null;
 function renderTabs(s){
     if(byId('more').getAttribute('aria-expanded')==='true'&&menuTabId!==null&&menuTabId!==s.active_id)setMenu(false,false);menuTabId=s.active_id;
-    latestTabs=s.tabs;const ids=new Set(s.tabs.map(t=>t.id));for(const [id,node] of tabNodes){if(!ids.has(id)){node.item.remove();tabNodes.delete(id)}}
+    latestTabs=s.tabs;const entering=[];const ids=new Set(s.tabs.map(t=>t.id));for(const [id,node] of tabNodes){if(!ids.has(id)){node.item.remove();tabNodes.delete(id)}}
     for(const tab of s.tabs){let node=tabNodes.get(tab.id);if(!node){
         const item=document.createElement('div');item.dataset.tabId=String(tab.id);item.style.touchAction='none';item.style.userSelect='none';const select=button('',()=>{}),close=button('×',()=>send('close_tab',tab.id));select.className='select';select.setAttribute('role','tab');close.className='close';close.tabIndex=-1;item.onclick=e=>{if(e.target!==close)send('select_tab',tab.id)};
         let drag=null,suppressClick=false;item.onpointerdown=e=>{if(e.button===0&&e.target!==close){drag={x:e.clientX,y:e.clientY,moved:false};suppressClick=false;item.setPointerCapture(e.pointerId)}};
@@ -416,7 +416,7 @@ function renderTabs(s){
         item.onpointerup=e=>{if(!drag)return;const moved=drag.moved;drag=null;item.style.opacity='';if(item.hasPointerCapture(e.pointerId))item.releasePointerCapture(e.pointerId);if(moved){suppressClick=true;const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-tab-id]');const to=latestTabs.findIndex(t=>String(t.id)===target?.dataset.tabId);if(to>=0)send('move_tab',{id:tab.id,to})}};
         item.onpointercancel=()=>{drag=null;item.style.opacity=''};item.addEventListener('click',e=>{if(suppressClick){suppressClick=false;e.preventDefault();e.stopImmediatePropagation()}},true);
         select.onkeydown=e=>{const index=latestTabs.findIndex(t=>t.id===tab.id);let target;const back=e.key==='ArrowLeft'||(ROLE==='tabs'&&e.key==='ArrowUp'),ahead=e.key==='ArrowRight'||(ROLE==='tabs'&&e.key==='ArrowDown');if(back)target=latestTabs[(index+latestTabs.length-1)%latestTabs.length];else if(ahead)target=latestTabs[(index+1)%latestTabs.length];else if(e.key==='Home')target=latestTabs[0];else if(e.key==='End')target=latestTabs.at(-1);if(target){e.preventDefault();send('select_tab',target.id);send('focus_tabs')}};
-        const favicon=document.createElement('span');favicon.className='favicon';favicon.setAttribute('aria-hidden','true');const state=document.createElement('span');state.className='state';state.setAttribute('aria-hidden','true');item.append(favicon,state,select,close);node={item,select,close,favicon,state,icon:null};tabNodes.set(tab.id,node);
+        const favicon=document.createElement('span');favicon.className='favicon';favicon.setAttribute('aria-hidden','true');const state=document.createElement('span');state.className='state';state.setAttribute('aria-hidden','true');item.append(favicon,state,select,close);node={item,select,close,favicon,state,icon:null};tabNodes.set(tab.id,node);if(tabsShown)entering.push(item);
     }
         const label=tab.title||'New tab',sleep=tab.phase==='sleeping';if(node.icon!==tab.favicon){node.icon=tab.favicon;if(tab.favicon&&/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(tab.favicon)){const img=document.createElement('img');img.alt='';img.src=tab.favicon;node.favicon.replaceChildren(img)}else{node.favicon.innerHTML=DEFAULT_FAVICON}}
         node.item.className='tab'+(tab.active?' active':'')+(tab.pinned?' pinned':'')+(sleep?' sleeping':'');node.state.innerHTML=(tab.pinned?PIN_ICON:'')+(tab.loading?LOADING_ICON:sleep?SLEEP_ICON:'');node.select.textContent=tab.pinned&&ROLE!=='tabs'?label.slice(0,5):label;node.select.title=label+(sleep?'\nSleeping':'')+(tab.keep_awake?'\nKeep awake':'');node.select.setAttribute('aria-label',label+(tab.pinned?', pinned':'')+(tab.loading?', loading':sleep?', sleeping':''));node.select.setAttribute('aria-selected',String(tab.active));node.select.setAttribute('aria-posinset',String(s.tabs.findIndex(t=>t.id===tab.id)+1));node.select.setAttribute('aria-setsize',String(s.tabs.length));node.select.tabIndex=tab.active?0:-1;node.close.setAttribute('aria-label','Close tab '+label);const position=s.tabs.findIndex(t=>t.id===tab.id);if(tabs.children[position]!==node.item)tabs.insertBefore(node.item,tabs.children[position]||null);
@@ -424,6 +424,17 @@ function renderTabs(s){
     const active=s.tabs.find(t=>t.active);byId('pin-active').textContent=active?.pinned?'Unpin tab':'Pin tab';byId('keep-awake').setAttribute('aria-pressed',String(!!active?.keep_awake));byId('keep-awake').textContent=active?.keep_awake?'Keep awake: on':'Keep awake';byId('wake-tab').hidden=!['sleeping','pending','resume_failed'].includes(active?.phase);
     if(document.activeElement!==byId('tab-picker')){const picker=byId('tab-picker');picker.replaceChildren();for(const tab of s.tabs){const option=document.createElement('option');option.value=tab.id;option.textContent=(tab.title||'New tab')+(tab.pinned?' (pinned)':'')+(tab.phase==='sleeping'?' (sleeping)':'');picker.append(option)}picker.value=s.active_id;}
     if(active&&shownTabId!==active.id){shownTabId=active.id;tabNodes.get(active.id).item.scrollIntoView({block:'nearest',inline:'nearest'});}
+    for(const item of entering)growTab(item);if(s.tabs.length)tabsShown=true;
+}
+// A tab opened after the first render grows into place (across the strip, or down the
+// tab column) instead of appearing at once. Tabs restored at start, or redrawn after
+// the toolbar was rebuilt, appear at once; so do all of them with reduced motion.
+function growTab(item){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches||typeof item.animate!=='function')return;
+    const vertical=ROLE==='tabs',size=vertical?item.offsetHeight:item.offsetWidth;if(!size)return;
+    const property=vertical?'height':'width';item.style.overflow='hidden';
+    const animation=item.animate([{[property]:'0px',opacity:0},{[property]:size+'px',opacity:1}],{duration:180,easing:'cubic-bezier(.2,0,0,1)'});
+    const done=()=>{item.style.overflow='';if(item.classList.contains('active'))item.scrollIntoView({block:'nearest',inline:'nearest'})};animation.onfinish=done;animation.oncancel=done;
 }
 function renderHome(s){
     const signature=JSON.stringify([s.settings,s.private,s.library.history]);if(signature===homeSignature)return;homeSignature=signature;

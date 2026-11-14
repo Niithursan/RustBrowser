@@ -4138,3 +4138,71 @@ fn native_back_to_the_start_of_a_new_tab_shows_the_new_tab_page() {
     let (root, _) = run("back-home", back_to_new_tab_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Records which tab cards the toolbar animates, so the check does not depend on
+/// catching a 180 ms animation while it runs.
+const RECORD_GROWTH: &str = "window.__grown=[];const animate=Element.prototype.animate;Element.prototype.animate=function(...a){if(this.dataset.tabId)window.__grown.push(this.dataset.tabId);return animate.apply(this,a)}";
+
+/// A tab opened with the + button grows into the strip; tabs already shown do not
+/// animate again on later renders, and nothing animates with reduced motion.
+fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            p.s()?.windows[0]
+                .toolbar
+                .evaluate_script(RECORD_GROWTH)
+                .map_err(|_| "Record script failed".to_string())?;
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 if waited > Duration::from_millis(700) => {
+            eval_toolbar(p, "JSON.stringify(window.__grown)")?;
+            p.next();
+        }
+        2 => {
+            if let Some(grown) = polish_report(p)? {
+                let s = p.s()?;
+                let new = s.tabs.items.last().ok_or("No tab")?.id;
+                if s.tabs.items.len() != 2 || grown != serde_json::json!([new.to_string()]) {
+                    return Err(format!("Only the new tab {new:?} should grow: {grown}"));
+                }
+                toolbar_cdp(
+                    s,
+                    "Emulation.setEmulatedMedia",
+                    serde_json::json!({ "features": [{ "name": "prefers-reduced-motion", "value": "reduce" }] }),
+                )?;
+                p.next();
+            }
+        }
+        3 if waited > Duration::from_millis(300) => {
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        4 if waited > Duration::from_millis(700) => {
+            eval_toolbar(p, "JSON.stringify(window.__grown)")?;
+            p.next();
+        }
+        5 => {
+            if let Some(grown) = polish_report(p)? {
+                let s = p.s()?;
+                if s.tabs.items.len() != 3 || grown.as_array().map(Vec::len) != Some(1) {
+                    return Err(format!("A tab grew with reduced motion: {grown}"));
+                }
+                p.log
+                    .push("tabs: a new tab grows into place; not with reduced motion".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_new_tabs_grow_into_the_tab_strip() {
+    let (root, _) = run("tab-growth", tab_growth_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
