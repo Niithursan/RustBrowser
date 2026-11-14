@@ -14,6 +14,15 @@
   page, which stays usable (Ctrl+Shift+B, the menu, Ctrl+Shift+O, Ctrl+H, Ctrl+J).
   Drag its edge or use the arrow keys on it to resize it (260 to 640 pixels); its
   width lasts for the window and session. Privacy & security stays a full panel.
+- Bookmark folders can contain subfolders. Import keeps the exported hierarchy,
+  folder controls show the full path, and existing flat library databases migrate
+  transactionally to schema 4.
+- Pre-1.0 Rust library API change: `Action::SaveFolder` now accepts a parent ID, and
+  bookmark-import `Entry.folder` is a full path (`Vec<String>`); downstream callers
+  using these types must update.
+- The native title bar and border follow the selected toolbar theme where Windows
+  supports custom caption colors. Button hover and press feedback is briefly animated
+  and disabled for reduced-motion preferences.
 - Settings > Appearance > Show tabs down the side (off by default): the tab list moves
   to a column at the left of every open window, with the same actions, dragging,
   pinned tabs, keys (Up and Down too) and names for Narrator. Private windows follow
@@ -23,9 +32,10 @@
   background (Plain, Dusk, Glow, Panels) drawn from the theme's own colours.
 - A page in fullscreen keeps the toolbar but takes the room of the tab column and the
   library.
-- New optional settings fields (`vertical_tabs`, `newtab_background`, `count_blocked`, a favourite's
-  `icon`, an extension's `blocks`); 0.20 reads files that contain them. Profile path,
-  session format 1 and SQLite schema 3 are unchanged.
+- New optional settings fields (`vertical_tabs`, `newtab_background`, `count_blocked`,
+  a favourite's `icon`, an extension's `blocks`); 0.20 reads files that contain them.
+  Profile path and session format 1 are unchanged; SQLite library schema 4 migrates
+  existing data.
 - Draft release notes in `release-notes/v0.21.0.md`; nothing is tagged or released.
 - The menu (⋮) opens as a vertical sidebar on the right. While it is open the page
   beside it is a dimmed still image; Escape, ⋮, a click on the page or an item that

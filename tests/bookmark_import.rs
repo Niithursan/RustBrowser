@@ -49,7 +49,7 @@ fn entry(title: &str, url: &str, folder: Option<&str>) -> Entry {
     Entry {
         title: title.into(),
         url: url.into(),
-        folder: folder.map(String::from),
+        folder: folder.map(|name| vec![name.into()]).unwrap_or_default(),
     }
 }
 
@@ -71,7 +71,7 @@ fn bookmarks(db: &Database) -> Vec<(String, String, Option<String>)> {
                 data.folders
                     .iter()
                     .find(|f| f.id == id)
-                    .map(|f| f.name.clone())
+                    .map(|f| f.path.join(" / "))
             });
             (b.title.clone(), b.url.clone(), folder)
         })
@@ -92,7 +92,11 @@ fn a_firefox_export_is_read_with_its_folders() {
                 "https://news.example.com/article?id=7",
                 Some("Reading")
             ),
-            entry("Read later", "https://example.net/later", Some("Later")),
+            Entry {
+                title: "Read later".into(),
+                url: "https://example.net/later".into(),
+                folder: vec!["Reading".into(), "Later".into()],
+            },
             entry(
                 "Get Help",
                 "https://www.mozilla.org/en-US/firefox/",
@@ -137,7 +141,7 @@ fn a_chrome_export_imports_once_and_skips_duplicates() {
             (
                 "Guide".into(),
                 "https://docs.example.com/guide".into(),
-                Some("Work".into())
+                Some("Bookmarks bar / Work".into())
             ),
             (
                 "Unicode 你好 title".into(),
@@ -151,6 +155,45 @@ fn a_chrome_export_imports_once_and_skips_duplicates() {
     assert_eq!((again.imported, again.duplicates), (0, 4));
     assert_eq!(again.folders_created, 0);
     assert_eq!(bookmarks(&db).len(), 3);
+}
+
+#[test]
+fn nested_imported_folders_keep_their_parent_relationship() {
+    let parsed = bookmark_import::parse(&export(
+        r#"<DT><H3>Reading</H3><DL><p>
+<DT><H3>Research</H3><DL><p>
+<DT><A HREF="https://example.com/paper">Paper</A>
+</DL><p></DL><p>"#,
+    ))
+    .unwrap();
+    let profile = Profile::new();
+    let mut db = profile.database();
+    let summary = db.import_bookmarks(&parsed).unwrap();
+    assert_eq!(summary.imported, 1);
+    assert_eq!(summary.folders_created, 2);
+
+    let connection = rusqlite::Connection::open(profile.0.join("library.sqlite")).unwrap();
+    let reading: i64 = connection
+        .query_row("SELECT id FROM folders WHERE name='Reading'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let research_parent: Option<i64> = connection
+        .query_row(
+            "SELECT parent_id FROM folders WHERE name='Research'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(research_parent, Some(reading));
+    let bookmark_folder: i64 = connection
+        .query_row(
+            "SELECT folder FROM bookmarks WHERE url='https://example.com/paper'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_ne!(bookmark_folder, reading);
 }
 
 #[test]
@@ -275,7 +318,7 @@ fn size_count_and_depth_limits() {
     };
     let deepest = bookmark_import::parse(&nest(MAX_DEPTH - 1)).unwrap();
     assert_eq!(
-        deepest.entries[0].folder.as_deref(),
+        deepest.entries[0].folder.last().map(String::as_str),
         Some(&*format!("F{}", MAX_DEPTH - 2))
     );
     assert_eq!(deepest.nested, MAX_DEPTH - 2);
@@ -296,7 +339,7 @@ fn long_titles_and_folder_names_are_shortened_and_long_addresses_refused() {
     .unwrap();
     assert_eq!(parsed.entries.len(), 1);
     assert_eq!(parsed.entries[0].title.chars().count(), 256);
-    let name = parsed.entries[0].folder.clone().unwrap();
+    let name = parsed.entries[0].folder.last().unwrap().clone();
     assert_eq!(name.chars().count(), 80);
     assert!(!name.chars().any(char::is_control));
     assert_eq!(parsed.refused.get(&Refused::TooLong), Some(&1));
@@ -311,14 +354,15 @@ fn an_existing_folder_with_the_same_name_is_reused() {
     let mut db = profile.database();
     db.apply(rust_browser::library::Action::SaveFolder {
         id: None,
-        name: "work".into(),
+        name: "Other bookmarks".into(),
+        parent_id: None,
     })
     .unwrap();
     let parsed = bookmark_import::parse(&fixture("chrome.html")).unwrap();
     let summary = db.import_bookmarks(&parsed).unwrap();
     assert_eq!(
         summary.folders_created, 2,
-        "Work matches the existing folder"
+        "the existing top-level folder matches by full path"
     );
     let data = db.query(&Filter::default()).unwrap();
     assert_eq!(data.folders.len(), 3);

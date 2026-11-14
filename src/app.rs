@@ -2,7 +2,7 @@ use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
     native_background, native_downloads, native_extensions, native_popup, native_security,
-    native_shield,
+    native_shield, native_window,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
@@ -14,12 +14,12 @@ use rust_browser::{
     navigation,
     privacy::{self, ClearRequest, PrivateLease},
     security::{self, Decision},
-    settings::Settings,
+    settings::{Settings, Theme},
     storage::{self, Snapshot, Store},
     tabs::{ClosedTabs, MAX_TABS, TabId, Tabs},
 };
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     path::PathBuf,
     rc::Rc,
     time::{Duration, Instant},
@@ -492,6 +492,7 @@ struct WindowState {
     chrome_height: f64,
     last_render: RefCell<String>,
     last_title: RefCell<String>,
+    native_theme: Cell<Option<Theme>>,
 }
 
 /// One browser profile in this process: its lock, store, services and windows.
@@ -1046,6 +1047,7 @@ impl Session {
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
+            native_theme: Cell::new(None),
         });
         self.current = self.windows.len() - 1;
         if !foreground {
@@ -1502,6 +1504,7 @@ impl Session {
             chrome_height: ui::HEIGHT,
             last_render: RefCell::new(String::new()),
             last_title: RefCell::new(String::new()),
+            native_theme: Cell::new(None),
         };
         let mut session = Self {
             windows: vec![first_window],
@@ -2200,6 +2203,12 @@ impl Session {
     }
 
     fn render(&self) {
+        let theme = self.settings.theme;
+        for window in &self.windows {
+            if window.native_theme.replace(Some(theme)) != Some(theme) {
+                native_window::apply_theme(&window.window, theme);
+            }
+        }
         let Some(active) = self.tabs.active() else {
             return;
         };

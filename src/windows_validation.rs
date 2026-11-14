@@ -1042,6 +1042,9 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let _ = el;
     match p.phase {
         0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.s()?
+                .open_library(Panel::Bookmarks)
+                .map_err(|_| "Could not open the bookmarks library")?;
             p.app
                 .proxy
                 .send_event(Event::BookmarkFile(Ok(Some(bookmark_fixture(
@@ -1066,6 +1069,76 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err(format!("Import: {found:?}, notice {:?}", s.notice));
                 }
+                let nested = s
+                    .library_data
+                    .folders
+                    .iter()
+                    .find(|folder| folder.name == "Work")
+                    .is_some_and(|folder| {
+                        folder.path.iter().map(String::as_str).collect::<Vec<_>>()
+                            == ["Bookmarks bar", "Work"]
+                    });
+                let guide = s
+                    .library_data
+                    .bookmarks
+                    .iter()
+                    .find(|item| item.title == "Guide");
+                if !nested
+                    || guide.is_none_or(|item| {
+                        s.library_data
+                            .folders
+                            .iter()
+                            .find(|folder| Some(folder.id) == item.folder)
+                            .is_none_or(|folder| {
+                                folder.path.iter().map(String::as_str).collect::<Vec<_>>()
+                                    != ["Bookmarks bar", "Work"]
+                            })
+                    })
+                {
+                    return Err("The import did not preserve the nested folder path.".into());
+                }
+                eval_library(
+                    p,
+                    "JSON.stringify({folders:[...document.getElementById('folder-filter').options].map(o=>o.textContent),parents:[...document.getElementById('folder-parent').options].map(o=>o.textContent),rows:[...document.querySelectorAll('#library-results .row .secondary')].map(e=>e.textContent)})",
+                )?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!("The import never finished: {:?}", s.notice));
+            }
+        }
+        2 => {
+            let value = p.result.lock().map_err(|_| "Result lock failed")?.take();
+            if let Some(value) = value {
+                let inner: String =
+                    serde_json::from_str(&value).map_err(|e| format!("{e}: {value}"))?;
+                let report: serde_json::Value =
+                    serde_json::from_str(&inner).map_err(|e| format!("{e}: {inner}"))?;
+                let folder_options = report["folders"]
+                    .as_array()
+                    .ok_or("Folder options are missing")?;
+                let parent_options = report["parents"]
+                    .as_array()
+                    .ok_or("Folder parent options are missing")?;
+                let rows = report["rows"]
+                    .as_array()
+                    .ok_or("Bookmark rows are missing")?;
+                if !folder_options
+                    .iter()
+                    .any(|option| option == "Bookmarks bar / Work")
+                    || !parent_options
+                        .iter()
+                        .any(|option| option == "Bookmarks bar / Work")
+                    || !rows.iter().any(|row| {
+                        row.as_str().is_some_and(|row| {
+                            row.starts_with("Bookmarks bar / Work · ")
+                                && row.contains("docs.example.com/guide")
+                        })
+                    })
+                {
+                    return Err(format!(
+                        "Nested bookmark UI did not render its path: {report}"
+                    ));
+                }
                 p.app
                     .proxy
                     .send_event(Event::BookmarkFile(Ok(Some(
@@ -1074,17 +1147,17 @@ fn import_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     .map_err(|_| "proxy")?;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(10) {
-                return Err(format!("The import never finished: {:?}", s.notice));
+                return Err("The nested bookmark UI did not finish rendering.".into());
             }
         }
-        2 => {
+        3 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             if s.notice.contains("not an exported bookmarks file") {
                 if s.library_data.bookmarks.len() != 3 {
                     return Err("A refused file changed bookmarks".into());
                 }
                 p.log.push(
-                    "import: file to library with summary; refused file changes nothing".into(),
+                    "import: nested path visible in library; refused file changes nothing".into(),
                 );
                 p.done = true;
                 el.exit();

@@ -158,9 +158,10 @@ the tooltip of the address field.
 
 Tab icons come from WebView2 as image data checked by the browser; the toolbar never
 loads anything from a website. All icons are drawn for this project. The four themes,
-Windows high contrast and reduced motion are supported as before. Windows draws the
-title bar as usual: drawing tabs into the title bar would risk Snap layouts, title-bar
-dragging, double-click to maximise and Narrator, so it is not done.
+Windows high contrast and reduced motion are supported as before. The native title bar
+and border follow the selected theme on Windows 11 build 22000 and later. The title
+bar remains separate from the tabs to preserve Snap layouts, title-bar dragging,
+double-click to maximise and Narrator.
 
 ## Setup on Windows
 
@@ -652,11 +653,12 @@ and [asynchronous browsing data clearing](https://learn.microsoft.com/en-us/micr
 ## Bookmarks and history
 
 Ctrl+D saves the current tab once and opens the bookmark manager. The manager supports
-adding/editing titles and HTTP(S) URLs, removing bookmarks, flat folders, moving a
+adding/editing titles and HTTP(S) URLs, removing bookmarks, nested folders, moving a
 bookmark with its folder selector, searching titles/URLs and opening entries in the
-current or a new tab. Removing a folder keeps its bookmarks in Unfiled. Duplicate
-bookmark URLs are not added again. There are limits of 5000 bookmarks and 200 folders;
-queries show the first 200 matching results, so narrow the search to find others.
+current or a new tab. Folder selectors show the full path. Removing a folder moves its
+bookmarks to Unfiled and its subfolders to the top level. Duplicate bookmark URLs are
+not added again. There are limits of 5000 bookmarks and 200 folders; queries show the
+first 200 matching results, so narrow the search to find others.
 
 History records successful top-level navigation completions with titles, URLs and
 timestamps, independently of WebView2's native back/forward stack. Repeated completion
@@ -676,8 +678,9 @@ URLs even when history is paused, unless retention is disabled separately.
 
 `library.sqlite` lives beside `session.json` in the existing profile. SQLite is bundled,
 so no separate database installation is needed. One background worker owns the
-connection and runs parameterized queries and transactional schema migrations (currently
-version 3, including remembered permission rules). Native browser callbacks never write the database directly. A corrupt
+connection and runs parameterized queries and transactional schema migrations. The
+current schema is version 4, including nested bookmark folders and remembered
+permission rules. Native browser callbacks never write the database directly. A corrupt
 database is preserved as `library.corrupt-<timestamp>` before recovery. A newer schema
 or access error disables the library with a notice rather than resetting its data;
 ordinary browsing remains available. Back up the profile with the browser closed.
@@ -702,9 +705,9 @@ Limits: the file may be at most 10 MiB with at most 20,000 links and 32 levels o
 folders, or it is refused whole. Titles longer than 256 characters and folder names
 longer than 80 are shortened; addresses longer than 8,192 characters are refused.
 
-Each bookmark goes into a folder named like the innermost folder that held it, and
-an existing folder with the same name is reused. Folders here cannot contain other
-folders, so nested folders become top-level folders, and the summary says how many.
+Each bookmark keeps its complete folder path, and an existing folder with the same
+path is reused. Nested folders remain inside their parent folders. The summary reports
+how many nested folders were in the export.
 Addresses you already have, or that repeat in the file, are skipped. When the import
 finishes, a notice says how many were added, skipped as duplicates and refused, and
 why. The import is all or nothing: if it fails, the file is refused, or it would

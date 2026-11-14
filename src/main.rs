@@ -31,6 +31,8 @@ mod native_security;
 mod native_shield;
 #[cfg(all(windows, test))]
 mod native_validation;
+#[cfg(windows)]
+mod native_window;
 #[cfg(all(windows, test))]
 mod servo_validation;
 #[cfg(windows)]

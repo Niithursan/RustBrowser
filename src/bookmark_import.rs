@@ -73,12 +73,12 @@ impl Refused {
     }
 }
 
-/// One link to import. `folder` is the innermost folder holding it.
+/// One link to import. `folder` is the path from the top-level folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub title: String,
     pub url: String,
-    pub folder: Option<String>,
+    pub folder: Vec<String>,
 }
 
 /// What a file contained.
@@ -86,8 +86,7 @@ pub struct Entry {
 pub struct Parsed {
     pub entries: Vec<Entry>,
     pub refused: BTreeMap<Refused, usize>,
-    /// Folders found inside other folders. The library has no nesting, so they
-    /// become top-level folders.
+    /// Folders found inside other folders.
     pub nested: usize,
 }
 
@@ -106,7 +105,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, FileError> {
         return Err(FileError::NotBookmarks);
     }
     let mut parsed = Parsed::default();
-    // One entry per open list: the folder it belongs to, if any.
+    // One entry per open list: each folder on its path.
     let mut lists: Vec<Option<String>> = Vec::new();
     let mut heading: Option<String> = None;
     let mut links = 0;
@@ -162,7 +161,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, FileError> {
                         if title.is_empty() {
                             title = clean(&url, MAX_TITLE);
                         }
-                        let folder = lists.iter().rev().find_map(Clone::clone);
+                        let folder = lists.iter().flatten().cloned().collect();
                         parsed.entries.push(Entry { title, url, folder });
                     }
                     Err(reason) => *parsed.refused.entry(reason).or_default() += 1,
@@ -368,10 +367,7 @@ impl Summary {
             text += &format!(" {} new folders.", self.folders_created);
         }
         if self.nested > 0 {
-            text += &format!(
-                " Folders here cannot contain folders, so {} folders that were inside other folders became top-level folders.",
-                self.nested
-            );
+            text += &format!(" The export contained {} nested folders.", self.nested);
         }
         if self.unfoldered > 0 {
             text += &format!(
