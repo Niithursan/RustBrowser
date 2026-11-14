@@ -49,6 +49,9 @@
   spacing is on a 4px scale; "Private window" is no longer in capitals.
 - The v0.20.0 release notes and RELEASING.md are kept as drafts: the first release is
   postponed until the owner decides.
+- Going back to the start of a tab that began as the new-tab page (with Back or
+  the mouse's back button) shows the new-tab page again instead of a blank
+  `about:blank` page that kept the previous address; Forward returns to the page.
 
 ## 0.20.0 (not released; the first release was postponed)
 

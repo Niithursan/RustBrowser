@@ -96,6 +96,17 @@ pub enum Event {
     DownloadRecovery(String),
 }
 
+/// Whether a tab showing `tab_url` has gone back to the hidden blank document a
+/// new tab starts with (the new-tab page is drawn by the toolbar over it). The
+/// mouse's back button does this inside the page, so no host command sees it.
+/// Only a way forward proves it was a step back: a tab's initial blank document
+/// before its first web load, and the blank tab left by clearing data, are kept.
+fn returned_to_new_tab(tab_url: &str, view_url: Option<&str>, forward: bool) -> bool {
+    forward
+        && view_url == Some("about:blank")
+        && !matches!(tab_url, navigation::HOME | "about:blank")
+}
+
 fn content_target(url: &str) -> Result<LoadTarget, rust_browser::engine_api::InvalidLocation> {
     if matches!(url, navigation::HOME | "about:blank") {
         Ok(LoadTarget::Blank)
@@ -2978,6 +2989,7 @@ impl Session {
     }
 
     fn page_event(&mut self, id: TabId, event: PageEvent) {
+        let completed = matches!(&event, PageEvent::Completed { error: None, .. });
         let was_local = self
             .tabs
             .active()
@@ -3083,6 +3095,18 @@ impl Session {
             tab.content.state.url = url;
         }
         (tab.content.state.back, tab.content.state.forward) = tab.content.engine.history();
+        if completed
+            && returned_to_new_tab(
+                &tab.url,
+                tab.content.engine.view.url().ok().as_deref(),
+                tab.content.state.forward,
+            )
+        {
+            tab.url = navigation::HOME.into();
+            tab.content.state.url = navigation::HOME.into();
+            tab.title = "New tab".into();
+            tab.content.state.favicon.clear();
+        }
         if let Some(message) = library_notice {
             self.notice = message.into();
         }
@@ -3444,6 +3468,34 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_step_back_to_the_blank_start_is_the_new_tab_page() {
+        let page = "https://example.com/";
+        // Back from a page to the tab's blank start (the mouse's back button).
+        assert!(returned_to_new_tab(page, Some("about:blank"), true));
+        // No way forward: a page that opened about:blank itself, or a tab whose
+        // first web load has not replaced its initial blank document yet.
+        assert!(!returned_to_new_tab(page, Some("about:blank"), false));
+        // The blank tab left by clearing data, and tabs already on the new-tab page.
+        assert!(!returned_to_new_tab(
+            "about:blank",
+            Some("about:blank"),
+            true
+        ));
+        assert!(!returned_to_new_tab(
+            navigation::HOME,
+            Some("about:blank"),
+            true
+        ));
+        // Ordinary back navigation between pages.
+        assert!(!returned_to_new_tab(
+            page,
+            Some("https://example.org/"),
+            true
+        ));
+        assert!(!returned_to_new_tab(page, None, true));
+    }
     /// The layout table never lets two shown views overlap and keeps every view inside
     /// the window, in every combination of size, tab column, library and full panel.
     #[test]
