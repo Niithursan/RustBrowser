@@ -25,6 +25,18 @@ pub fn apply_theme(window: &Window, theme: Theme) {
 mod tests {
     use super::*;
 
+    fn luminance([red, green, blue]: [u8; 3]) -> f64 {
+        let linear = [red, green, blue].map(|channel| {
+            let value = f64::from(channel) / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        });
+        0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    }
+
     #[test]
     fn caption_palette_matches_each_toolbar_theme() {
         assert_eq!(
@@ -43,5 +55,19 @@ mod tests {
             colors(Theme::Plum),
             ([0x1B, 0x14, 0x20], [0xE9, 0xEC, 0xEF])
         );
+    }
+
+    #[test]
+    fn caption_text_meets_normal_text_contrast_in_each_theme() {
+        for theme in [Theme::Dark, Theme::Light, Theme::Slate, Theme::Plum] {
+            let (background, foreground) = colors(theme);
+            let background = luminance(background);
+            let foreground = luminance(foreground);
+            let ratio = (background.max(foreground) + 0.05) / (background.min(foreground) + 0.05);
+            assert!(
+                ratio >= 4.5,
+                "{theme:?} caption text contrast is {ratio:.2}:1"
+            );
+        }
     }
 }
