@@ -787,6 +787,17 @@ fn restore_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         .collect::<Vec<_>>()
                 ));
             }
+            // Every restored window follows the saved vertical-tabs setting (v0.21),
+            // with its column beside the toolbar and page, never over them.
+            for index in 0..s.windows.len() {
+                let views = shown_views_in(s, index);
+                if s.windows[index].tabs_view.is_none() || named(&views, "tabs").is_none() {
+                    return Err(format!(
+                        "Restored window {index} has no tab column: {views:?}"
+                    ));
+                }
+                check_no_overlap_in(s, index, &format!("restored window {index}"))?;
+            }
             p.app.user_event(el, Event::Command(Command::ExitBrowser));
             // Hiding the windows lets Windows activate another one, as it does on
             // a foreground desktop. That must not change what Exit saved.
@@ -821,6 +832,10 @@ fn native_multiple_windows_restore_and_exit() {
                     ..Default::default()
                 },
             ],
+            settings: rust_browser::settings::Settings {
+                vertical_tabs: true,
+                ..Default::default()
+            },
             ..Snapshot::default()
         };
         storage::save(&root.join("session.json"), &snapshot).unwrap();
@@ -829,6 +844,7 @@ fn native_multiple_windows_restore_and_exit() {
     assert_eq!(saved.other_windows.len(), 2);
     assert_eq!(saved.tabs.len(), 2);
     assert_eq!(saved.pinned, vec![true, false]);
+    assert!(saved.settings.vertical_tabs);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -1516,6 +1532,10 @@ fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
                         s.settings.extensions
                     ));
                 }
+                // The shield never counts in a private window.
+                if s.counts_blocked() || s.tabs.items[0].content.engine.blocked.count().is_some() {
+                    return Err("A private window counts blocked requests".into());
+                }
                 s.extension_added = None;
                 // Refused either at once or in WebView2's answer.
                 if let Err(message) = native_extensions::add(
@@ -1992,5 +2012,1909 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_menu_opens_as_a_sidebar() {
     let (root, _) = run("sidebar", sidebar_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Where every shown view of the first window is on screen (physical pixels):
+/// toolbar, active page and the side views. Each view sits in its own host window
+/// (its controller's parent), whose screen rectangle is the view's real place.
+fn shown_views(s: &Session) -> Vec<(&'static str, windows::Win32::Foundation::RECT)> {
+    shown_views_in(s, 0)
+}
+
+/// Bounds of every shown view of window `index` (see `shown_views`).
+fn shown_views_in(
+    s: &Session,
+    index: usize,
+) -> Vec<(&'static str, windows::Win32::Foundation::RECT)> {
+    let w = &s.windows[index];
+    let mut views: Vec<(&'static str, &wry::WebView)> = vec![("toolbar", &w.toolbar)];
+    if let Some(tab) = w.tabs.active() {
+        views.push(("page", &tab.content.engine.view));
+    }
+    if let Some(side) = &w.tabs_view {
+        views.push(("tabs", &side.view));
+    }
+    if let Some(side) = &w.library_view {
+        views.push(("library", &side.view));
+    }
+    views
+        .into_iter()
+        .filter(|(_, v)| view_visible(v))
+        .filter_map(|(name, v)| {
+            let mut host = windows::Win32::Foundation::HWND::default();
+            let mut r = windows::Win32::Foundation::RECT::default();
+            // SAFETY: read-only queries on this fixture's own controller and its host.
+            unsafe {
+                v.controller().ParentWindow(&mut host).ok()?;
+                windows::Win32::UI::WindowsAndMessaging::GetWindowRect(host, &mut r).ok()?;
+            }
+            Some((name, r))
+        })
+        .collect()
+}
+
+/// No two shown views overlap (the stacking order of the toolbar and page windows
+/// is not kept by Windows, so an overlap could hide either).
+fn check_no_overlap(s: &Session, step: &str) -> Result<(), String> {
+    check_no_overlap_in(s, 0, step)
+}
+
+fn check_no_overlap_in(s: &Session, index: usize, step: &str) -> Result<(), String> {
+    let views = shown_views_in(s, index);
+    for (i, (a, ra)) in views.iter().enumerate() {
+        for (b, rb) in &views[i + 1..] {
+            let x = ra.right.min(rb.right) - ra.left.max(rb.left);
+            let y = ra.bottom.min(rb.bottom) - ra.top.max(rb.top);
+            if x > 1 && y > 1 {
+                return Err(format!("{step}: {a} {ra:?} overlaps {b} {rb:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn named(
+    views: &[(&'static str, windows::Win32::Foundation::RECT)],
+    name: &str,
+) -> Option<windows::Win32::Foundation::RECT> {
+    views.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
+}
+
+/// Run `script` in the first window's library view; the answer lands in `p.result`.
+fn eval_library(p: &mut Probe, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[0]
+        .library_view
+        .as_ref()
+        .ok_or("No library view")?
+        .view
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Library script failed".to_string())
+}
+
+/// Bookmarks, history and downloads open beside a live page: the page shrinks,
+/// stays visible and still navigates; the column resizes, toggles and gives way to
+/// a full panel; nothing overlaps.
+fn library_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?library")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "library open")?;
+            let views = shown_views(s);
+            let (page, library) = (named(&views, "page"), named(&views, "library"));
+            let (Some(page), Some(library)) = (page, library) else {
+                return Err(format!("Page and library should both show: {views:?}"));
+            };
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            if (library.right - toolbar.right).abs() > 2 || (page.right - library.left).abs() > 2 {
+                return Err(format!(
+                    "The library should sit at the right, beside the page: {views:?}"
+                ));
+            }
+            if s.panel.is_some() || s.windows[0].library_panel != Some(Panel::History) {
+                return Err("History did not open in the library column".into());
+            }
+            eval_library(
+                p,
+                "JSON.stringify([document.documentElement.dataset.role,document.getElementById('manager').hidden,document.getElementById('manager-title').textContent,getComputedStyle(document.getElementById('chrome')).display])",
+            )?;
+            p.next();
+        }
+        3 => {
+            let answer = p.result.lock().unwrap().clone();
+            if let Some(text) = answer {
+                let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+                if inner != r#"["library",false,"Browsing history","none"]"# {
+                    return Err(format!("The library view shows the wrong part: {inner}"));
+                }
+                // The page is usable while the library is open.
+                p.command(el, 0, Command::Navigate(format!("{url}?beside")))?;
+                p.next();
+            }
+        }
+        4 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.tabs.items[0].url.ends_with("?beside") || s.windows[0].library_panel.is_none() {
+                return Err("The page did not navigate beside the library".into());
+            }
+            p.command(el, 0, Command::SetLibraryWidth(500.0))?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let library = named(&views, "library").ok_or("No library")?;
+            let want = (500.0 * s.window.scale_factor()).round() as i32;
+            if ((library.right - library.left) - want).abs() > 2 {
+                return Err(format!("The library did not resize to 500: {views:?}"));
+            }
+            check_no_overlap(s, "library resized")?;
+            // A full panel takes the window; the library comes back after it.
+            p.command(el, 0, Command::ShowPanel(Panel::Settings))?;
+            p.next();
+        }
+        6 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "library").is_some() || named(&views, "page").is_some() {
+                return Err(format!(
+                    "A full panel should hide the page and library: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "full panel")?;
+            p.command(el, 0, Command::ClosePanel)?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "library").is_none() || named(&views, "page").is_none() {
+                return Err(format!(
+                    "The library did not return after the full panel: {views:?}"
+                ));
+            }
+            p.command(el, 0, Command::ToggleLibrary)?;
+            p.next();
+        }
+        8 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let page = named(&views, "page").ok_or("No page")?;
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            if named(&views, "library").is_some() || (page.right - toolbar.right).abs() > 2 {
+                return Err(format!(
+                    "Closing the library should give the page the width back: {views:?}"
+                ));
+            }
+            p.log.push(
+                "library: beside a live page, resized, toggled, gives way to a full panel".into(),
+            );
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_library_sidebar_beside_a_live_page() {
+    let (root, _) = run("library", library_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+const BLOCKER: &str = "Rust Browser test blocker";
+
+/// The shield panel's state in the first window's toolbar, as JSON.
+const SHIELD_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const r=b('shield').getBoundingClientRect(),l=b('location').getBoundingClientRect();return JSON.stringify({open:!b('shield-panel').hidden,expanded:b('shield').getAttribute('aria-expanded'),on:b('shield').dataset.on,badge:b('shield-count').textContent,label:b('shield').getAttribute('aria-label'),state:b('shield-state').textContent,count:b('shield-count-text').hidden?'':b('shield-count-text').textContent,limits:b('shield-limits').textContent,inAddress:r.right<=l.right+1&&r.left>=l.left-1,focus:document.activeElement&&document.activeElement.id})})()"#;
+
+fn shield_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = p.result.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    serde_json::from_str(&inner)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// The shield counts exactly the requests the test blocker stops on a page, shows
+/// that count at the end of the address line and in its panel (which takes its own
+/// space above the page), says what it cannot do, closes with Escape, and starts
+/// again at zero on the next page.
+fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            // WebView2 writes indexed rules into the folder: use a copy.
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            // Before any extension: nothing is counted and the panel says so.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].content.engine.blocked.count().is_some() {
+                return Err("Pages count before an extension is added".into());
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let both = [(BLOCKER.to_string(), "on"), (MARKER_A.to_string(), "on")];
+            if names(s) == both {
+                p.marks.clear();
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                p.next();
+            } else if names(s) == [(BLOCKER.to_string(), "on")] && p.marks.is_empty() {
+                // A second extension that does not ask to block requests.
+                p.marks.push(1);
+                add_marker(p, 'a')?;
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!(
+                    "Adding the blocker: {:?}, notice {:?}",
+                    names(s),
+                    s.notice
+                ));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count == Some(2) {
+                // The tab existed before the extension was added; it counts anyway.
+                p.log.push("shield: 2 of 2 blocked requests counted".into());
+                eval_toolbar(p, "document.getElementById('shield').click()")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err(format!("The shield counted {count:?}, not 2"));
+            }
+        }
+        3 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "shield panel open")?;
+            let views = shown_views(s);
+            let (toolbar, page) = (named(&views, "toolbar"), named(&views, "page"));
+            let (Some(toolbar), Some(page)) = (toolbar, page) else {
+                return Err(format!(
+                    "The page should stay shown under the panel: {views:?}"
+                ));
+            };
+            if (page.top - toolbar.bottom).abs() > 2 {
+                return Err(format!(
+                    "The page should move down below the panel: {views:?}"
+                ));
+            }
+            p.marks.push((toolbar.bottom - toolbar.top).max(0) as usize);
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        4 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            let text = |key: &str| r[key].as_str().unwrap_or("").to_string();
+            if r["open"] != true
+                || text("expanded") != "true"
+                || text("on") != "true"
+                || text("badge") != "2"
+                || r["inAddress"] != true
+                || !text("label").contains("2 blocked")
+                || !text("state").contains(&format!("Can block requests: {BLOCKER}."))
+                || !text("state").contains(&format!(
+                    "On, but not asking to block requests: {MARKER_A}."
+                ))
+                || !text("count").starts_with("2 requests blocked on this page")
+                || !text("limits").contains("cannot turn blocking off for one site")
+                || text("focus") != "shield-manage"
+            {
+                return Err(format!("The shield panel is wrong: {r}"));
+            }
+            eval_toolbar(
+                p,
+                "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+            )?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(600) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+            let open = p.marks.first().copied().unwrap_or(0);
+            if (toolbar.bottom - toolbar.top).max(0) as usize >= open {
+                return Err(format!(
+                    "Closing the panel should give the page its room back: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "shield panel closed")?;
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        6 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            if r["open"] != false || r["focus"] != "shield" {
+                return Err(format!(
+                    "Escape should close the panel and return focus: {r}"
+                ));
+            }
+            p.command(el, 0, Command::Navigate(format!("{url}?after-shield")))?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count != Some(0) {
+                return Err(format!(
+                    "The count should start again on a new page: {count:?}"
+                ));
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        8 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            // The toolbar shows the engine's count for this page: none.
+            if r["badge"] != ""
+                || r["label"].as_str().unwrap_or("").contains("blocked")
+                || !r["count"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("0 requests blocked")
+            {
+                return Err(format!("The shield should show 0 on the new page: {r}"));
+            }
+            // Turned off, the extension blocks nothing and the shield says so.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let id = s.settings.extensions[0].id.clone();
+            p.command(el, 0, Command::SetExtensionEnabled { id, enabled: false })?;
+            p.next();
+        }
+        9 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "off"), (MARKER_A.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html?off")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Turning the blocker off: {:?}", names(s)));
+            }
+        }
+        10 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let count = s.tabs.items[0].content.engine.blocked.count();
+            if count != Some(0) {
+                return Err(format!("A turned-off extension blocked {count:?}"));
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        11 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            // Only an extension that does not ask to block requests is on.
+            let state = r["state"].as_str().unwrap_or("");
+            if r["on"] != "false"
+                || r["badge"] != ""
+                || !state.contains("No extension on in this window asks to block requests")
+                || !state.contains(MARKER_A)
+                || state.contains(BLOCKER)
+            {
+                return Err(format!("The shield should say no blocker is on: {r}"));
+            }
+            p.log
+                .push("shield: panel beside the page, Escape, reset, off".into());
+            // The switch in Privacy & security: off removes the listener.
+            p.command(el, 0, Command::SetCountBlocked(false))?;
+            p.phase = 19;
+            p.next();
+        }
+        20 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[0].content.engine;
+            if engine.blocked.listening()
+                || engine.blocked.count().is_some()
+                || s.settings.count_blocked
+            {
+                return Err("Counting off should remove the listener".into());
+            }
+            p.command(
+                el,
+                0,
+                Command::Navigate(format!("{url}shield.html?counting-off")),
+            )?;
+            p.next();
+        }
+        21 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].content.engine.blocked.listening() {
+                return Err("A page listened with counting off".into());
+            }
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        22 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            if r["badge"] != ""
+                || !r["count"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("Counting blocked requests is off")
+            {
+                return Err(format!("The shield should say counting is off: {r}"));
+            }
+            p.command(el, 0, Command::SetCountBlocked(true))?;
+            p.next();
+        }
+        23 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[0].content.engine;
+            if !engine.blocked.listening() || engine.blocked.count().is_none() {
+                return Err("Counting on again should listen again".into());
+            }
+            // Removing every extension stops the counting in open pages.
+            for id in s
+                .settings
+                .extensions
+                .iter()
+                .map(|e| e.id.clone())
+                .collect::<Vec<_>>()
+            {
+                p.command(el, 0, Command::RemoveExtension(id))?;
+            }
+            p.phase = 11;
+            p.next();
+        }
+        12 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.extensions.is_empty() {
+                let count = s.tabs.items[0].content.engine.blocked.count();
+                if count.is_some() || s.tabs.items[0].content.engine.blocked.listening() {
+                    return Err(format!(
+                        "Counting went on after the last extension: {count:?}"
+                    ));
+                }
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Removing extensions: {:?}", names(s)));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_counts_what_an_extension_blocks() {
+    let (root, _) = run("shield", shield_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Load a page of 300 requests 12 times, alternating between a tab that counts
+/// blocked requests and one that does not, and log both load times.
+fn shield_cost_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    const ROUNDS: u32 = 12;
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let engine = &s.tabs.items[1].content.engine;
+            native_shield::watch(
+                &engine.view,
+                engine.blocked.clone(),
+                s.proxy.clone(),
+                s.tabs.items[1].id,
+            )
+            .map_err(|e| e.to_string())?;
+            p.next();
+        }
+        n if (2..2 + 2 * ROUNDS).contains(&n)
+            && n % 2 == 0
+            && p.at.elapsed() > Duration::from_millis(500) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let index = ((n / 2) % 2) as usize;
+            let id = s.tabs.items[index].id;
+            p.command(el, 0, Command::SelectTab(id))?;
+            p.command(el, 0, Command::Navigate(format!("{url}many.html?{n}")))?;
+            p.next();
+        }
+        n if (2..2 + 2 * ROUNDS).contains(&n)
+            && n % 2 == 1
+            && p.at.elapsed() > Duration::from_millis(200)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let ms = p.at.elapsed().as_millis() as usize;
+            p.log.push(format!(
+                "{} {ms}",
+                if (n / 2) % 2 == 1 {
+                    "counting"
+                } else {
+                    "plain"
+                }
+            ));
+            p.marks.push(ms);
+            p.next();
+        }
+        n if n == 2 + 2 * ROUNDS => {
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Measurement only; run by hand with --nocapture"]
+fn native_shield_cost_probe() {
+    let (root, _) = run("shield-cost", shield_cost_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Run `script` in window `index`'s tab column; the answer lands in `p.result`.
+fn eval_tabs_column(p: &mut Probe, index: usize, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[index]
+        .tabs_view
+        .as_ref()
+        .ok_or("No tab column")?
+        .view
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Tab column script failed".to_string())
+}
+
+fn answer(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = p.result.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    serde_json::from_str(&inner)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// Drag with the left mouse button inside `view`, from and to points given in its
+/// CSS pixels. The messages go only to this fixture's own render widget for the
+/// view; no global input or cursor movement is used.
+fn drag_in(
+    view: &wry::WebView,
+    scale: f64,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, RECT, WPARAM},
+        UI::WindowsAndMessaging::{
+            EnumChildWindows, GetClassNameW, GetWindowRect, IsWindowVisible, SendMessageW,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+        },
+    };
+    unsafe extern "system" fn find(hwnd: HWND, state: LPARAM) -> windows::core::BOOL {
+        let mut name = [0u16; 128];
+        // SAFETY: synchronous enumeration with a live, stack-owned output list.
+        unsafe {
+            let len = GetClassNameW(hwnd, &mut name) as usize;
+            if String::from_utf16_lossy(&name[..len]) == "Chrome_RenderWidgetHostHWND"
+                && IsWindowVisible(hwnd).as_bool()
+            {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    (*(state.0 as *mut Vec<(HWND, RECT)>)).push((hwnd, rect));
+                }
+            }
+        }
+        windows::core::BOOL(1)
+    }
+    let point = |(x, y): (f64, f64)| {
+        let (x, y) = ((x * scale).round() as i32, (y * scale).round() as i32);
+        LPARAM(((x as u16 as u32) | ((y as u16 as u32) << 16)) as isize)
+    };
+    // SAFETY: the controller, its descendants and the synchronous messages belong
+    // only to this disposable fixture; enumeration ends before the list is dropped.
+    unsafe {
+        let controller = view.controller();
+        let mut parent = HWND::default();
+        controller
+            .ParentWindow(&mut parent)
+            .map_err(|e| e.to_string())?;
+        let mut place = RECT::default();
+        GetWindowRect(parent, &mut place).map_err(|e| e.to_string())?;
+        let mut widgets: Vec<(HWND, RECT)> = Vec::new();
+        let _ = EnumChildWindows(
+            Some(parent),
+            Some(find),
+            LPARAM(&mut widgets as *mut _ as isize),
+        );
+        // The column's own widget fills its host window.
+        let (hwnd, _) = widgets
+            .into_iter()
+            .find(|(_, r)| (r.left - place.left).abs() <= 2 && (r.top - place.top).abs() <= 2)
+            .ok_or("The tab column's render widget was not found")?;
+        const MK_LBUTTON: usize = 1;
+        let _ = SendMessageW(hwnd, WM_MOUSEMOVE, Some(WPARAM(0)), Some(point(from)));
+        let _ = SendMessageW(
+            hwnd,
+            WM_LBUTTONDOWN,
+            Some(WPARAM(MK_LBUTTON)),
+            Some(point(from)),
+        );
+        for step in 1..=8 {
+            let t = f64::from(step) / 8.0;
+            let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+            let _ = SendMessageW(
+                hwnd,
+                WM_MOUSEMOVE,
+                Some(WPARAM(MK_LBUTTON)),
+                Some(point(at)),
+            );
+        }
+        let _ = SendMessageW(hwnd, WM_LBUTTONUP, Some(WPARAM(0)), Some(point(to)));
+    }
+    Ok(())
+}
+
+/// The tab column's state, as JSON.
+const COLUMN_REPORT: &str = r#"(()=>{const tabs=[...document.querySelectorAll('#tabs .tab')];const rect=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]};return JSON.stringify({role:document.documentElement.dataset.role,orientation:document.getElementById('tabs').getAttribute('aria-orientation'),count:tabs.length,titles:tabs.map(t=>t.querySelector('.select').textContent),labels:tabs.map(t=>t.querySelector('.select').getAttribute('aria-label')),rects:tabs.map(rect),nav:getComputedStyle(document.getElementById('nav')).display,focus:document.hasFocus()&&document.activeElement?document.activeElement.getAttribute('role'):null,selected:document.activeElement?document.activeElement.getAttribute('aria-selected'):null})})()"#;
+
+/// The tab column in each window: placed at the left beside the toolbar and page,
+/// never over them; the same tab actions, Up and Down keys, focus, pinned tabs
+/// and drag reordering; switching it off gives both windows the strip back.
+fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?first")))?;
+            p.command(el, 0, Command::NewTab)?;
+            p.command(el, 0, Command::Navigate(format!("{url}?second")))?;
+            p.app
+                .proxy
+                .send_event(Event::Command(Command::NewWindow))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.len() == 2 && s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 1, Command::Navigate(format!("{url}?window-two")))?;
+            p.command(el, 0, Command::SetVerticalTabs(true))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(1500)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.settings.vertical_tabs {
+                return Err("The setting did not change".into());
+            }
+            for index in 0..2 {
+                check_no_overlap_in(s, index, &format!("vertical, window {index}"))?;
+                let views = shown_views_in(s, index);
+                let (Some(tabs), Some(toolbar), Some(page)) = (
+                    named(&views, "tabs"),
+                    named(&views, "toolbar"),
+                    named(&views, "page"),
+                ) else {
+                    return Err(format!(
+                        "Window {index} should show the column, toolbar and page: {views:?}"
+                    ));
+                };
+                let want = (240.0 * s.windows[index].window.scale_factor()).round() as i32;
+                let host = s.windows[index]
+                    .window
+                    .inner_position()
+                    .map_err(|e| e.to_string())?;
+                if (tabs.left - host.x).abs() > 2
+                    || ((tabs.right - tabs.left) - want).abs() > 2
+                    || (toolbar.left - tabs.right).abs() > 2
+                    || (page.left - tabs.right).abs() > 2
+                {
+                    return Err(format!(
+                        "Window {index}: the column should sit at the left, 240 wide, beside the toolbar and page: {views:?}"
+                    ));
+                }
+            }
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        3 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if r["role"] != "tabs"
+                || r["orientation"] != "vertical"
+                || r["count"] != 2
+                || r["nav"] != "none"
+            {
+                return Err(format!("The column shows the wrong part: {r}"));
+            }
+            // The strip is gone from the toolbar.
+            let active = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.marks = vec![active as usize];
+            eval_toolbar(
+                p,
+                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display+' '+Math.abs(Math.ceil(document.getElementById('chrome').getBoundingClientRect().height)-innerHeight))",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            // No tab strip, and the toolbar view is as tall as its content (no
+            // empty band above the page).
+            // The script's JSON string, inside the callback's JSON.
+            let outer: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            let inner: String = serde_json::from_str(&outer).map_err(|e| e.to_string())?;
+            let (display, gap) = inner.split_once(' ').unwrap_or((&inner, "?"));
+            if display != "none" || gap.parse::<f64>().map_or(true, |g| g > 2.0) {
+                return Err(format!("The toolbar beside the column is wrong: {inner}"));
+            }
+            // Keyboard: focus moves to the column, and Down selects the next tab.
+            p.command(el, 0, Command::FocusTabs)?;
+            p.next();
+        }
+        5 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        6 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            if r["focus"] != "tab" || r["selected"] != "true" {
+                return Err(format!(
+                    "Focus should be on the active tab in the column: {r}"
+                ));
+            }
+            eval_tabs_column(
+                p,
+                0,
+                "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));JSON.stringify(0)",
+            )?;
+            p.next();
+        }
+        7 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let before = p.marks[0];
+            let now = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            let expected = s
+                .tabs
+                .items
+                .iter()
+                .position(|t| t.id as usize == before)
+                .map(|i| s.windows[0].tabs.items[(i + 1) % s.windows[0].tabs.items.len()].id);
+            if Some(now) != expected {
+                return Err(format!(
+                    "Down should select the next tab: {before} -> {now}"
+                ));
+            }
+            // Pinned tabs keep their full title in the column.
+            p.command(el, 0, Command::PinActive)?;
+            p.next();
+        }
+        8 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        9 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let pinned = s
+                .tabs
+                .items
+                .iter()
+                .position(|t| t.pinned)
+                .ok_or("Nothing pinned")?;
+            let title = r["titles"][pinned].as_str().unwrap_or("");
+            let label = r["labels"][pinned].as_str().unwrap_or("");
+            if title != s.windows[0].tabs.items[pinned].title
+                || title.chars().count() <= 5
+                || !label.ends_with(", pinned")
+            {
+                return Err(format!("A pinned tab should show its whole title: {r}"));
+            }
+            // Unpin, then drag the second tab above the first.
+            p.command(el, 0, Command::PinActive)?;
+            p.next();
+        }
+        10 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        11 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            p.marks = s.windows[0]
+                .tabs
+                .items
+                .iter()
+                .map(|t| t.id as usize)
+                .collect();
+            let rect = |i: usize| -> Result<(f64, f64), String> {
+                let a = &r["rects"][i];
+                let (x, y, w, h) = (a[0].as_f64(), a[1].as_f64(), a[2].as_f64(), a[3].as_f64());
+                match (x, y, w, h) {
+                    (Some(x), Some(y), Some(w), Some(h)) => Ok((x + w / 3.0, y + h / 2.0)),
+                    _ => Err(format!("No tab rectangle: {r}")),
+                }
+            };
+            let (from, to) = (rect(1)?, rect(0)?);
+            let scale = s.windows[0].window.scale_factor();
+            let view = &s.windows[0].tabs_view.as_ref().ok_or("No column")?.view;
+            drag_in(view, scale, from, to)?;
+            p.next();
+        }
+        12 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let now: Vec<usize> = s.windows[0]
+                .tabs
+                .items
+                .iter()
+                .map(|t| t.id as usize)
+                .collect();
+            let want = vec![p.marks[1], p.marks[0]];
+            if now != want {
+                return Err(format!(
+                    "Dragging should move the second tab first: {:?} -> {now:?}",
+                    p.marks
+                ));
+            }
+            // Page fullscreen with the column and the library open.
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.phase = 19;
+            p.next();
+        }
+        20 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.app
+                .proxy
+                .send_event(Event::Fullscreen(id, true))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        // The toolbar (and its address and origin) stays, as in every fullscreen
+        // page; the tab column and the library give the page their room.
+        21 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "fullscreen")?;
+            let views = shown_views(s);
+            let host = s.windows[0]
+                .window
+                .inner_position()
+                .map_err(|e| e.to_string())?;
+            let width = s.windows[0].window.inner_size().width as i32;
+            let page = named(&views, "page").ok_or("No page")?;
+            if s.windows[0].fullscreen.is_none()
+                || named(&views, "tabs").is_some()
+                || named(&views, "library").is_some()
+                || (page.left - host.x).abs() > 2
+                || ((page.right - page.left) - width).abs() > 2
+            {
+                return Err(format!(
+                    "A fullscreen page should have the whole width: {views:?}"
+                ));
+            }
+            let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
+            p.app
+                .proxy
+                .send_event(Event::Fullscreen(id, false))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        22 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "after fullscreen")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() || named(&views, "library").is_none() {
+                return Err(format!(
+                    "The column and library should come back: {views:?}"
+                ));
+            }
+            p.command(el, 0, Command::CloseLibrary)?;
+            p.command(el, 1, Command::SetVerticalTabs(false))?;
+            p.phase = 12;
+            p.next();
+        }
+        13 if p.at.elapsed() > Duration::from_millis(1500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for index in 0..2 {
+                check_no_overlap_in(s, index, &format!("horizontal, window {index}"))?;
+                let views = shown_views_in(s, index);
+                let toolbar = named(&views, "toolbar").ok_or("No toolbar")?;
+                let page = named(&views, "page").ok_or("No page")?;
+                if named(&views, "tabs").is_some() || (page.left - toolbar.left).abs() > 2 {
+                    return Err(format!(
+                        "Window {index} should give the page its width back: {views:?}"
+                    ));
+                }
+            }
+            if s.settings.vertical_tabs {
+                return Err("The setting did not turn off".into());
+            }
+            eval_toolbar(
+                p,
+                "JSON.stringify(getComputedStyle(document.getElementById('tabrow')).display)",
+            )?;
+            p.next();
+        }
+        14 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            if text == r#""\"none\"""# {
+                return Err("The tab strip did not come back".into());
+            }
+            p.log
+                .push("vertical tabs: two windows, keys, focus, pin, drag, off".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_vertical_tabs_in_two_windows() {
+    let (root, _) = run("vertical", vertical_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The new-tab tiles, as JSON.
+const TILES_REPORT: &str = r#"(()=>{const cards=[...document.querySelectorAll('#favorite-list .favorite-card')];const m=document.getElementById('manager');return JSON.stringify({shown:!document.getElementById('newtab-body').hidden,background:m.dataset.background,image:getComputedStyle(m).backgroundImage,picker:document.getElementById('home-background').value,tiles:cards.map(c=>{const t=c.querySelector('.tile'),i=t&&t.querySelector('img');return {icon:i?i.getAttribute('src').slice(0,22):'',letter:i?'':t.textContent,hidden:t.getAttribute('aria-hidden'),name:c.querySelector('.visit span:last-child').textContent}})})})()"#;
+
+/// Favourite tiles show the icon saved from a visit to their site, or a letter;
+/// the background comes from the theme's colours and is saved as a setting.
+fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let other = url.replace("127.0.0.1", "localhost");
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            s.command(Command::AddFavorite {
+                title: "Tile fixture".into(),
+                url: format!("{url}tile.html"),
+            })
+            .map_err(|e| e.to_string())?;
+            s.command(Command::AddFavorite {
+                title: "letter fixture".into(),
+                url: format!("{other}?letter"),
+            })
+            .map_err(|e| e.to_string())?;
+            p.command(el, 0, Command::Navigate(format!("{url}tile.html")))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let favorites = &s.settings.favorites;
+            if !favorites[0].icon.is_empty() {
+                let favicon = &s.windows[0].tabs.items[0].content.state.favicon;
+                if favorites[0].icon != *favicon || !favorites[1].icon.is_empty() {
+                    return Err("Only the visited site's favourite should keep its icon".into());
+                }
+                s.settings.validate()?;
+                // Another page of the same site, without an icon of its own, must
+                // not replace the favourite's icon with the engine's generic one.
+                *p.result.lock().unwrap() = Some(favorites[0].icon.clone());
+                p.command(el, 0, Command::Navigate(format!("{url}?other-page")))?;
+                p.phase = 9;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("The favourite never got its site's icon".into());
+            }
+        }
+        10 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let saved = p.result.lock().unwrap().clone().unwrap_or_default();
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.favorites[0].icon != saved {
+                return Err("Another page of the site replaced the favourite's icon".into());
+            }
+            p.command(el, 0, Command::Home)?;
+            p.command(
+                el,
+                0,
+                Command::SetNewtabBackground(rust_browser::settings::Background::Dusk),
+            )?;
+            p.phase = 1;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(800) => {
+            eval_toolbar(p, TILES_REPORT)?;
+            p.next();
+        }
+        3 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let tile = |i: usize, key: &str| r["tiles"][i][key].as_str().unwrap_or("").to_string();
+            if r["shown"] != true
+                || r["background"] != "dusk"
+                || r["picker"] != "dusk"
+                || !r["image"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("linear-gradient")
+                || tile(0, "icon") != "data:image/png;base64,"
+                || tile(0, "name") != "Tile fixture"
+                || !tile(1, "icon").is_empty()
+                || tile(1, "letter") != "L"
+                || tile(1, "hidden") != "true"
+            {
+                return Err(format!("The new-tab tiles are wrong: {r}"));
+            }
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.newtab_background != rust_browser::settings::Background::Dusk {
+                return Err("The background was not saved".into());
+            }
+            p.log
+                .push("new tab: icon tile, letter tile, dusk background".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_newtab_tiles_and_background() {
+    let (root, _) = run("tiles", tiles_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A request the blocker stops inside a frame from another site (localhost in a
+/// 127.0.0.1 page) is not in the page's count: WebView2 reports such frames'
+/// requests to their own DevTools target. The panel says so.
+fn shield_frame_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "on")] {
+                p.command(el, 0, Command::Navigate(format!("{url}shield-frame.html")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding the blocker: {:?}", names(s)));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(3)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            *p.result.lock().unwrap() = None;
+            let result = p.result.clone();
+            s.tabs.items[0]
+                .content
+                .engine
+                .view
+                .evaluate_script_with_callback(
+                    "document.documentElement.dataset.frame||'none'",
+                    move |v| *result.lock().unwrap() = Some(v),
+                )
+                .map_err(|_| "eval")?;
+            p.next();
+        }
+        3 => {
+            if let Some(v) = p.result.lock().unwrap().clone() {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let count = s.tabs.items[0].content.engine.blocked.count();
+                // The frame loaded and its script was stopped, yet nothing is counted.
+                if v != r#""stopped:localhost""# || count != Some(0) {
+                    return Err(format!(
+                        "Frame from another site: count {count:?}, frame {v}"
+                    ));
+                }
+                p.log
+                    .push("shield: a cross-site frame's blocked request is not counted".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_does_not_count_frames_from_other_sites() {
+    let (root, _) = run("shield-frame", shield_frame_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The open shield panel, with two extensions listed, in a narrow window: all of
+/// it stays inside the toolbar view (scrolling within itself if needed), and the
+/// page starts below it.
+fn shield_narrow_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let folder = p.root.join("blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions/blocker");
+            for name in ["manifest.json", "rules.json"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(BLOCKER.to_string(), "on"), (MARKER_A.to_string(), "on")] {
+                let _ = s
+                    .window
+                    .request_inner_size(winit::dpi::LogicalSize::new(520.0, 700.0));
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                p.next();
+            } else if names(s) == [(BLOCKER.to_string(), "on")] && p.marks.is_empty() {
+                p.marks.push(1);
+                add_marker(p, 'a')?;
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!("Adding extensions: {:?}", names(s)));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            eval_toolbar(p, "document.getElementById('shield').click()")?;
+            p.next();
+        }
+        3 if p.at.elapsed() > Duration::from_millis(1200) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "narrow shield panel")?;
+            let views = shown_views(s);
+            let (Some(toolbar), Some(page)) = (named(&views, "toolbar"), named(&views, "page"))
+            else {
+                return Err(format!("Toolbar and page should show: {views:?}"));
+            };
+            if (page.top - toolbar.bottom).abs() > 2 {
+                return Err(format!("The page should start below the panel: {views:?}"));
+            }
+            eval_toolbar(
+                p,
+                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({buttonsBottom:list.querySelector('.shield-actions').getBoundingClientRect().bottom,open:!list.hidden,lines:document.getElementById('shield-state').textContent.length+document.getElementById('shield-limits').textContent.length,last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let num = |k: &str| r[k].as_f64().unwrap_or(f64::MAX);
+            // Everything of the toolbar, panel included, fits in the toolbar view;
+            // a panel taller than its room scrolls within itself, so its buttons
+            // are inside the view or reachable by scrolling it.
+            let scrollable = r["scrolls"] == true && r["overflow"] == "auto";
+            if r["open"] != true
+                || (num("buttonsBottom") > num("height") + 1.0 && !scrollable)
+                || num("lines") < 200.0
+                || num("width") > 700.0
+                || num("panelBottom") > num("height") + 1.0
+                || num("chromeBottom") > num("height") + 1.0
+                || (r["scrolls"] == true && r["overflow"] != "auto")
+            {
+                let s = p.app.session.as_ref().ok_or("No session")?;
+                return Err(format!(
+                    "The shield panel is cut off: {r} (chrome height {}, notice {:?})",
+                    s.chrome_height, s.notice
+                ));
+            }
+            p.log.push(format!("shield: narrow panel fits {r}"));
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_panel_fits_a_narrow_window() {
+    let (root, _) = run("shield-narrow", shield_narrow_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The profile folder a view's WebView2 profile lives in.
+fn profile_path(view: &wry::WebView) -> Result<String, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_13;
+    let mut path = windows::core::PWSTR::null();
+    // SAFETY: read-only queries on a live view of this fixture, on its own thread.
+    unsafe {
+        view.webview()
+            .cast::<ICoreWebView2_13>()
+            .and_then(|v| v.Profile())
+            .and_then(|p| p.ProfilePath(&mut path))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(webview2_com::take_pwstr(path))
+}
+
+fn side<'a>(s: &'a Session, role: &str) -> Result<&'a wry::WebView, String> {
+    let window = &s.windows[0];
+    let found = if role == "tabs" {
+        &window.tabs_view
+    } else {
+        &window.library_view
+    };
+    found
+        .as_ref()
+        .map(|v| &v.view)
+        .ok_or_else(|| format!("No {role} view"))
+}
+
+/// The tab and library columns are built like the toolbar: its profile and
+/// engine process, no saved passwords or form data, no way to navigate away from
+/// their own document. When the toolbar's engine ends, both come back with the
+/// toolbar and show the browser's state again.
+fn side_restriction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use super::toolbar_validation::{browser_process, terminate};
+    let url = p.url.clone();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(format!("{url}?side")))?;
+            p.command(el, 0, Command::SetVerticalTabs(true))?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(2)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let page = &s.windows[0].tabs.items[0].content.engine.view;
+            let toolbar = &s.windows[0].toolbar;
+            for role in ["tabs", "library"] {
+                let view = side(s, role)?;
+                let forms = native_security::forms(view).map_err(|e| e.to_string())?;
+                if forms != Forms::default() {
+                    return Err(format!(
+                        "The {role} view saves passwords or forms: {forms:?}"
+                    ));
+                }
+                if profile_path(view)? != profile_path(toolbar)?
+                    || profile_path(view)? == profile_path(page)?
+                {
+                    return Err(format!("The {role} view is not in the toolbar profile"));
+                }
+                if browser_process(view)? != browser_process(toolbar)?
+                    || browser_process(view)? == browser_process(page)?
+                {
+                    return Err(format!(
+                        "The {role} view does not share the toolbar's engine"
+                    ));
+                }
+                // Try to leave the trusted document.
+                view.evaluate_script(&format!(
+                    "location.href={}",
+                    serde_json::to_string(&format!("{url}?escape")).map_err(|e| e.to_string())?
+                ))
+                .map_err(|_| "Script failed")?;
+            }
+            p.next();
+        }
+        3 if p.at.elapsed() > Duration::from_millis(1500) => {
+            eval_tabs_column(
+                p,
+                0,
+                "JSON.stringify([location.protocol,location.hash,document.documentElement.dataset.role,typeof window.render])",
+            )?;
+            p.next();
+        }
+        4 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r##"["data:","#tabs","tabs","function"]"## {
+                return Err(format!("The tab column navigated away: {inner}"));
+            }
+            eval_library(
+                p,
+                "JSON.stringify([location.protocol,location.hash,document.documentElement.dataset.role,typeof window.render])",
+            )?;
+            p.next();
+        }
+        5 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r##"["data:","#library","library","function"]"## {
+                return Err(format!("The library column navigated away: {inner}"));
+            }
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            // End the toolbar's engine: the toolbar and both columns go with it.
+            // Each trusted view's source number names that build of it (a new view
+            // can reuse a dropped view's COM address).
+            let w = &s.windows[0];
+            p.marks = vec![
+                w.toolbar_source as usize,
+                w.tabs_view.as_ref().map_or(0, |v| v.source as usize),
+                w.library_view.as_ref().map_or(0, |v| v.source as usize),
+            ];
+            terminate(browser_process(&s.windows[0].toolbar)?)?;
+            p.next();
+        }
+        6 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let w = &s.windows[0];
+            let now = [
+                Some(w.toolbar_source as usize),
+                w.tabs_view.as_ref().map(|v| v.source as usize),
+                w.library_view.as_ref().map(|v| v.source as usize),
+            ];
+            if now
+                .iter()
+                .zip(&p.marks)
+                .all(|(n, old)| n.is_some_and(|n| n != *old))
+            {
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(30) {
+                return Err(format!(
+                    "Not every trusted view was replaced: {now:?} was {:?}",
+                    p.marks
+                ));
+            }
+        }
+        7 if p.at.elapsed() > Duration::from_secs(2) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "after recovery")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() || named(&views, "library").is_none() {
+                return Err(format!("The columns did not come back: {views:?}"));
+            }
+            eval_tabs_column(p, 0, COLUMN_REPORT)?;
+            p.next();
+        }
+        8 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if r["role"] != "tabs" || r["count"] != s.windows[0].tabs.items.len() {
+                return Err(format!(
+                    "The rebuilt tab column does not show the tabs: {r}"
+                ));
+            }
+            eval_library(
+                p,
+                "JSON.stringify(document.getElementById('manager').hidden?'hidden':document.getElementById('manager-title').textContent)",
+            )?;
+            p.next();
+        }
+        9 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if inner != r#""Browsing history""# {
+                return Err(format!(
+                    "The rebuilt library does not show history: {inner}"
+                ));
+            }
+            p.log
+                .push("side views: toolbar restrictions, recovered with the toolbar".into());
+            p.marks.clear();
+            p.next();
+        }
+        // A tab column that keeps failing is rebuilt a bounded number of times;
+        // then the window shows the tab strip again.
+        10 if p.at.elapsed() > Duration::from_millis(400) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if let Some(source) = s.windows[0].tabs_view.as_ref().map(|v| v.source) {
+                if p.marks.len() > 8 {
+                    return Err("The tab column was rebuilt without limit".into());
+                }
+                p.marks.push(source as usize);
+                p.app
+                    .proxy
+                    .send_event(Event::ToolbarProcess(
+                        source,
+                        crate::native_activity::Failure::Renderer,
+                    ))
+                    .map_err(|_| "proxy")?;
+                p.at = Instant::now();
+            } else {
+                p.next();
+            }
+        }
+        11 if p.at.elapsed() > Duration::from_millis(600) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "column given up")?;
+            let views = shown_views(s);
+            let (toolbar, page) = (named(&views, "toolbar"), named(&views, "page"));
+            let host = s.windows[0]
+                .window
+                .inner_position()
+                .map_err(|e| e.to_string())?;
+            if named(&views, "tabs").is_some()
+                || toolbar.is_none_or(|t| (t.left - host.x).abs() > 2)
+                || page.is_none_or(|t| (t.left - host.x).abs() > 2)
+                || !s.notice.contains("keeps stopping")
+            {
+                return Err(format!(
+                    "After the last rebuild the strip should return: {views:?}, {:?}",
+                    s.notice
+                ));
+            }
+            p.log.push(format!(
+                "side views: tab column given up after {} more failures",
+                p.marks.len()
+            ));
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; ends only the fixture's own toolbar processes"]
+fn native_side_views_have_the_toolbar_restrictions_and_recover() {
+    let (root, _) = run("side-views", side_restriction_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Whole-window screenshots for the v0.21 review (not a gate). Each shown view is
+/// captured by its own engine at the emulated scale and the captures are placed at
+/// their layout positions with System.Drawing, so 150% needs no display setting.
+/// Writes `<label>-<scene>-<theme>-<scale>.png` to `RUST_BROWSER_SHOTS`.
+fn window_shot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use rust_browser::settings::Theme;
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
+    // The horizontal new-tab page fills the toolbar view alone; `layout_screenshots`
+    // captures it (a whole-window capture of it came out blank).
+    const SCENES: [&str; 6] = [
+        "website",
+        "shield",
+        "library",
+        "vertical-website",
+        "vertical-library",
+        "vertical-newtab",
+    ];
+    const SHOTS: [(&str, Theme, f64); 4] = [
+        ("light", Theme::Light, 1.0),
+        ("light", Theme::Light, 1.5),
+        ("dark", Theme::Dark, 1.0),
+        ("dark", Theme::Dark, 1.5),
+    ];
+    const PER_SCENE: u32 = 1 + 3 * SHOTS.len() as u32;
+    // Seven scenes of four shots take longer than a test's usual limit.
+    p.limit = Duration::from_secs(400);
+    let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
+    let label = std::env::var("RUST_BROWSER_SHOTS_LABEL").unwrap_or_else(|_| "window".into());
+    let url = p.url.clone();
+    let wait = if p.phase.is_multiple_of(PER_SCENE) {
+        2500
+    } else {
+        1500
+    };
+    if p.at.elapsed() < Duration::from_millis(wait) {
+        return Ok(());
+    }
+    let (scene, k) = ((p.phase / PER_SCENE) as usize, p.phase % PER_SCENE);
+    if scene >= SCENES.len() {
+        p.done = true;
+        el.exit();
+        return Ok(());
+    }
+    let name = SCENES[scene];
+    type Part = (&'static str, (f64, f64, f64, f64));
+    fn parts(s: &Session) -> Vec<Part> {
+        let plan = s.current_layout();
+        let mut found = vec![("toolbar", plan.toolbar)];
+        found.extend(plan.page.map(|r| ("page", r)));
+        found.extend(plan.tabs.map(|r| ("tabs", r)));
+        found.extend(plan.library.map(|r| ("library", r)));
+        found
+    }
+    fn view(s: &Session, part: &str) -> Option<ICoreWebView2> {
+        let w = &s.windows[0];
+        match part {
+            "toolbar" => Some(w.toolbar.webview()),
+            "page" => w.tabs.active().map(|t| t.content.engine.view.webview()),
+            "tabs" => w.tabs_view.as_ref().map(|v| v.view.webview()),
+            _ => w.library_view.as_ref().map(|v| v.view.webview()),
+        }
+    }
+    fn cdp(
+        core: &ICoreWebView2,
+        method: &str,
+        params: String,
+        path: Option<PathBuf>,
+    ) -> Result<(), String> {
+        // SAFETY: UI-thread call on one of this fixture's own views.
+        unsafe {
+            core.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from(method),
+                &windows::core::HSTRING::from(params),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |_, json| {
+                    if let Some(path) = &path
+                        && let Ok(value) =
+                            serde_json::from_str::<serde_json::Value>(&json.to_string())
+                        && let Some(data) = value["data"].as_str()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+                    {
+                        let _ = std::fs::write(path, bytes);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|e| format!("{method}: {e}"))
+    }
+    if k == 0 {
+        // Set the scene up.
+        match name {
+            "website" => {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                s.window
+                    .set_window_level(winit::window::WindowLevel::AlwaysOnTop);
+                let _ = s
+                    .window
+                    .request_inner_size(winit::dpi::LogicalSize::new(1280.0, 760.0));
+                s.command(Command::AddFavorite {
+                    title: "Tile fixture".into(),
+                    url: format!("{url}tile.html"),
+                })
+                .map_err(|e| e.to_string())?;
+                s.command(Command::AddFavorite {
+                    title: "Library".into(),
+                    url: format!("{}?letter", url.replace("127.0.0.1", "localhost")),
+                })
+                .map_err(|e| e.to_string())?;
+                p.command(el, 0, Command::Navigate(format!("{url}tile.html")))?;
+                let folder = p.root.join("blocker");
+                std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+                let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/extensions/blocker");
+                for file in ["manifest.json", "rules.json"] {
+                    std::fs::copy(source.join(file), folder.join(file))
+                        .map_err(|e| e.to_string())?;
+                }
+                p.app
+                    .proxy
+                    .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                        Some(folder),
+                    ))))
+                    .map_err(|_| "proxy")?;
+            }
+            "shield" => {
+                p.command(
+                    el,
+                    0,
+                    Command::SetNewtabBackground(rust_browser::settings::Background::Glow),
+                )?;
+                p.command(el, 0, Command::Navigate(format!("{url}shield.html")))?;
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let _ = s.windows[0]
+                    .toolbar
+                    .evaluate_script("document.getElementById('shield').click()");
+            }
+            "library" => {
+                let s = p.app.session.as_mut().ok_or("No session")?;
+                let _ = s.windows[0]
+                    .toolbar
+                    .evaluate_script("document.getElementById('shield-close').click()");
+                p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            }
+            "vertical-website" => {
+                p.command(el, 0, Command::CloseLibrary)?;
+                p.command(el, 0, Command::SetVerticalTabs(true))?;
+            }
+            "vertical-library" => p.command(el, 0, Command::ShowPanel(Panel::History))?,
+            _ => {
+                p.command(el, 0, Command::CloseLibrary)?;
+                p.command(el, 0, Command::NewTab)?;
+            }
+        }
+        p.next();
+        return Ok(());
+    }
+    let (shot, stage) = (((k - 1) / 3) as usize, (k - 1) % 3);
+    let (theme_name, theme, scale) = SHOTS[shot];
+    let dir = p.root.join("window-shot");
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    match stage {
+        0 => {
+            s.settings.theme = theme;
+            s.last_render.borrow_mut().clear();
+            for side in [&s.windows[0].tabs_view, &s.windows[0].library_view]
+                .into_iter()
+                .flatten()
+            {
+                side.last_render.borrow_mut().clear();
+            }
+            s.render();
+            for (part, (_, _, w, h)) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    let params = serde_json::json!({ "width": w.round() as u32,
+                        "height": h.round() as u32, "deviceScaleFactor": scale, "mobile": false });
+                    cdp(
+                        &core,
+                        "Emulation.setDeviceMetricsOverride",
+                        params.to_string(),
+                        None,
+                    )?;
+                }
+            }
+        }
+        1 => {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            for (part, _) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    cdp(
+                        &core,
+                        "Page.captureScreenshot",
+                        r#"{"format":"png"}"#.into(),
+                        Some(dir.join(format!("{part}.png"))),
+                    )?;
+                }
+            }
+        }
+        _ => {
+            let size = s
+                .window
+                .inner_size()
+                .to_logical::<f64>(s.window.scale_factor());
+            if size.width < 100.0 || size.height < 100.0 {
+                return Err(format!(
+                    "{name}: window is {}x{} (minimized: {:?})",
+                    size.width,
+                    size.height,
+                    s.window.is_minimized()
+                ));
+            }
+            let mut draws = Vec::new();
+            for (part, (x, y, w, h)) in parts(s) {
+                let file = dir.join(format!("{part}.png"));
+                if !file.exists() {
+                    return Err(format!("{name}: no capture of {part}"));
+                }
+                draws.push(format!(
+                    "@('{}',{},{},{},{})",
+                    file.display(),
+                    (x * scale).round(),
+                    (y * scale).round(),
+                    (w * scale).round(),
+                    (h * scale).round()
+                ));
+            }
+            let target = out.join(format!(
+                "{label}-{name}-{theme_name}-{}.png",
+                (scale * 100.0) as u32
+            ));
+            let script = format!(
+                "Add-Type -AssemblyName System.Drawing; $b=New-Object System.Drawing.Bitmap({},{}); $g=[System.Drawing.Graphics]::FromImage($b); foreach($d in @({})){{$i=[System.Drawing.Image]::FromFile($d[0]); $g.DrawImage($i,[int]$d[1],[int]$d[2],[int]$d[3],[int]$d[4]); $i.Dispose()}}; $b.Save('{}',[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $b.Dispose()",
+                (size.width * scale).round(),
+                (size.height * scale).round(),
+                draws.join(","),
+                target.display()
+            );
+            // A capture may still be being written: try a few times.
+            let mut error = String::new();
+            for _ in 0..4 {
+                let output = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                if output.status.success() {
+                    error.clear();
+                    break;
+                }
+                error = String::from_utf8_lossy(&output.stderr)
+                    .chars()
+                    .take(400)
+                    .collect();
+                std::thread::sleep(Duration::from_millis(700));
+            }
+            if !error.is_empty() {
+                return Err(format!("{name}: composing failed: {error}"));
+            }
+            for (part, _) in parts(s) {
+                if let Some(core) = view(s, part) {
+                    cdp(
+                        &core,
+                        "Emulation.clearDeviceMetricsOverride",
+                        "{}".into(),
+                        None,
+                    )?;
+                }
+            }
+            p.log.push(format!("wrote {}", target.display()));
+        }
+    }
+    p.next();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Layout review tool: writes whole-window screenshots to RUST_BROWSER_SHOTS"]
+fn window_screenshots() {
+    let (root, _) = run("window-shots", window_shot_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A private window takes one setting from the normal profile, read-only: tabs
+/// down the side. Nothing else is read (favourites, theme), the switch is refused
+/// there, and the normal session file is never written.
+fn private_vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.private {
+                return Err("The fixture did not start a private window".into());
+            }
+            if !s.settings.vertical_tabs
+                || !s.settings.favorites.is_empty()
+                || s.settings.theme != rust_browser::settings::Settings::default().theme
+            {
+                return Err(format!(
+                    "A private window should take only vertical tabs: {:?}",
+                    s.settings
+                ));
+            }
+            if s.command(Command::SetVerticalTabs(false)).is_ok()
+                || s.command(Command::SetCountBlocked(false)).is_ok()
+            {
+                return Err("A private window changed a setting it only reads".into());
+            }
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let views = shown_views(s);
+            if named(&views, "tabs").is_none() {
+                return Err(format!(
+                    "The private window should show the tab column: {views:?}"
+                ));
+            }
+            check_no_overlap(s, "private vertical")?;
+            p.log
+                .push("private: vertical tabs read from the normal profile only".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real private window"]
+fn native_private_windows_follow_vertical_tabs_read_only() {
+    let (root, _) = run("private-vertical", private_vertical_steps, |root, _| {
+        let snapshot = Snapshot {
+            settings: rust_browser::settings::Settings {
+                vertical_tabs: true,
+                theme: rust_browser::settings::Theme::Plum,
+                favorites: vec![rust_browser::settings::Favorite {
+                    title: "Normal favourite".into(),
+                    url: "https://example.com/".into(),
+                    icon: String::new(),
+                }],
+                ..Default::default()
+            },
+            ..Snapshot::default()
+        };
+        storage::save(&root.join("session.json"), &snapshot).unwrap();
+        std::fs::copy(root.join("session.json"), root.join("session-before.json")).unwrap();
+    });
+    let before = std::fs::read(root.join("session-before.json")).unwrap();
+    let saved = storage::load(&root.join("session.json")).unwrap();
+    assert!(saved.settings.vertical_tabs && saved.settings.favorites.len() == 1);
+    // Nothing was written to the normal session.
+    let after = std::fs::read(root.join("session.json")).unwrap();
+    assert_eq!(before, after);
     let _ = std::fs::remove_dir_all(root);
 }

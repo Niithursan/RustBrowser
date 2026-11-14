@@ -238,6 +238,7 @@ fn new_tab_settings_reject_remote_active_content_and_invalid_values() {
         favorites: vec![Favorite {
             title: "Rust".into(),
             url: "https://www.rust-lang.org/".into(),
+            icon: String::new(),
         }],
         ..Settings::default()
     };
@@ -261,7 +262,8 @@ fn new_tab_settings_reject_remote_active_content_and_invalid_values() {
     settings.favorites = vec![
         Favorite {
             title: "A".into(),
-            url: "https://example.com/".into()
+            url: "https://example.com/".into(),
+            icon: String::new(),
         };
         2
     ];

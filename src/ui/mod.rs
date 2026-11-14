@@ -41,6 +41,12 @@ pub enum Command {
     SetSuspendDelay(u64),
     SetTheme(rust_browser::settings::Theme),
     SetShowRecent(bool),
+    /// Show tabs in a column at the left of every window (Settings > Appearance).
+    SetVerticalTabs(bool),
+    /// The new-tab page's background.
+    SetNewtabBackground(rust_browser::settings::Background),
+    /// Whether the shield counts requests extensions block.
+    SetCountBlocked(bool),
     AddFavorite {
         title: String,
         url: String,
@@ -110,6 +116,12 @@ pub enum Command {
     BookmarkCurrent,
     ShowPanel(Panel),
     ClosePanel,
+    /// Close the library column beside the page.
+    CloseLibrary,
+    /// Show or hide the library column (Ctrl+Shift+B).
+    ToggleLibrary,
+    /// The library column's new width, in logical pixels.
+    SetLibraryWidth(f64),
     QueryLibrary(Filter),
     Library(Action),
     OpenSaved {
@@ -156,6 +168,8 @@ pub struct ExtensionRow {
     pub folder: String,
     /// "on", "off" or "missing" (no longer installed in the profile).
     pub state: &'static str,
+    /// Whether it asks to block requests; `None` when Rust Browser cannot tell.
+    pub blocks: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -178,6 +192,16 @@ pub struct ToolbarState<'a> {
     pub panel: Option<Panel>,
     /// The menu sidebar is open (the toolbar fills the window).
     pub menu_open: bool,
+    /// What the library column beside the page shows, if it is open.
+    pub library_panel: Option<Panel>,
+    /// Tabs are shown in the column at the left (the toolbar has no tab strip).
+    pub vertical_tabs: bool,
+    /// Requests extensions stopped for the active page, as the engine reported
+    /// them; `None` when nothing is counted (no extension added, counting off, or a
+    /// private window).
+    pub blocked: Option<u32>,
+    /// The "Count blocked requests" switch.
+    pub count_blocked: bool,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
@@ -214,6 +238,7 @@ pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command>
         (0x48, true, _) => Some(Command::ShowPanel(Panel::History)),
         (0x4a, true, _) => Some(Command::ShowPanel(Panel::Downloads)),
         (0x4f, true, _) if shift => Some(Command::ShowPanel(Panel::Bookmarks)),
+        (0x42, true, _) if shift => Some(Command::ToggleLibrary),
         (0x4c, true, _) | (0x44, _, true) | (0x75, _, _) => Some(Command::FocusAddress),
         (0x52, true, _) | (0x74, _, _) => Some(Command::Reload),
         (0x25, _, true) => Some(Command::Back),
@@ -319,6 +344,54 @@ mod tests {
                     "{theme}: --accent on {background} is {ratio:.2}"
                 );
             }
+        }
+    }
+    /// `a` mixed into `b` by `share` (0 to 1), as CSS `color-mix(in srgb, ...)` does.
+    fn mix(a: &str, b: &str, share: f64) -> String {
+        let rgb = |hex: &str| {
+            let hex = hex.trim_start_matches('#');
+            let hex: String = if hex.len() == 3 {
+                hex.chars().flat_map(|c| [c, c]).collect()
+            } else {
+                hex.to_owned()
+            };
+            [0, 2, 4].map(|i| f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap()))
+        };
+        let (x, y) = (rgb(a), rgb(b));
+        let c = |i: usize| (x[i] * share + y[i] * (1.0 - share)).round() as u8;
+        format!("#{:02x}{:02x}{:02x}", c(0), c(1), c(2))
+    }
+    #[test]
+    fn new_tab_backgrounds_and_the_shield_keep_contrast_in_every_theme() {
+        // Each background's colour stops, as the CSS draws them.
+        assert!(HTML.contains("#manager[data-background=dusk]{background:linear-gradient(170deg,var(--strip),var(--surface) 70%)}"));
+        assert!(HTML.contains("#manager[data-background=glow]{background:radial-gradient(ellipse at 50% 0,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface) 70%)}"));
+        assert!(HTML.contains("#manager[data-background=panels]{background:linear-gradient(135deg,var(--panel),var(--card))}"));
+        assert!(HTML.contains("#shield[data-on=true]{color:var(--accent)}"));
+        let dark = tokens(":root");
+        for theme in ["dark", "slate", "plum", "light"] {
+            let mut palette = dark.clone();
+            palette.extend(tokens(&format!("body[data-theme={theme}]")));
+            let token = |name: &str| palette[name].clone();
+            let stops = [
+                token("--strip"),
+                token("--surface"),
+                token("--panel"),
+                token("--card"),
+                mix(&token("--accent"), &token("--surface"), 0.10),
+            ];
+            for stop in &stops {
+                for text in ["--text", "--secondary"] {
+                    let ratio = contrast(&token(text), stop);
+                    assert!(
+                        ratio >= 4.5,
+                        "{theme}: {text} on a background stop {stop} is {ratio:.2}"
+                    );
+                }
+            }
+            // The shield, when an extension is on, is an accent icon on the field.
+            let ratio = contrast(&token("--accent"), &token("--field"));
+            assert!(ratio >= 3.0, "{theme}: the shield on --field is {ratio:.2}");
         }
     }
     #[test]

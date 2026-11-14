@@ -427,6 +427,7 @@ fn run(private: bool) {
                 favorites: vec![rust_browser::settings::Favorite {
                     title: "Normal favorite".into(),
                     url: "https://example.com/".into(),
+                    icon: String::new(),
                 }],
                 ..Settings::default()
             },

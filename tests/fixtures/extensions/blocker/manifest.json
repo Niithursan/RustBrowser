@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Rust Browser test blocker",
+  "version": "1.0.0",
+  "description": "Test fixture written for Rust Browser. Blocks requests whose address contains blocked-by-fixture; it reads and sends nothing.",
+  "permissions": ["declarativeNetRequest"],
+  "declarative_net_request": {
+    "rule_resources": [{ "id": "fixture", "enabled": true, "path": "rules.json" }]
+  }
+}

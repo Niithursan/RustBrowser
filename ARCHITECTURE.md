@@ -19,6 +19,38 @@ is introduced into normal browsing by this milestone.
 | `diagnostics.rs` | Bounded 32-message worker channel and fixed typed events. At most 128 records/32 KiB per journal plus a same-sized temporary journal. No free-form browsing data or private writer. |
 | `build.rs`, `packaging/windows/` | Windows SDK version/manifest resource and allowlisted portable package. No new Cargo dependency, installer service or updater. |
 
+## Views beside the page (v0.21)
+
+A window has a toolbar view, the active page's view and, when used, two side views:
+the tab column (vertical tabs) and the library column. All trusted views load the same
+local document; the URL fragment (`#tabs`, `#library`) picks the part each shows, and
+each is built by the same function with the same restrictions. Side views are created
+the first time they are needed and hidden, not destroyed, when not shown.
+
+Where each goes comes from one pure function, `layout()`, of the window size, the
+toolbar height, whether vertical tabs and the library are on, and whether a full
+panel, the new-tab page or the menu sidebar fills the window:
+
+| State | Tab column | Toolbar | Page | Library |
+| --- | --- | --- | --- | --- |
+| Normal | none | full width, top | below the toolbar | none |
+| Vertical tabs | left, 240 wide, full height | right of the column, top | right of the column, below the toolbar | none |
+| Library open | as above | as above | narrower by the library width | right, below the toolbar |
+| Full panel, new tab, menu | as above | its column, full height | hidden | hidden |
+| Page fullscreen | hidden | full width, top | full width, below the toolbar | hidden |
+
+The library keeps at least 320 pixels for the page. A unit test checks 720
+combinations for overlap, and native tests measure the real windows.
+
+**Why the side views never overlap the page.** Each WebView2 view is a separate window
+under the browser window, and PR #27 found that Windows does not keep their stacking
+order: a view laid over another can end up underneath it. So no view is ever placed
+over another; anything beside the page takes its own space and the page shrinks or
+moves. That is why vertical tabs are a column of their own rather than a panel that
+slides over the page, why the library is a column rather than a drawer, and why the
+shield panel pushes the page down instead of floating over it. (The menu sidebar uses
+a still image of the page instead, PR #27.)
+
 ## Navigation completion and cancellation
 
 Wry's navigation policy runs before the production native starting observer.

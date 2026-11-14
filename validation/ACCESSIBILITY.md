@@ -64,6 +64,24 @@ UIA script is manual and is not a CI gate. These recorded runs do not complete t
 [owner checklist](OWNER_CHECKLIST.md). Narrator, real contrast themes, physical IME,
 non-US keyboard layouts and native mixed-DPI transitions remain unverified.
 
+## v0.21 additions
+
+- The keyboard-reachability and scaled-layout suite now also covers the tab column
+  (240 CSS pixels) and the library column (260, 360 and 640), each at 1, 1.25, 1.5
+  and 2: no overflow, nothing outside the view, no overlapping controls, and Tab and
+  Shift+Tab reach every control. Down selects the next tab in the column. It opens the
+  shield panel with Enter and requires both of its buttons in the Tab order, and checks
+  the toolbar at the narrower widths it has beside the column.
+- The tab column is a `tablist` with `aria-orientation="vertical"`, with the strip's
+  names, positions and selected state. The library resizer is a focusable `separator`
+  with its range and value. The shield button's name says what it shows ("Ad
+  blocking: 2 blocked on this page"); its panel is a labelled region and gets focus on
+  its first button.
+- Contrast: text and muted text on every new-tab background stop, and the shield's
+  accent on the address field, are tested in all four themes (the Glow background was
+  reduced to 10% accent to keep muted text at 4.5:1).
+- Turning on vertical tabs leaves focus on the switch.
+
 ## Emulated, not physically verified
 
 - **Windows high contrast:** the `forced-colors: active` styles (system-colour focus
@@ -74,6 +92,10 @@ non-US keyboard layouts and native mixed-DPI transitions remain unverified.
   setting was not toggled.
 
 ## Manual verification still required
+
+- v0.21: Narrator in the tab column, the library column and the shield panel, and a
+  Windows contrast theme on all three (owner checklist 31 to 35).
+
 
 These have **not** been tested and must not be reported as working:
 

@@ -23,7 +23,7 @@ const KILLS: [Kill; 3] = [Kill::Browser, Kill::Renderer, Kill::Hang];
 const ADDRESS_PROBE: &str = "document.getElementById('address') ? 'toolbar' : 'missing'";
 const NOTICE_PROBE: &str = "document.getElementById('notice').textContent";
 
-fn browser_process(view: &WebView) -> Result<u32, String> {
+pub(super) fn browser_process(view: &WebView) -> Result<u32, String> {
     let mut process = 0;
     // SAFETY: reads a property of a live view on its own thread.
     unsafe { view.webview().BrowserProcessId(&mut process) }
@@ -32,7 +32,7 @@ fn browser_process(view: &WebView) -> Result<u32, String> {
 }
 
 /// The renderer processes of the WebView2 environment that hosts `view`.
-fn renderer_processes(view: &WebView) -> Result<Vec<u32>, String> {
+pub(super) fn renderer_processes(view: &WebView) -> Result<Vec<u32>, String> {
     // SAFETY: COM calls on a live view on its own thread; every interface is owned.
     unsafe {
         let core: ICoreWebView2_2 = view.webview().cast().map_err(|_| "No ICoreWebView2_2")?;
@@ -63,7 +63,7 @@ fn renderer_processes(view: &WebView) -> Result<Vec<u32>, String> {
     }
 }
 
-fn terminate(process: u32) -> Result<(), String> {
+pub(super) fn terminate(process: u32) -> Result<(), String> {
     // SAFETY: the process ID names one of this fixture's own disposable WebView2
     // processes; the handle is closed before returning.
     unsafe {

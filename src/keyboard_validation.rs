@@ -6,6 +6,9 @@
 //! the renderer (`Emulation.setDeviceMetricsOverride`) at the CSS width a maximized
 //! 1920-pixel-wide window has at each scale. That exercises the toolbar's CSS layout
 //! only, not native DPI handling, window bounds or monitor changes.
+//!
+//! The same checks then run in the two side views (v0.21): the vertical tab column
+//! and the library column, each a trusted view of its own beside a live page.
 use super::*;
 use std::sync::{
     Arc, Mutex,
@@ -58,6 +61,65 @@ const LAYOUT: &str = r#"(() => { const vw = document.documentElement.clientWidth
   }
   return JSON.stringify({ width: vw, dpr: devicePixelRatio, controls: controls.length, problems: out }); })()"#;
 
+/// Layout problems in a side view: horizontal overflow, visible controls outside
+/// the viewport, and visible controls overlapping each other.
+const SIDE_LAYOUT: &str = r#"(() => { const vw = document.documentElement.clientWidth;
+  const controls = [...document.querySelectorAll('button, input:not([type=hidden]), select, [role=tab]')]
+    .filter(e => !e.closest('[hidden]') && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
+  const name = e => e.id || e.getAttribute('aria-label') || e.textContent.trim().slice(0, 30);
+  const out = [];
+  if (document.documentElement.scrollWidth > vw + 1) out.push('page overflows horizontally');
+  const rects = controls.map(e => [e, e.getBoundingClientRect()]);
+  for (const [e, r] of rects) if (r.left < -1 || r.right > vw + 1) out.push('outside viewport: ' + name(e));
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+    const [a, p] = rects[i], [b, q] = rects[j];
+    if (a.contains(b) || b.contains(a)) continue;
+    const x = Math.min(p.right, q.right) - Math.max(p.left, q.left), y = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+    if (x > 1 && y > 1) out.push('overlap: ' + name(a) + ' / ' + name(b));
+  }
+  return JSON.stringify({ role: document.documentElement.dataset.role, width: vw, dpr: devicePixelRatio, controls: controls.length, problems: out }); })()"#;
+
+/// Which trusted view the fixture drives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Target {
+    Toolbar,
+    Tabs,
+    Library,
+    /// The toolbar again, at the narrower widths it has beside the tab column.
+    ToolbarBeside,
+}
+
+impl Target {
+    /// Prefix for control descriptions from this view, so the views' lists stay apart.
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::Toolbar | Self::ToolbarBeside => "",
+            Self::Tabs => "[tabs]",
+            Self::Library => "[library]",
+        }
+    }
+    /// Where a Tab walk in this view starts.
+    fn start(self) -> &'static str {
+        match self {
+            Self::Toolbar | Self::ToolbarBeside => {
+                "document.getElementById('address').focus(); 'ok'"
+            }
+            Self::Tabs => "document.getElementById('new').focus(); 'ok'",
+            Self::Library => "document.getElementById('close-manager').focus(); 'ok'",
+        }
+    }
+    /// The emulated scale and CSS width for each pass: the tab column is always 240
+    /// wide; the library column is checked at its default, smallest and largest widths.
+    fn sizes(self) -> [(f64, u32); 4] {
+        match self {
+            Self::Toolbar => SCALES,
+            Self::ToolbarBeside => SCALES.map(|(scale, width)| (scale, width - 240)),
+            Self::Tabs => [(1.0, 240), (1.25, 240), (1.5, 240), (2.0, 240)],
+            Self::Library => [(1.0, 360), (1.25, 260), (1.5, 640), (2.0, 260)],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Step {
     Start,
@@ -72,6 +134,16 @@ enum Step {
     OpenMore,
     ArrowFocus,
     Arrow,
+    /// Open the shield panel with Enter before the second walk.
+    OpenShield,
+    /// Vertical tabs on and history beside a live page.
+    SideStart,
+    SideWait,
+    SideScaleSet(Target, usize),
+    SideScaleRead(Target, usize),
+    SideScaleReset(Target),
+    /// A Tab walk in a side view.
+    SideWalk(Target),
     Done,
 }
 
@@ -93,6 +165,10 @@ struct Probe {
     layout: Vec<String>,
     active_tab: Option<TabId>,
     log: Vec<String>,
+    /// The view `eval`, `cdp` and the Tab walk act on.
+    target: Target,
+    /// A website for the side views to sit beside.
+    server: Option<super::compat_validation::Server>,
 }
 
 fn decode(value: &str) -> String {
@@ -109,7 +185,9 @@ impl Probe {
         }
         self.eval_pending.set(Some(script));
         let session = self.app.session.as_ref().ok_or("No session")?;
+        let view = self.view(session)?;
         let result = self.result.clone();
+        let prefix = self.target.prefix();
         // Controlled response latency reproduces duplicate in-flight focus probes.
         // Do not block the renderer or UI thread to emulate it.
         let delay = if script.ends_with("'ok'") {
@@ -117,24 +195,47 @@ impl Probe {
         } else {
             Duration::ZERO
         };
-        session
-            .toolbar
-            .evaluate_script_with_callback(script, move |value| {
-                if let Ok(mut slot) = result.lock() {
-                    slot.push_back((Instant::now() + delay, value));
+        view.evaluate_script_with_callback(script, move |value| {
+            // Descriptions from a side view carry its name (see `Target::prefix`).
+            let value = match serde_json::from_str::<String>(&value) {
+                Ok(text) if !prefix.is_empty() && text.contains('|') && !text.starts_with('{') => {
+                    serde_json::to_string(&format!("{prefix}{text}")).unwrap_or(value)
                 }
-            })
-            .map_err(|_| "Toolbar evaluation failed".into())
+                _ => value,
+            };
+            if let Ok(mut slot) = result.lock() {
+                slot.push_back((Instant::now() + delay, value));
+            }
+        })
+        .map_err(|_| "Toolbar evaluation failed".into())
+    }
+    /// The live view the fixture drives now.
+    fn view<'a>(&self, session: &'a Session) -> Result<&'a wry::WebView, String> {
+        let window = &session.windows[0];
+        match self.target {
+            Target::Toolbar | Target::ToolbarBeside => Ok(&window.toolbar),
+            Target::Tabs => window
+                .tabs_view
+                .as_ref()
+                .map(|v| &v.view)
+                .ok_or_else(|| "No tab column".into()),
+            Target::Library => window
+                .library_view
+                .as_ref()
+                .map(|v| &v.view)
+                .ok_or_else(|| "No library column".into()),
+        }
     }
 
     /// Test-only DevTools call on the fixture's own toolbar; sets `cdp_done` on success.
     fn cdp(&self, method: &str, params: serde_json::Value) -> Result<(), String> {
         let session = self.app.session.as_ref().ok_or("No session")?;
+        let view = self.view(session)?;
         let done = self.cdp_done.clone();
         done.store(false, Ordering::SeqCst);
-        // SAFETY: UI-thread call on the live toolbar WebView2 owned by this fixture.
+        // SAFETY: UI-thread call on a live trusted WebView2 owned by this fixture.
         unsafe {
-            session.toolbar.webview().CallDevToolsProtocolMethod(
+            view.webview().CallDevToolsProtocolMethod(
                 &HSTRING::from(method),
                 &HSTRING::from(params.to_string()),
                 &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, _| {
@@ -266,12 +367,15 @@ impl Probe {
                             })
                             .unwrap_or_default()
                     };
+                    let prefix = self.target.prefix();
                     for item in strings("expected") {
+                        let item = format!("{prefix}{item}");
                         if !self.expected.contains(&item) {
                             self.expected.push(item);
                         }
                     }
                     for item in strings("excluded") {
+                        let item = format!("{prefix}{item}");
                         if !self.excluded.contains(&item) {
                             self.excluded.push(item);
                         }
@@ -284,7 +388,7 @@ impl Probe {
             }
             // Start from the address field, then walk forward and backward.
             Step::Focus(more) => {
-                self.eval("document.getElementById('address').focus(); 'ok'")?;
+                self.eval(self.target.start())?;
                 self.shift = false;
                 self.first.clear();
                 self.at = Instant::now();
@@ -311,6 +415,12 @@ impl Probe {
                     None => {}
                     Some(text) => {
                         let focused = decode(&text);
+                        // Focus outside a side view's document reads "outside" too.
+                        let focused = if focused == format!("{}outside", self.target.prefix()) {
+                            "outside".to_string()
+                        } else {
+                            focused
+                        };
                         if n == 0 {
                             self.first = focused.clone();
                         }
@@ -322,15 +432,15 @@ impl Probe {
                             if !self.shift {
                                 // Back to the address field and walk backwards.
                                 self.shift = true;
-                                self.eval("document.getElementById('address').focus(); 'ok'")?;
+                                self.eval(self.target.start())?;
                                 self.step = Step::Press(more, 0);
                                 self.first.clear();
                                 return Ok(());
                             }
-                            self.step = if more {
-                                Step::ArrowFocus
-                            } else {
-                                Step::OpenMore
+                            self.step = match (self.target, more) {
+                                (Target::Toolbar, false) => Step::OpenShield,
+                                (Target::Library, _) => Step::SideWalk(Target::Tabs),
+                                _ => Step::ArrowFocus,
                             };
                         } else {
                             self.step = Step::Press(more, n + 1);
@@ -338,6 +448,17 @@ impl Probe {
                         }
                     }
                 }
+            }
+            // Open the shield panel with the keyboard; More follows.
+            Step::OpenShield => {
+                if value.is_none() {
+                    self.eval("document.getElementById('shield').focus(); 'ok'")?;
+                    self.at = Instant::now() + Duration::from_secs(3600);
+                    return Ok(());
+                }
+                self.key("Enter", "Enter", 13, false)?;
+                self.at = Instant::now();
+                self.step = Step::OpenMore;
             }
             // Open the More disclosure with the keyboard, then walk again.
             Step::OpenMore => {
@@ -352,7 +473,7 @@ impl Probe {
             }
             Step::ArrowFocus => {
                 let s = self.app.session.as_ref().ok_or("No session")?;
-                self.active_tab = s.tabs.active().map(|t| t.id);
+                self.active_tab = s.windows[0].tabs.active().map(|t| t.id);
                 self.eval(
                     "document.querySelector('#tabs [role=tab][aria-selected=true]').focus(); 'ok'",
                 )?;
@@ -360,18 +481,135 @@ impl Probe {
                 self.at = Instant::now();
             }
             Step::Arrow => {
+                let (key, code, vk) = if self.target == Target::Tabs {
+                    ("ArrowDown", "ArrowDown", 40)
+                } else {
+                    ("ArrowLeft", "ArrowLeft", 37)
+                };
                 if value.is_some() {
-                    self.key("ArrowLeft", "ArrowLeft", 37, false)?;
+                    self.key(key, code, vk, false)?;
                     self.at = Instant::now();
                 } else if self.at.elapsed() > Duration::from_secs(2) {
                     let s = self.app.session.as_ref().ok_or("No session")?;
-                    if s.tabs.active().map(|t| t.id) == self.active_tab {
-                        return Err(
-                            "ArrowLeft on the selected tab did not select another tab".into()
-                        );
+                    if s.windows[0].tabs.active().map(|t| t.id) == self.active_tab {
+                        return Err(format!(
+                            "{key} on the selected tab did not select another tab"
+                        ));
                     }
-                    self.step = Step::Done;
+                    self.step = if self.target == Target::Tabs {
+                        Step::Done
+                    } else {
+                        Step::SideStart
+                    };
                 }
+            }
+            Step::SideStart => {
+                let server = super::compat_validation::Server::start();
+                let url = format!("{}?side-views", server.url);
+                self.server = Some(server);
+                let s = self.app.session.as_mut().ok_or("No session")?;
+                s.current = 0;
+                s.command(Command::Navigate(url))
+                    .map_err(|_| "Navigate failed")?;
+                // Views are created from events, as in the browser, not from this poll.
+                self.app
+                    .proxy
+                    .send_event(Event::Command(Command::SetVerticalTabs(true)))
+                    .map_err(|_| "proxy")?;
+                self.at = Instant::now();
+                self.step = Step::SideWait;
+            }
+            Step::SideWait
+                if self.at.elapsed() > Duration::from_secs(2)
+                    && self.app.session.as_ref().is_some_and(|s| {
+                        s.windows[0]
+                            .tabs
+                            .items
+                            .iter()
+                            .all(|t| !t.content.state.loading)
+                    }) =>
+            {
+                self.app
+                    .proxy
+                    .send_event(Event::Command(Command::ShowPanel(Panel::History)))
+                    .map_err(|_| "proxy")?;
+                self.at = Instant::now();
+                self.step = Step::SideScaleSet(Target::Tabs, 0);
+            }
+            Step::SideScaleSet(target, i)
+                if ready && self.at.elapsed() > Duration::from_millis(800) =>
+            {
+                let s = self.app.session.as_ref().ok_or("No session")?;
+                if s.windows[0].library_view.is_none() || s.windows[0].tabs_view.is_none() {
+                    return Err("The side views were not created".into());
+                }
+                self.target = target;
+                let (scale, width) = target.sizes()[i];
+                self.cdp(
+                    "Emulation.setDeviceMetricsOverride",
+                    serde_json::json!({ "width": width, "height": 640,
+                        "deviceScaleFactor": scale, "mobile": false }),
+                )?;
+                self.at = Instant::now();
+                self.step = Step::SideScaleRead(target, i);
+            }
+            Step::SideScaleRead(target, i) if ready => {
+                if let Some(text) = value {
+                    let report: serde_json::Value = serde_json::from_str(&decode(&text))
+                        .map_err(|_| "Side layout report unreadable")?;
+                    let (scale, _) = target.sizes()[i];
+                    self.log.push(format!("{target:?} at {scale}: {report}"));
+                    let problems = report["problems"].as_array().map_or(0, Vec::len);
+                    // The toolbar's own layout report has no role field; beside the
+                    // column it has no tab strip (back, forward, reload, home,
+                    // address, star, shield and menu remain).
+                    let (role, least) = match target {
+                        Target::Tabs => (serde_json::json!("tabs"), 3),
+                        Target::Library => (serde_json::json!("library"), 5),
+                        _ => (serde_json::Value::Null, 8),
+                    };
+                    if report["role"] != role
+                        || report["controls"].as_u64().unwrap_or(0) < least
+                        || problems > 0
+                    {
+                        return Err(format!("{target:?} layout at {scale}x: {report}"));
+                    }
+                    self.at = Instant::now();
+                    self.step = if i + 1 < 4 {
+                        Step::SideScaleSet(target, i + 1)
+                    } else {
+                        Step::SideScaleReset(target)
+                    };
+                    self.cdp_done.store(true, Ordering::SeqCst);
+                } else if self.at.elapsed() > Duration::from_millis(300) {
+                    self.eval(if target == Target::ToolbarBeside {
+                        LAYOUT
+                    } else {
+                        SIDE_LAYOUT
+                    })?;
+                    self.at = Instant::now() + Duration::from_secs(3600);
+                }
+            }
+            Step::SideScaleReset(target) if ready => {
+                self.cdp(
+                    "Emulation.clearDeviceMetricsOverride",
+                    serde_json::json!({}),
+                )?;
+                self.at = Instant::now();
+                self.step = match target {
+                    Target::Tabs => Step::SideScaleSet(Target::Library, 0),
+                    Target::Library => Step::SideScaleSet(Target::ToolbarBeside, 0),
+                    _ => Step::SideWalk(Target::Library),
+                };
+            }
+            Step::SideWalk(target) if ready => {
+                self.target = target;
+                self.cdp(
+                    "Emulation.setFocusEmulationEnabled",
+                    serde_json::json!({ "enabled": true }),
+                )?;
+                self.at = Instant::now();
+                self.step = Step::Expected(true);
             }
             _ => {}
         }
@@ -454,6 +692,8 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         layout: Vec::new(),
         active_tab: None,
         log: Vec::new(),
+        target: Target::Toolbar,
+        server: None,
     };
     let _ = event_loop.run_app(&mut probe);
     let failure = probe.failure.clone();
@@ -493,7 +733,15 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
     // script when a panel opens and is not a control.
     let unexpected: Vec<&String> = excluded
         .iter()
-        .filter(|e| !e.starts_with("tab-close|") && !e.starts_with("manager-title|h1|"))
+        .map(|e| {
+            (
+                e,
+                e.trim_start_matches("[tabs]")
+                    .trim_start_matches("[library]"),
+            )
+        })
+        .filter(|(_, e)| !e.starts_with("tab-close|") && !e.starts_with("manager-title|h1|"))
+        .map(|(e, _)| e)
         .collect();
     assert!(
         unexpected.is_empty(),
@@ -507,4 +755,25 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         reached.iter().any(|r| r.contains("|tab|")),
         "No browser tab is in the Tab order: {reached:?}"
     );
+    // The side views (v0.21): the tab column's own tab stop and New tab button, and
+    // the library column's controls, all reached by Tab or Shift+Tab.
+    assert!(
+        reached
+            .iter()
+            .any(|r| r.starts_with("[tabs]") && r.contains("|tab|")),
+        "No tab in the tab column's Tab order: {reached:?}"
+    );
+    for id in [
+        "[tabs]new|",
+        "[library]close-manager|",
+        "[library]library-resizer|",
+        "shield|",
+        "shield-manage|",
+        "shield-close|",
+    ] {
+        assert!(
+            expected.iter().any(|e| e.starts_with(id)),
+            "Side view control {id} not found: {expected:?}"
+        );
+    }
 }
