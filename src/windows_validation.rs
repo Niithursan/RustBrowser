@@ -3277,7 +3277,7 @@ fn shield_narrow_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
             }
             eval_toolbar(
                 p,
-                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
+                "(()=>{const panel=document.getElementById('shield-panel').getBoundingClientRect(),chrome=document.getElementById('chrome').getBoundingClientRect(),list=document.getElementById('shield-panel');return JSON.stringify({buttonsBottom:list.querySelector('.shield-actions').getBoundingClientRect().bottom,open:!list.hidden,lines:document.getElementById('shield-state').textContent.length+document.getElementById('shield-limits').textContent.length,last:lastChromeHeight,width:innerWidth,height:innerHeight,panelBottom:panel.bottom,chromeBottom:chrome.bottom,scrolls:list.scrollHeight>list.clientHeight,overflow:getComputedStyle(list).overflowY})})()",
             )?;
             p.next();
         }
@@ -3285,8 +3285,13 @@ fn shield_narrow_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String
             let Some(r) = answer(p)? else { return Ok(()) };
             let num = |k: &str| r[k].as_f64().unwrap_or(f64::MAX);
             // Everything of the toolbar, panel included, fits in the toolbar view;
-            // a panel taller than its room scrolls within itself.
-            if num("width") > 700.0
+            // a panel taller than its room scrolls within itself, so its buttons
+            // are inside the view or reachable by scrolling it.
+            let scrollable = r["scrolls"] == true && r["overflow"] == "auto";
+            if r["open"] != true
+                || (num("buttonsBottom") > num("height") + 1.0 && !scrollable)
+                || num("lines") < 200.0
+                || num("width") > 700.0
                 || num("panelBottom") > num("height") + 1.0
                 || num("chromeBottom") > num("height") + 1.0
                 || (r["scrolls"] == true && r["overflow"] != "auto")
