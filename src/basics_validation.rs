@@ -9,7 +9,9 @@ use wry::WebViewExtWindows;
 
 /// Deliver a wheel message only to the render host below this fixture's content
 /// controller. No global input, cursor movement or foreign window can be targeted.
-fn ctrl_wheel(view: &WebView) -> Result<(), String> {
+/// `false` when that render host is not shown at the controller's size yet: Chromium
+/// creates and sizes it after the load completes, later on a busy machine.
+fn ctrl_wheel(view: &WebView) -> Result<bool, String> {
     use windows::Win32::{
         Foundation::{HWND, LPARAM, RECT, WPARAM},
         UI::WindowsAndMessaging::{
@@ -54,12 +56,11 @@ fn ctrl_wheel(view: &WebView) -> Result<(), String> {
         );
         // The page's own widget, not whichever widget Windows lists first (the
         // toolbar's or another tab's would never zoom this page).
-        let (hwnd, rect) = widgets
-            .into_iter()
-            .find(|(_, r)| {
-                ((r.right - r.left) - width).abs() <= 2 && ((r.bottom - r.top) - height).abs() <= 2
-            })
-            .ok_or("Owned content render host not found")?;
+        let Some((hwnd, rect)) = widgets.into_iter().find(|(_, r)| {
+            ((r.right - r.left) - width).abs() <= 2 && ((r.bottom - r.top) - height).abs() <= 2
+        }) else {
+            return Ok(false);
+        };
         let position = ((rect.left + 20) as u16 as u32) | (((rect.top + 20) as u16 as u32) << 16);
         let _ = SendMessageW(
             hwnd,
@@ -68,7 +69,7 @@ fn ctrl_wheel(view: &WebView) -> Result<(), String> {
             Some(LPARAM(position as isize)),
         );
     }
-    Ok(())
+    Ok(true)
 }
 
 struct Probe {
@@ -122,7 +123,19 @@ impl Probe {
             self.last_phase = self.phase;
             self.step = Instant::now();
         } else if self.step.elapsed() > Duration::from_secs(15) {
-            return Err(format!("Page tool step {} did not complete", self.phase));
+            // Say where the active tab was, so a CI failure explains itself.
+            let state = self.app.session.as_ref().and_then(|s| s.tabs.active()).map(|t| {
+                (
+                    t.url.clone(),
+                    t.content.engine.view.url().ok(),
+                    t.content.state.loading,
+                    t.content.state.message.clone(),
+                )
+            });
+            return Err(format!(
+                "Page tool step {} did not complete: {state:?}",
+                self.phase
+            ));
         }
         if self.phase == 30 {
             if self.app.session.is_none() {
@@ -247,8 +260,11 @@ impl Probe {
                 if (page.engine.zoom_factor().map_err(|e| e.to_string())? - 1.0).abs() > 0.001 {
                     return Err("Same-origin tab inherited zoom".into());
                 }
-                ctrl_wheel(&page.engine.view)?;
-                self.phase = 40;
+                // Until the page's render host is shown, try again on the next poll;
+                // the step limit reports a host that never appears.
+                if ctrl_wheel(&page.engine.view)? {
+                    self.phase = 40;
+                }
             }
             40 if self.zoom_event
                 && page.engine.zoom_factor().map_err(|e| e.to_string())? > 1.0 =>
