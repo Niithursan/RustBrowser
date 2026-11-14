@@ -3991,3 +3991,90 @@ fn native_private_windows_follow_vertical_tabs_read_only() {
     assert_eq!(before, after);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Going back from a page to the start of a new tab (as the mouse's back button
+/// does, inside the page) shows the new-tab page again, not a blank `about:blank`;
+/// Forward returns to the page.
+fn back_to_new_tab_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.s()?;
+            if s.tabs.items.len() != 1 || s.tabs.items[0].url != navigation::HOME {
+                return Err(format!("Expected one new tab: {:?}", urls(&s.windows[0])));
+            }
+            p.command(el, 0, Command::Navigate(format!("{url}?back-home")))?;
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?back-home") && !tab.content.state.loading {
+                if !tab.content.state.back {
+                    return Err("The page has no back entry to the new tab".into());
+                }
+                // Engine-initiated, like the mouse's back button: no toolbar command.
+                tab.content
+                    .engine
+                    .view
+                    .evaluate_script("history.back()")
+                    .map_err(|_| "Back script failed".to_string())?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("The page did not load: {}", tab.url));
+            }
+        }
+        2 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url == navigation::HOME && !tab.content.state.loading {
+                if s.effective_panel() != Some(Panel::NewTab) {
+                    return Err("The new-tab page is not shown".into());
+                }
+                if view_visible(&tab.content.engine.view) {
+                    return Err("The blank page stayed visible over the new-tab page".into());
+                }
+                if tab.title != "New tab" || !tab.content.state.forward {
+                    return Err(format!(
+                        "Wrong title or no way forward: {:?} {}",
+                        tab.title, tab.content.state.forward
+                    ));
+                }
+                p.command(el, 0, Command::Forward)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "Back did not return to the new-tab page: {} ({:?})",
+                    tab.url,
+                    tab.content.engine.view.url()
+                ));
+            }
+        }
+        3 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?back-home") && !tab.content.state.loading {
+                if s.effective_panel().is_some() || !view_visible(&tab.content.engine.view) {
+                    return Err("Forward did not show the page again".into());
+                }
+                p.log.push(
+                    "back: the start of a new tab is the new-tab page; Forward returns".into(),
+                );
+                p.done = true;
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("Forward did not return to the page: {}", tab.url));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_back_to_the_start_of_a_new_tab_shows_the_new_tab_page() {
+    let (root, _) = run("back-home", back_to_new_tab_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
