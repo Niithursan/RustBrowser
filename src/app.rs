@@ -2258,6 +2258,7 @@ impl Session {
             notice: &self.notice,
             panel: self.effective_panel(),
             library: &self.library_data,
+            library_folder: self.filter.folder,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
             menu_open: self.windows[self.current].menu_open,
@@ -2524,6 +2525,26 @@ impl Session {
                 // Focus stays on the switch the user just used.
                 self.current = current;
                 result?;
+            }
+            Command::SetBookmarksBar(on) => {
+                if self.private {
+                    return Err(
+                        "Private windows have no bookmarks bar; normal bookmarks stay separate."
+                            .into(),
+                    );
+                }
+                self.settings.bookmarks_bar = on;
+            }
+            Command::OpenBookmarkFolder(id) => {
+                if self.private {
+                    return Err("Bookmarks are unavailable in private windows.".into());
+                }
+                if !self.library_data.folders.iter().any(|f| f.id == id) {
+                    return Err("That bookmark folder no longer exists.".into());
+                }
+                self.open_library(Panel::Bookmarks)?;
+                self.filter.folder = Some(id);
+                self.library_action(Action::Refresh)?;
             }
             Command::SetShowRecent(value) => {
                 if self.private && value {

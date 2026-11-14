@@ -47,6 +47,10 @@ pub enum Command {
     SetNewtabBackground(rust_browser::settings::Background),
     /// Whether the shield counts requests extensions block.
     SetCountBlocked(bool),
+    /// Show the bookmarks bar under the address line (Settings > Appearance).
+    SetBookmarksBar(bool),
+    /// A folder on the bookmarks bar: open the library column showing it.
+    OpenBookmarkFolder(i64),
     AddFavorite {
         title: String,
         url: String,
@@ -205,6 +209,8 @@ pub struct ToolbarState<'a> {
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
+    /// The folder the library column is filtered to, if any.
+    pub library_folder: Option<i64>,
     pub history_enabled: bool,
     pub downloads: Vec<crate::native_downloads::Record>,
 }

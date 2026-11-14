@@ -2,6 +2,13 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Bookmarks bar under the address line in normal windows (Settings > Appearance >
+  Show bookmarks bar, on by default). It shows the bookmarks in a top-level
+  Bookmarks bar / Bookmarks Toolbar / Favorites bar folder (where imports put the
+  other browser's bar), then unfiled bookmarks, then folders; a folder opens the
+  library column filtered to it. Imported bookmarks show without importing again.
+  An import names a translated bar folder "Bookmarks bar". New optional settings
+  field `bookmarks_bar`; library query results gain a `bar` list.
 - Shield at the end of the address line. Its panel opens above the page (the page
   moves down) and shows which of your extensions ask to block requests, which do not,
   and how many requests were blocked on the current page, read from WebView2's own

@@ -106,6 +106,85 @@ pub struct Data {
     pub bookmarks: Vec<Bookmark>,
     pub folders: Vec<Folder>,
     pub history: Vec<Visit>,
+    /// What the bookmarks bar shows, whatever the library's search and filter.
+    pub bar: Vec<BarItem>,
+}
+
+/// The folder an import puts the exporting browser's own bookmarks bar in
+/// (marked `PERSONAL_TOOLBAR_FOLDER` in the file, whatever its translated name).
+pub const BAR_FOLDER: &str = "Bookmarks bar";
+/// Top-level folders whose contents the bookmarks bar shows: the import's name
+/// and the English names Chrome, Firefox and Edge export their bar under, so
+/// bookmarks imported before the bar existed show without importing again.
+const BAR_FOLDER_NAMES: [&str; 4] = [
+    "bookmarks bar",
+    "bookmarks toolbar",
+    "favorites bar",
+    "favourites bar",
+];
+/// Most links and folders sent for the bar; a window shows only what fits.
+pub const MAX_BAR_LINKS: usize = 100;
+pub const MAX_BAR_FOLDERS: usize = 50;
+
+/// One button on the bookmarks bar.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BarItem {
+    Link { id: i64, title: String, url: String },
+    Folder { id: i64, name: String },
+}
+
+/// Whether a top-level folder of this name is shown opened on the bar.
+pub fn is_bar_folder_name(name: &str) -> bool {
+    BAR_FOLDER_NAMES
+        .iter()
+        .any(|bar| name.eq_ignore_ascii_case(bar))
+}
+
+fn is_bar_folder(folder: &Folder) -> bool {
+    folder.parent_id.is_none() && is_bar_folder_name(&folder.name)
+}
+
+/// The bookmarks bar: the links in a bar folder, then unfiled links (each in the
+/// order they were added), then the bar folders' subfolders and the other
+/// top-level folders. `links` are (id, title, url, folder) rows.
+fn bar_items(folders: &[Folder], links: Vec<Bookmark>) -> Vec<BarItem> {
+    let bar: Vec<i64> = folders
+        .iter()
+        .filter(|f| is_bar_folder(f))
+        .map(|f| f.id)
+        .collect();
+    let mut links: Vec<Bookmark> = links
+        .into_iter()
+        .filter(|b| b.folder.is_none_or(|id| bar.contains(&id)))
+        .collect();
+    links.sort_by_key(|b| (b.folder.is_none(), b.id));
+    let mut shown: Vec<&Folder> = folders
+        .iter()
+        .filter(|f| match f.parent_id {
+            Some(parent) => bar.contains(&parent),
+            None => !bar.contains(&f.id),
+        })
+        .collect();
+    shown.sort_by_key(|f| (f.parent_id.is_none(), f.id));
+    links
+        .into_iter()
+        .take(MAX_BAR_LINKS)
+        .map(|b| BarItem::Link {
+            id: b.id,
+            title: b.title,
+            url: b.url,
+        })
+        .chain(
+            shown
+                .into_iter()
+                .take(MAX_BAR_FOLDERS)
+                .map(|f| BarItem::Folder {
+                    id: f.id,
+                    name: f.name.clone(),
+                }),
+        )
+        .collect()
 }
 
 fn load_folders(connection: &Connection) -> Result<(Vec<Folder>, FolderPaths)> {
@@ -633,6 +712,30 @@ impl Database {
         Ok(summary)
     }
 
+    /// Unfiled links and the links in bar folders, oldest first, for the bar.
+    fn bar_links(&self, folders: &[Folder]) -> Result<Vec<Bookmark>> {
+        let bar: Vec<i64> = folders
+            .iter()
+            .filter(|f| is_bar_folder(f))
+            .map(|f| f.id)
+            .collect();
+        // Folder IDs come from the database itself; the list is short.
+        let ids = serde_json::to_string(&bar)?;
+        let rows = self
+            .connection
+            .prepare("SELECT id,title,url,folder FROM bookmarks WHERE folder IS NULL OR folder IN (SELECT value FROM json_each(?1)) ORDER BY folder IS NULL,id LIMIT ?2")?
+            .query_map(params![ids, MAX_BAR_LINKS as i64], |r| {
+                Ok(Bookmark {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    url: r.get(2)?,
+                    folder: r.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn query(&self, filter: &Filter) -> Result<Data> {
         if filter.query.len() > 512
             || filter
@@ -674,11 +777,13 @@ impl Database {
                 });
             }
         }
+        let bar = bar_items(&folders, self.bar_links(&folders)?);
         Ok(Data {
             permissions,
             bookmarks,
             folders,
             history,
+            bar,
         })
     }
 }

@@ -54,6 +54,9 @@ pub struct Settings {
     /// The shield counts requests extensions block (v0.21). On when missing; off
     /// removes the network listener from every page.
     pub count_blocked: bool,
+    /// Show the bookmarks bar under the address line in normal windows (v0.21).
+    /// On when missing, so existing profiles see their bookmarks.
+    pub bookmarks_bar: bool,
 }
 
 /// New-tab page backgrounds. Each is drawn by the page from the current theme's
@@ -141,6 +144,7 @@ impl Default for Settings {
             vertical_tabs: false,
             newtab_background: Background::Plain,
             count_blocked: true,
+            bookmarks_bar: true,
         }
     }
 }

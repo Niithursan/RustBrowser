@@ -224,6 +224,7 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Manage extensions | Shield → Manage extensions, or Menu (⋮) → Privacy & security → Extensions |
 | Library beside the page | Ctrl+Shift+B, or Menu (⋮) → Bookmarks, History or Downloads |
 | Tabs down the side | Menu (⋮) → Privacy & security → Appearance → Show tabs down the side |
+| Bookmarks bar | Under the address line; Menu (⋮) → Privacy & security → Appearance → Show bookmarks bar |
 | Focus/select address | Ctrl+L, Alt+D, F6 |
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
@@ -660,6 +661,20 @@ bookmarks to Unfiled and its subfolders to the top level. Duplicate bookmark URL
 not added again. There are limits of 5000 bookmarks and 200 folders; queries show the
 first 200 matching results, so narrow the search to find others.
 
+The **bookmarks bar** under the address line (normal windows; Settings > Appearance >
+Show bookmarks bar, on by default) shows, in the order they were added:
+
+1. the bookmarks in a top-level folder named Bookmarks bar, Bookmarks Toolbar,
+   Favorites bar or Favourites bar (where an import puts another browser's own bar);
+2. unfiled bookmarks, including those saved with Ctrl+D;
+3. the subfolders of that bar folder, then the other top-level folders.
+
+Click a bookmark to open it in the current tab, or Ctrl+click or middle-click it for a
+new tab. A folder opens the library column showing that folder. Buttons that do not
+fit in one row are hidden; **All bookmarks** at the right opens the library. The bar
+is hidden while there is nothing to show, and in private windows. It has no drop-down
+folder menus and bookmarks cannot be dragged onto it or reordered on it.
+
 History records successful top-level navigation completions with titles, URLs and
 timestamps, independently of WebView2's native back/forward stack. Repeated completion
 events are deduplicated and visits to the same URL within 30 seconds are coalesced.
@@ -706,7 +721,9 @@ folders, or it is refused whole. Titles longer than 256 characters and folder na
 longer than 80 are shortened; addresses longer than 8,192 characters are refused.
 
 Each bookmark keeps its complete folder path, and an existing folder with the same
-path is reused. Nested folders remain inside their parent folders. The summary reports
+path is reused. The exporting browser's own bookmarks bar (marked in the file) keeps
+its name when the bookmarks bar recognises it, and is otherwise imported as
+"Bookmarks bar", so a translated name still shows on the bar. Nested folders remain inside their parent folders. The summary reports
 how many nested folders were in the export.
 Addresses you already have, or that repeat in the file, are skipped. When the import
 finishes, a notice says how many were added, skipped as duplicates and refused, and
