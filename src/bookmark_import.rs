@@ -139,7 +139,15 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, FileError> {
                     parsed.nested += 1;
                 }
                 let name = clean(&decode(inner), MAX_FOLDER);
-                heading = Some(if name.is_empty() {
+                // The exporting browser's own bookmarks bar gets a name the bar
+                // knows when its exported (perhaps translated) name is not one.
+                let bar = !lists.iter().any(Option::is_some)
+                    && !crate::library::is_bar_folder_name(&name)
+                    && attribute(tag, "PERSONAL_TOOLBAR_FOLDER")
+                        .is_some_and(|v| v.eq_ignore_ascii_case("true"));
+                heading = Some(if bar {
+                    crate::library::BAR_FOLDER.into()
+                } else if name.is_empty() {
                     "Imported".into()
                 } else {
                     name

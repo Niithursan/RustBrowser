@@ -2,7 +2,7 @@
 //! the format each browser writes, with example addresses only.
 use rust_browser::{
     bookmark_import::{self, Entry, FileError, MAX_DEPTH, MAX_FILE_BYTES, MAX_LINKS, Refused},
-    library::{Database, Filter},
+    library::{Action, BarItem, Database, Filter},
 };
 use std::{
     path::PathBuf,
@@ -431,4 +431,109 @@ fn the_toolbar_cannot_send_import_entries() {
         r#"{"kind":"import_bookmarks","entries":[{"title":"x","url":"https://example.com/"}]}"#,
     );
     assert!(attempt.is_err());
+}
+
+fn bar(db: &Database) -> Vec<String> {
+    db.query(&Filter::default())
+        .unwrap()
+        .bar
+        .into_iter()
+        .map(|item| match item {
+            BarItem::Link { title, .. } => title,
+            BarItem::Folder { name, .. } => format!("[{name}]"),
+        })
+        .collect()
+}
+
+#[test]
+fn the_bookmarks_bar_shows_an_imported_bar_folder_opened() {
+    let profile = Profile::new();
+    let mut db = profile.database();
+    db.import_bookmarks(&bookmark_import::parse(&fixture("chrome.html")).unwrap())
+        .unwrap();
+    // The bar folder's links, then its subfolder, then the other top-level folder.
+    assert_eq!(bar(&db), ["Example", "[Work]", "[Other bookmarks]"]);
+    // A library search or folder filter does not change the bar.
+    let folder = db.query(&Filter::default()).unwrap().folders[0].id;
+    let filtered = db
+        .query(&Filter {
+            query: "nothing matches this".into(),
+            folder: Some(folder),
+            ..Filter::default()
+        })
+        .unwrap();
+    assert!(filtered.bookmarks.is_empty());
+    assert_eq!(filtered.bar.len(), 3);
+}
+
+#[test]
+fn every_browsers_bar_folder_is_shown_opened() {
+    for (file, link) in [
+        ("firefox.html", "Get Help"),
+        ("edge.html", ""),
+        ("chrome.html", "Example"),
+    ] {
+        let profile = Profile::new();
+        let mut db = profile.database();
+        let parsed = bookmark_import::parse(&fixture(file)).unwrap();
+        db.import_bookmarks(&parsed).unwrap();
+        let shown = bar(&db);
+        let bar_folder = db
+            .query(&Filter::default())
+            .unwrap()
+            .folders
+            .into_iter()
+            .find(|f| f.parent_id.is_none() && rust_browser::library::is_bar_folder_name(&f.name));
+        assert!(bar_folder.is_some(), "{file}: no bar folder in {shown:?}");
+        assert!(
+            !shown.iter().any(
+                |s| s.eq_ignore_ascii_case(&format!("[{}]", bar_folder.as_ref().unwrap().name))
+            ),
+            "{file}: the bar folder is a button instead of opened: {shown:?}"
+        );
+        if !link.is_empty() {
+            assert!(shown.contains(&link.to_string()), "{file}: {shown:?}");
+        }
+    }
+}
+
+#[test]
+fn a_translated_bar_folder_is_imported_under_a_known_name() {
+    let parsed = bookmark_import::parse(&export(
+        r#"<DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Barre de favoris</H3>
+<DL><p><DT><A HREF="https://example.fr/">Exemple</A></DL><p>
+<DT><H3>Autres favoris</H3>
+<DL><p><DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Not at the top</H3>
+<DL><p><DT><A HREF="https://example.fr/b">B</A></DL><p></DL><p>"#,
+    ))
+    .unwrap();
+    assert_eq!(parsed.entries[0].folder, ["Bookmarks bar"]);
+    // Only a top-level folder can be the exporting browser's bar.
+    assert_eq!(
+        parsed.entries[1].folder,
+        ["Autres favoris", "Not at the top"]
+    );
+    let profile = Profile::new();
+    let mut db = profile.database();
+    db.import_bookmarks(&parsed).unwrap();
+    assert_eq!(bar(&db), ["Exemple", "[Autres favoris]"]);
+}
+
+#[test]
+fn unfiled_bookmarks_follow_the_bar_folder_on_the_bar() {
+    let profile = Profile::new();
+    let mut db = profile.database();
+    db.apply(Action::SaveBookmark {
+        id: None,
+        title: "Starred".into(),
+        url: "https://starred.example/".into(),
+        folder: None,
+    })
+    .unwrap();
+    db.import_bookmarks(&bookmark_import::parse(&fixture("chrome.html")).unwrap())
+        .unwrap();
+    assert_eq!(
+        bar(&db),
+        ["Example", "Starred", "[Work]", "[Other bookmarks]"]
+    );
 }

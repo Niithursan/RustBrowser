@@ -3991,3 +3991,142 @@ fn native_private_windows_follow_vertical_tabs_read_only() {
     assert_eq!(before, after);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The bookmarks bar's buttons as `{labels, hidden}` JSON (only the shown buttons).
+const BAR_REPORT: &str = "JSON.stringify({hidden:document.getElementById('bookmarks-bar').hidden,labels:[...document.querySelectorAll('#bar-items .bar-item')].filter(b=>!b.hidden).map(b=>b.textContent),setting:document.getElementById('bookmarks-bar-setting').checked})";
+
+/// Imported bookmarks appear on a bar under the address line: the exporting
+/// browser's bar folder opened, then the other folders. A link opens in the tab,
+/// a folder opens the library column showing it, and the setting hides the bar;
+/// the page moves down and back up and nothing overlaps.
+fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    let waited = p.at.elapsed();
+    let first = p.marks.first().copied().unwrap_or_default();
+    let click = |p: &mut Probe, label: &str| -> Result<(), String> {
+        let script = format!(
+            "[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.textContent==={})?.click()",
+            serde_json::to_string(label).unwrap()
+        );
+        p.s()?.windows[0]
+            .toolbar
+            .evaluate_script(&script)
+            .map_err(|_| "Bar click failed".to_string())
+    };
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let height = p.s()?.chrome_height as usize;
+            p.marks.push(height);
+            let file = format!(
+                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
+            );
+            p.app
+                .proxy
+                .send_event(Event::BookmarkFile(Ok(Some(file.into_bytes()))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            if s.notice.starts_with("Bookmarks imported") && s.chrome_height as usize > first {
+                eval_toolbar(p, BAR_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "The bar did not appear: {:?} {}",
+                    s.notice, s.chrome_height
+                ));
+            }
+        }
+        2 => {
+            if let Some(r) = polish_report(p)? {
+                if r["hidden"] != false
+                    || r["labels"] != serde_json::json!(["Bar link", "Work", "Other"])
+                    || r["setting"] != true
+                {
+                    return Err(format!("Wrong bookmarks bar: {r}"));
+                }
+                check_no_overlap(p.s()?, "bar shown")?;
+                click(p, "Bar link")?;
+                p.next();
+            }
+        }
+        3 => {
+            let s = p.s()?;
+            if s.tabs.items[0].url.ends_with("?bar-link") && s.effective_panel().is_none() {
+                click(p, "Work")?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "The bar link did not open: {}",
+                    s.tabs.items[0].url
+                ));
+            }
+        }
+        4 => {
+            let s = p.s()?;
+            let work = s
+                .library_data
+                .folders
+                .iter()
+                .find(|f| f.name == "Work")
+                .map(|f| f.id);
+            if work.is_some()
+                && s.filter.folder == work
+                && s.windows[0].library_panel == Some(Panel::Bookmarks)
+                && s.library_data
+                    .bookmarks
+                    .iter()
+                    .map(|b| b.title.as_str())
+                    .eq(["Work link"])
+            {
+                p.marks.push(work.unwrap_or_default() as usize);
+                eval_library(p, "document.getElementById('folder-filter').value")?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The bar folder did not open in the library".into());
+            }
+        }
+        5 => {
+            let Some(value) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            if value != format!("\"{}\"", p.marks[1]) {
+                return Err(format!("The library does not show the folder: {value}"));
+            }
+            p.command(el, 0, Command::SetBookmarksBar(false))?;
+            p.next();
+        }
+        6 => {
+            let s = p.s()?;
+            if s.chrome_height as usize == first {
+                check_no_overlap(s, "bar hidden")?;
+                eval_toolbar(p, BAR_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("The toolbar did not shrink: {}", s.chrome_height));
+            }
+        }
+        7 => {
+            if let Some(r) = polish_report(p)? {
+                if r["hidden"] != true || r["setting"] != false || p.s()?.settings.bookmarks_bar {
+                    return Err(format!("The setting did not hide the bar: {r}"));
+                }
+                p.log.push(
+                    "bar: imported bookmarks on a bar; links, folders and the setting work".into(),
+                );
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_imported_bookmarks_show_on_the_bookmarks_bar() {
+    let (root, _) = run("bookmarks-bar", bar_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
