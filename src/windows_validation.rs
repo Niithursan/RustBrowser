@@ -2088,6 +2088,66 @@ fn native_menu_opens_as_a_sidebar() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// The menu over the new-tab page (a full panel, so there is no page still) leaves
+/// the new-tab page visible and dimmed behind the sidebar instead of a blank area.
+fn newtab_menu_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let s = p.s()?;
+            if s.effective_panel() != Some(Panel::NewTab) {
+                return Err("The window did not start on the new-tab page".into());
+            }
+            if s.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('more').click()")
+                .is_err()
+            {
+                return Err("Menu script failed".into());
+            }
+            p.next();
+        }
+        1 => {
+            if p.s()?.windows[0].menu_open {
+                eval_toolbar(
+                    p,
+                    "(()=>{const b=document.getElementById('menu-backdrop'),h=document.getElementById('newtab-body'),r=h.getBoundingClientRect(),m=document.getElementById('tab-actions').getBoundingClientRect(),x=Math.min(r.left+r.width/2,m.left-20),y=r.top+Math.min(r.height/2,40);return JSON.stringify({backdrop:!b.hidden,background:getComputedStyle(b).backgroundColor,still:!!document.getElementById('menu-snapshot'),home:!h.hidden&&r.width>0&&r.height>0,under:document.elementsFromPoint(x,y).some(e=>h.contains(e)),scrim:getComputedStyle(b,'::after').backgroundColor})})()",
+                )?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The menu sidebar never opened".into());
+            }
+        }
+        2 => {
+            if let Some(r) = polish_report(p)? {
+                if r["backdrop"] != true
+                    || r["still"] != false
+                    || r["home"] != true
+                    || r["under"] != true
+                    || r["background"] != "rgba(0, 0, 0, 0)"
+                    || r["scrim"] == "rgba(0, 0, 0, 0)"
+                {
+                    return Err(format!("The new-tab page is hidden behind the menu: {r}"));
+                }
+                p.log.push(
+                    "menu: the new-tab page stays visible, dimmed, behind the sidebar".into(),
+                );
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_menu_keeps_the_new_tab_page_visible() {
+    let (root, _) = run("newtab-menu", newtab_menu_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Where every shown view of the first window is on screen (physical pixels):
 /// toolbar, active page and the side views. Each view sits in its own host window
 /// (its controller's parent), whose screen rectangle is the view's real place.

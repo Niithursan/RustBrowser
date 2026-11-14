@@ -77,7 +77,8 @@ input{height:32px;min-width:48px;padding:0 12px;border:1px solid var(--line);bor
    the toolbar fills the window and a still of the page sits behind the backdrop. */
 #tab-actions{position:fixed;z-index:20;top:var(--chrome-height);right:0;bottom:0;width:min(320px,90vw);display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:12px;border-left:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow);overflow:auto}
 #tab-actions>button,#library-links>button{width:100%;justify-content:flex-start;text-align:left;display:flex;align-items:center;gap:8px}
-#menu-backdrop{position:fixed;z-index:19;top:var(--chrome-height);left:0;right:0;bottom:0;background:var(--panel)}
+/* Transparent: a full panel (the new-tab page, Privacy & security) stays visible, dimmed, behind the sidebar; a page still covers it. */
+#menu-backdrop{position:fixed;z-index:19;top:var(--chrome-height);left:0;right:0;bottom:0;background:transparent}
 #menu-backdrop img{display:block;width:100%;height:100%;object-fit:cover;object-position:left top}
 #menu-backdrop::after{content:'';position:absolute;inset:0;background:var(--scrim)}
 #search-choice{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0;padding:0 0 0 12px;font-size:12px;color:var(--secondary)}
