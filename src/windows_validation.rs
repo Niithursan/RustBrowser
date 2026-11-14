@@ -4133,18 +4133,29 @@ fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let waited = p.at.elapsed();
     match p.phase {
         0 if waited > Duration::from_secs(1) => {
-            p.s()?.windows[0]
+            let s = p.s()?;
+            s.windows[0]
                 .toolbar
                 .evaluate_script(RECORD_GROWTH)
                 .map_err(|_| "Record script failed".to_string())?;
+            // Windows with animations turned off (CI runners) ask for reduced
+            // motion; this part checks the animation itself.
+            toolbar_cdp(
+                s,
+                "Emulation.setEmulatedMedia",
+                serde_json::json!({ "features": [{ "name": "prefers-reduced-motion", "value": "no-preference" }] }),
+            )?;
+            p.next();
+        }
+        1 if waited > Duration::from_millis(300) => {
             p.command(el, 0, Command::NewTab)?;
             p.next();
         }
-        1 if waited > Duration::from_millis(700) => {
+        2 if waited > Duration::from_millis(700) => {
             eval_toolbar(p, "JSON.stringify(window.__grown)")?;
             p.next();
         }
-        2 => {
+        3 => {
             if let Some(grown) = polish_report(p)? {
                 let s = p.s()?;
                 let new = s.tabs.items.last().ok_or("No tab")?.id;
@@ -4159,15 +4170,15 @@ fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 p.next();
             }
         }
-        3 if waited > Duration::from_millis(300) => {
+        4 if waited > Duration::from_millis(300) => {
             p.command(el, 0, Command::NewTab)?;
             p.next();
         }
-        4 if waited > Duration::from_millis(700) => {
+        5 if waited > Duration::from_millis(700) => {
             eval_toolbar(p, "JSON.stringify(window.__grown)")?;
             p.next();
         }
-        5 => {
+        6 => {
             if let Some(grown) = polish_report(p)? {
                 let s = p.s()?;
                 if s.tabs.items.len() != 3 || grown.as_array().map(Vec::len) != Some(1) {
