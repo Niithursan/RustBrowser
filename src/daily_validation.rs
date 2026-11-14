@@ -312,7 +312,7 @@ impl Probe {
                     ));
                 }
                 s.render();
-                self.eval(true, "document.getElementById('alert').getAttribute('role')==='alert' && document.getElementById('alert').textContent.includes('certificate') && document.getElementById('status').className==='error'")?;
+                self.eval(true, "document.getElementById('alert').getAttribute('role')==='alert' && document.getElementById('alert').textContent.includes('certificate') && !document.getElementById('status')")?;
                 self.phase = 22;
             }
             22 if value.is_some() => {
