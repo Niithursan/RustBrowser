@@ -51,6 +51,9 @@ pub struct Settings {
     pub vertical_tabs: bool,
     /// The new-tab page's background, drawn from the theme's own colours (v0.21).
     pub newtab_background: Background,
+    /// The shield counts requests extensions block (v0.21). On when missing; off
+    /// removes the network listener from every page.
+    pub count_blocked: bool,
 }
 
 /// New-tab page backgrounds. Each is drawn by the page from the current theme's
@@ -137,6 +140,7 @@ impl Default for Settings {
             extensions: Vec::new(),
             vertical_tabs: false,
             newtab_background: Background::Plain,
+            count_blocked: true,
         }
     }
 }

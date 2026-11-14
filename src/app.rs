@@ -184,6 +184,12 @@ fn build_toolbar(
     Ok(toolbar)
 }
 
+/// The normal profile's vertical-tabs setting, for a private window's layout.
+/// Read-only; anything unreadable means the tab strip.
+fn normal_vertical_tabs(session: &std::path::Path) -> bool {
+    storage::load(session).is_ok_and(|snapshot| snapshot.settings.vertical_tabs)
+}
+
 /// Which part of the trusted browser document a view shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ViewRole {
@@ -739,7 +745,15 @@ impl Session {
     /// windows) and only once the user added one: the engine's network events cost
     /// a little on every request.
     fn counts_blocked(&self) -> bool {
-        !self.private && !self.settings.extensions.is_empty()
+        !self.private && !self.settings.extensions.is_empty() && self.settings.count_blocked
+    }
+
+    /// Stop counting in every open page and remove the listener.
+    fn stop_counting_everywhere(&self) {
+        for tab in self.windows.iter().flat_map(|w| &w.tabs.items) {
+            let engine = &tab.content.engine;
+            let _ = native_shield::stop(&engine.view, &engine.blocked);
+        }
     }
 
     /// Start counting in every open page (after the first extension is added).
@@ -913,10 +927,7 @@ impl Session {
                 self.notice = "Extension removed.".into();
                 if self.settings.extensions.is_empty() {
                     // Nothing left to count for: stop the engine's network events.
-                    for tab in self.windows.iter().flat_map(|w| &w.tabs.items) {
-                        let engine = &tab.content.engine;
-                        let _ = native_shield::stop(&engine.view, &engine.blocked);
-                    }
+                    self.stop_counting_everywhere();
                 }
                 self.persist();
             }
@@ -1398,6 +1409,7 @@ impl Session {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Sweep only dead, recognized leases; live private windows retain their locks.
         let sweep_profile = normal_profile.clone();
+        let normal_session = normal_profile.join("session.json");
         let _ = std::thread::Builder::new()
             .name("private-recovery".into())
             .spawn(move || {
@@ -1414,7 +1426,12 @@ impl Session {
             .unwrap_or(normal_profile);
         let error_proxy = proxy.clone();
         let (store, snapshot, recovered) = if private {
-            (None, Snapshot::default(), false)
+            // Private windows read one setting from the normal profile, read-only:
+            // whether tabs go down the side. Nothing else is read, and private
+            // windows never write settings.
+            let mut snapshot = Snapshot::default();
+            snapshot.settings.vertical_tabs = normal_vertical_tabs(&normal_session);
+            (None, snapshot, false)
         } else {
             let on_error = move || {
                 let _ = error_proxy.send_event(Event::StorageError);
@@ -2226,6 +2243,7 @@ impl Session {
             menu_open: self.windows[self.current].menu_open,
             library_panel: self.windows[self.current].library_panel,
             vertical_tabs: self.current_layout().tabs.is_some(),
+            count_blocked: self.settings.count_blocked,
             blocked: if self.counts_blocked() {
                 active.content.engine.blocked.count()
             } else {
@@ -2455,7 +2473,24 @@ impl Session {
             Command::SetNewtabBackground(background) => {
                 self.settings.newtab_background = background;
             }
+            Command::SetCountBlocked(on) => {
+                if self.private {
+                    return Err("Private windows never run extensions or count requests.".into());
+                }
+                self.settings.count_blocked = on;
+                if on {
+                    self.count_blocked_everywhere();
+                } else {
+                    self.stop_counting_everywhere();
+                }
+            }
             Command::SetVerticalTabs(on) => {
+                if self.private {
+                    return Err(
+                        "Private windows follow this setting from normal windows; change it there."
+                            .into(),
+                    );
+                }
                 self.settings.vertical_tabs = on;
                 // Every open window of this process follows the setting at once.
                 let current = self.current;

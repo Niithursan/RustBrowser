@@ -28,8 +28,10 @@ pub struct Blocked {
     count: Cell<u32>,
     /// The engine accepted `Network.enable`: the count is real, not just zero.
     counting: Cell<bool>,
-    /// Handlers were registered (at most once per view).
+    /// Handlers are registered.
     watching: Cell<bool>,
+    /// Registration tokens of the three handlers, to remove them again.
+    tokens: Cell<[i64; 3]>,
     /// A change was announced and not yet rendered (one event per burst).
     announced: Cell<bool>,
 }
@@ -38,6 +40,12 @@ impl Blocked {
     /// Requests stopped for the current document, if the engine is counting.
     pub fn count(&self) -> Option<u32> {
         self.counting.get().then(|| self.count.get())
+    }
+
+    /// Whether this view has the shield's network listener registered.
+    #[cfg(test)]
+    pub fn listening(&self) -> bool {
+        self.watching.get()
     }
 
     /// The toolbar showed the latest count; the next change announces itself again.
@@ -109,18 +117,13 @@ pub fn watch(
     id: TabId,
 ) -> windows::core::Result<()> {
     if blocked.watching.replace(true) {
-        // Handlers are in place; counting may have been stopped.
-        return if blocked.counting.get() {
-            Ok(())
-        } else {
-            enable(view, blocked, proxy, id)
-        };
+        return Ok(());
     }
+    let mut tokens = [0i64; 3];
     // SAFETY: registration and callbacks run in this content view's UI apartment;
     // the handlers keep only an Rc to the count and an event proxy.
     unsafe {
         let core = view.webview();
-        let mut token = 0;
         let (b, p) = (blocked.clone(), proxy.clone());
         core.add_NavigationStarting(
             &NavigationStartingEventHandler::create(Box::new(move |_, args| {
@@ -136,7 +139,7 @@ pub fn watch(
                 }
                 Ok(())
             })),
-            &mut token,
+            &mut tokens[0],
         )?;
         let (b, p) = (blocked.clone(), proxy.clone());
         core.GetDevToolsProtocolEventReceiver(&HSTRING::from("Network.loadingFailed"))?
@@ -149,7 +152,7 @@ pub fn watch(
                     }
                     Ok(())
                 })),
-                &mut token,
+                &mut tokens[1],
             )?;
         let (b, p) = (blocked.clone(), proxy.clone());
         core.GetDevToolsProtocolEventReceiver(&HSTRING::from("Network.requestWillBeSent"))?
@@ -162,9 +165,10 @@ pub fn watch(
                     }
                     Ok(())
                 })),
-                &mut token,
+                &mut tokens[2],
             )?;
     }
+    blocked.tokens.set(tokens);
     enable(view, blocked, proxy, id)
 }
 
@@ -196,17 +200,26 @@ fn enable(
     }
 }
 
-/// Stop counting in `view` (the last extension was removed): the engine's
-/// network events, and their cost on every request, are turned off again.
+/// Stop counting in `view` (counting switched off, or the last extension
+/// removed): the three handlers are removed and the engine's network events, with
+/// their cost on every request, are turned off. `watch` registers them again.
 pub fn stop(view: &WebView, blocked: &Blocked) -> windows::core::Result<()> {
-    if !blocked.watching.get() {
+    if !blocked.watching.replace(false) {
         return Ok(());
     }
     blocked.counting.set(false);
     blocked.count.set(0);
-    // SAFETY: a DevTools call on this content view in its UI apartment.
+    let [starting, failed, sent] = blocked.tokens.replace([0; 3]);
+    // SAFETY: removals and a DevTools call on this content view in its UI
+    // apartment, with the tokens its own registrations returned.
     unsafe {
-        view.webview().CallDevToolsProtocolMethod(
+        let core = view.webview();
+        core.remove_NavigationStarting(starting)?;
+        core.GetDevToolsProtocolEventReceiver(&HSTRING::from("Network.loadingFailed"))?
+            .remove_DevToolsProtocolEventReceived(failed)?;
+        core.GetDevToolsProtocolEventReceiver(&HSTRING::from("Network.requestWillBeSent"))?
+            .remove_DevToolsProtocolEventReceived(sent)?;
+        core.CallDevToolsProtocolMethod(
             &HSTRING::from("Network.disable"),
             &HSTRING::from("{}"),
             &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(()))),

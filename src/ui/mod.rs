@@ -45,6 +45,8 @@ pub enum Command {
     SetVerticalTabs(bool),
     /// The new-tab page's background.
     SetNewtabBackground(rust_browser::settings::Background),
+    /// Whether the shield counts requests extensions block.
+    SetCountBlocked(bool),
     AddFavorite {
         title: String,
         url: String,
@@ -195,8 +197,11 @@ pub struct ToolbarState<'a> {
     /// Tabs are shown in the column at the left (the toolbar has no tab strip).
     pub vertical_tabs: bool,
     /// Requests extensions stopped for the active page, as the engine reported
-    /// them; `None` when nothing is counted (no extension added, or a private window).
+    /// them; `None` when nothing is counted (no extension added, counting off, or a
+    /// private window).
     pub blocked: Option<u32>,
+    /// The "Count blocked requests" switch.
+    pub count_blocked: bool,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     pub library: &'a Data,
