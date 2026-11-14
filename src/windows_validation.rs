@@ -4209,6 +4209,10 @@ const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel
 /// The bookmarks bar's buttons as `{labels, hidden}` JSON (only the shown buttons).
 const BAR_REPORT: &str = "JSON.stringify({hidden:document.getElementById('bookmarks-bar').hidden,labels:[...document.querySelectorAll('#bar-items .bar-item')].filter(b=>!b.hidden).map(b=>b.textContent),setting:document.getElementById('bookmarks-bar-setting').checked})";
 
+/// The toolbar's own measure of its height (as it reports it to the browser), and
+/// whether the bookmarks bar is hidden and the notice empty, as JSON.
+const SETTLED_REPORT: &str = "JSON.stringify({height:Math.min(320,Math.ceil(document.getElementById('chrome').getBoundingClientRect().height)),bar:document.getElementById('bookmarks-bar').hidden,notice:document.getElementById('notice').textContent})";
+
 /// Imported bookmarks appear on a bar under the address line: the exporting
 /// browser's bar folder opened, then the other folders. A link opens in the tab,
 /// a folder opens the library column showing it, and the setting hides the bar;
@@ -4228,9 +4232,30 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             .map_err(|_| "Bar click failed".to_string())
     };
     match p.phase {
-        0 if waited > Duration::from_secs(1) => {
-            let height = p.s()?.chrome_height as usize;
-            p.marks.push(height);
+        // The height before the import is the baseline that the bar must add to and
+        // that hiding the bar must return to. Take it only once the toolbar has
+        // settled: two measurements of its own height in a row that agree with the
+        // height the browser holds, with no bar and no notice. A slow runner can
+        // still be mid-layout at a fixed delay.
+        0 if waited > Duration::from_millis(500) => {
+            let Some(r) = polish_report(p)? else {
+                eval_toolbar(p, SETTLED_REPORT)?;
+                p.at = Instant::now();
+                return Ok(());
+            };
+            let held = p.s()?.chrome_height as usize;
+            let agrees =
+                r["height"].as_u64() == Some(held as u64) && r["bar"] == true && r["notice"] == "";
+            if !agrees || p.marks.last() != Some(&held) {
+                // Not settled yet: remember this height and measure again.
+                p.marks = if agrees { vec![held] } else { Vec::new() };
+                if p.started.elapsed() > Duration::from_secs(20) {
+                    return Err(format!("The toolbar did not settle: {r} {held}"));
+                }
+                eval_toolbar(p, SETTLED_REPORT)?;
+                p.at = Instant::now();
+                return Ok(());
+            }
             let file = format!(
                 "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><H3>Deep</H3><DL><p><DT><A HREF=\"{url}?deep\">Deep link</A></DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
             );
@@ -4247,7 +4272,7 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 p.next();
             } else if waited > Duration::from_secs(10) {
                 return Err(format!(
-                    "The bar did not appear: {:?} {}",
+                    "The bar did not appear: {:?} {} (before: {first})",
                     s.notice, s.chrome_height
                 ));
             }
@@ -4355,7 +4380,10 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 eval_toolbar(p, BAR_REPORT)?;
                 p.next();
             } else if waited > Duration::from_secs(10) {
-                return Err(format!("The toolbar did not shrink: {}", s.chrome_height));
+                return Err(format!(
+                    "The toolbar did not shrink: {} (before: {first})",
+                    s.chrome_height
+                ));
             }
         }
         10 => {
