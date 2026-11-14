@@ -17,6 +17,9 @@
 - Bookmark folders can contain subfolders. Import keeps the exported hierarchy,
   folder controls show the full path, and existing flat library databases migrate
   transactionally to schema 4.
+- Pre-1.0 Rust library API change: `Action::SaveFolder` now accepts a parent ID, and
+  bookmark-import `Entry.folder` is a full path (`Vec<String>`); downstream callers
+  using these types must update.
 - The native title bar and border follow the selected toolbar theme where Windows
   supports custom caption colors. Button hover and press feedback is briefly animated
   and disabled for reduced-motion preferences.

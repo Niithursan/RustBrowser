@@ -2,7 +2,11 @@ use rust_browser::library::{Action, Database, Filter, history_url};
 use std::{
     fs,
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicU64, Ordering},
+    },
+    thread,
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Profile(PathBuf);
@@ -176,6 +180,19 @@ fn nested_folders_round_trip_filter_and_reject_cycles() {
         parent_id: Some(research.id),
     })
     .unwrap();
+    db.apply(Action::SaveFolder {
+        id: None,
+        name: "Research".into(),
+        parent_id: Some(research.id),
+    })
+    .unwrap();
+    let child_matching_deleted_folder = db
+        .query(&Filter::default())
+        .unwrap()
+        .folders
+        .into_iter()
+        .find(|folder| folder.parent_id == Some(research.id) && folder.name == research.name)
+        .unwrap();
     db.apply(Action::RemoveFolder { id: research.id }).unwrap();
     let data = db.query(&Filter::default()).unwrap();
     assert!(
@@ -186,7 +203,96 @@ fn nested_folders_round_trip_filter_and_reject_cycles() {
                 folder.parent_id == Some(reading) && folder.path == ["Reading", "Archive"]
             })
     );
+    assert!(
+        data.folders
+            .iter()
+            .find(|folder| folder.id == child_matching_deleted_folder.id)
+            .is_some_and(|folder| {
+                folder.parent_id == Some(reading) && folder.path == ["Reading", "Research"]
+            })
+    );
     assert!(data.bookmarks[0].folder.is_none());
+}
+
+#[test]
+fn concurrent_folder_moves_cannot_create_cycles() {
+    let profile = Profile::new();
+    let (mut db, _) = Database::open(&profile.db()).unwrap();
+    let mut pairs = Vec::new();
+    for index in 0..8 {
+        let first = format!("First {index}");
+        let second = format!("Second {index}");
+        db.apply(Action::SaveFolder {
+            id: None,
+            name: first.clone(),
+            parent_id: None,
+        })
+        .unwrap();
+        db.apply(Action::SaveFolder {
+            id: None,
+            name: second.clone(),
+            parent_id: None,
+        })
+        .unwrap();
+        let folders = db.query(&Filter::default()).unwrap().folders;
+        pairs.push((
+            folders
+                .iter()
+                .find(|folder| folder.name == first)
+                .unwrap()
+                .id,
+            folders
+                .iter()
+                .find(|folder| folder.name == second)
+                .unwrap()
+                .id,
+        ));
+    }
+    drop(db);
+
+    let path = profile.db();
+    for (index, (first, second)) in pairs.into_iter().enumerate() {
+        let barrier = Arc::new(Barrier::new(3));
+        let first_path = path.clone();
+        let first_barrier = Arc::clone(&barrier);
+        let first_move = thread::spawn(move || {
+            let (mut db, _) = Database::open(&first_path).unwrap();
+            first_barrier.wait();
+            db.apply(Action::SaveFolder {
+                id: Some(first),
+                name: format!("First {index}"),
+                parent_id: Some(second),
+            })
+        });
+        let second_path = path.clone();
+        let second_barrier = Arc::clone(&barrier);
+        let second_move = thread::spawn(move || {
+            let (mut db, _) = Database::open(&second_path).unwrap();
+            second_barrier.wait();
+            db.apply(Action::SaveFolder {
+                id: Some(second),
+                name: format!("Second {index}"),
+                parent_id: Some(first),
+            })
+        });
+        barrier.wait();
+        let first_result = first_move.join().unwrap();
+        let second_result = second_move.join().unwrap();
+        assert_ne!(
+            first_result.is_ok(),
+            second_result.is_ok(),
+            "exactly one move should succeed"
+        );
+
+        let (db, _) = Database::open(&path).unwrap();
+        let folders = db.query(&Filter::default()).unwrap().folders;
+        let first_folder = folders.iter().find(|folder| folder.id == first).unwrap();
+        let second_folder = folders.iter().find(|folder| folder.id == second).unwrap();
+        assert!(
+            (first_folder.parent_id == Some(second) && second_folder.parent_id.is_none())
+                || (second_folder.parent_id == Some(first) && first_folder.parent_id.is_none())
+        );
+    }
 }
 
 fn visit(key: &str, url: &str, timestamp: i64) -> Action {

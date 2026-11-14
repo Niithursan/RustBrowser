@@ -1,6 +1,6 @@
 //! Local library data only. Native navigation history and rendering stay in the engine.
 use crate::navigation;
-use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -361,8 +361,11 @@ impl Database {
                 parent_id,
             } => {
                 let name = text(&name, 80)?;
+                let tx = self
+                    .connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
                 if let Some(parent) = parent_id {
-                    let exists: bool = self.connection.query_row(
+                    let exists: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM folders WHERE id=?1)",
                         [parent],
                         |r| r.get(0),
@@ -376,7 +379,7 @@ impl Database {
                         return Err("A folder cannot contain itself.".into());
                     }
                     if let Some(parent) = parent_id {
-                        let contains_parent: bool = self.connection.query_row(
+                        let contains_parent: bool = tx.query_row(
                             "WITH RECURSIVE descendants(id) AS (
                                 SELECT id FROM folders WHERE parent_id=?1
                                 UNION ALL
@@ -393,7 +396,7 @@ impl Database {
                             );
                         }
                     }
-                    let duplicate: bool = self.connection.query_row(
+                    let duplicate: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM folders
                             WHERE name=?1 COLLATE NOCASE AND parent_id IS ?2 AND id<>?3)",
                         params![name, parent_id, id],
@@ -402,7 +405,7 @@ impl Database {
                     if duplicate {
                         return Err("A folder with that name already exists here.".into());
                     }
-                    if self.connection.execute(
+                    if tx.execute(
                         "UPDATE folders SET name=?1,parent_id=?2 WHERE id=?3",
                         params![name, parent_id, id],
                     )? == 0
@@ -410,7 +413,7 @@ impl Database {
                         return Err("Folder no longer exists.".into());
                     }
                 } else {
-                    let duplicate: bool = self.connection.query_row(
+                    let duplicate: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM folders
                             WHERE name=?1 COLLATE NOCASE AND parent_id IS ?2)",
                         params![name, parent_id],
@@ -420,19 +423,21 @@ impl Database {
                         return Err("A folder with that name already exists here.".into());
                     }
                     let count: i64 =
-                        self.connection
-                            .query_row("SELECT count(*) FROM folders", [], |r| r.get(0))?;
+                        tx.query_row("SELECT count(*) FROM folders", [], |r| r.get(0))?;
                     if count >= 200 {
                         return Err("Folder limit (200) reached.".into());
                     }
-                    self.connection.execute(
+                    tx.execute(
                         "INSERT INTO folders(name,parent_id) VALUES(?1,?2)",
                         params![name, parent_id],
                     )?;
                 }
+                tx.commit()?;
             }
             Action::RemoveFolder { id } => {
-                let tx = self.connection.transaction()?;
+                let tx = self
+                    .connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let parent_id: Option<Option<i64>> = tx
                     .query_row("SELECT parent_id FROM folders WHERE id=?1", [id], |row| {
                         row.get(0)
@@ -445,9 +450,10 @@ impl Database {
                             JOIN folders AS sibling
                                 ON sibling.parent_id IS ?2
                                 AND sibling.name=child.name COLLATE NOCASE
-                            WHERE child.parent_id=?1 AND sibling.id<>child.id
+                            WHERE child.parent_id=?1
+                                AND sibling.id<>child.id AND sibling.id<>?3
                         )",
-                        params![id, parent_id],
+                        params![id, parent_id, id],
                         |row| row.get(0),
                     )?;
                     if conflict {
@@ -455,6 +461,26 @@ impl Database {
                             "Cannot remove this folder because a subfolder conflicts with a folder at its new location. Rename the subfolder first.".into(),
                         );
                     }
+                    // Free its sibling name before promoting a child with that name.
+                    let mut temporary_name = format!("__deleting_folder_{id}__");
+                    let mut suffix = 0;
+                    loop {
+                        let duplicate: bool = tx.query_row(
+                            "SELECT EXISTS(SELECT 1 FROM folders
+                                WHERE name=?1 COLLATE NOCASE AND parent_id IS ?2 AND id<>?3)",
+                            params![temporary_name, parent_id, id],
+                            |row| row.get(0),
+                        )?;
+                        if !duplicate {
+                            break;
+                        }
+                        suffix += 1;
+                        temporary_name = format!("__deleting_folder_{id}_{suffix}__");
+                    }
+                    tx.execute(
+                        "UPDATE folders SET name=?1 WHERE id=?2",
+                        params![temporary_name, id],
+                    )?;
                     tx.execute(
                         "UPDATE folders SET parent_id=?1 WHERE parent_id=?2",
                         params![parent_id, id],
