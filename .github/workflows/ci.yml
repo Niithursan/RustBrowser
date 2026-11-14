@@ -132,6 +132,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_shield_panel_fits_a_narrow_window -- --ignored --test-threads=1
       - name: Native side columns have the toolbar restrictions and recover
         run: cargo test --locked --bin rust-browser native_side_views_have_the_toolbar_restrictions_and_recover -- --ignored --test-threads=1
+      - name: Native private windows follow vertical tabs read-only
+        run: cargo test --locked --bin rust-browser native_private_windows_follow_vertical_tabs_read_only -- --ignored --test-threads=1
       - name: Native single-instance hand-off between two browser processes
         run: cargo test --locked --test single_instance -- --ignored --test-threads=1
       - name: Controlled composition, scaling and frame comparison fixture
