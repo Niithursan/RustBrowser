@@ -2088,6 +2088,66 @@ fn native_menu_opens_as_a_sidebar() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// The menu over the new-tab page (a full panel, so there is no page still) leaves
+/// the new-tab page visible and dimmed behind the sidebar instead of a blank area.
+fn newtab_menu_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let s = p.s()?;
+            if s.effective_panel() != Some(Panel::NewTab) {
+                return Err("The window did not start on the new-tab page".into());
+            }
+            if s.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('more').click()")
+                .is_err()
+            {
+                return Err("Menu script failed".into());
+            }
+            p.next();
+        }
+        1 => {
+            if p.s()?.windows[0].menu_open {
+                eval_toolbar(
+                    p,
+                    "(()=>{const b=document.getElementById('menu-backdrop'),h=document.getElementById('newtab-body'),r=h.getBoundingClientRect(),m=document.getElementById('tab-actions').getBoundingClientRect(),x=Math.min(r.left+r.width/2,m.left-20),y=r.top+Math.min(r.height/2,40);return JSON.stringify({backdrop:!b.hidden,background:getComputedStyle(b).backgroundColor,still:!!document.getElementById('menu-snapshot'),home:!h.hidden&&r.width>0&&r.height>0,under:document.elementsFromPoint(x,y).some(e=>h.contains(e)),scrim:getComputedStyle(b,'::after').backgroundColor})})()",
+                )?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The menu sidebar never opened".into());
+            }
+        }
+        2 => {
+            if let Some(r) = polish_report(p)? {
+                if r["backdrop"] != true
+                    || r["still"] != false
+                    || r["home"] != true
+                    || r["under"] != true
+                    || r["background"] != "rgba(0, 0, 0, 0)"
+                    || r["scrim"] == "rgba(0, 0, 0, 0)"
+                {
+                    return Err(format!("The new-tab page is hidden behind the menu: {r}"));
+                }
+                p.log.push(
+                    "menu: the new-tab page stays visible, dimmed, behind the sidebar".into(),
+                );
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_menu_keeps_the_new_tab_page_visible() {
+    let (root, _) = run("newtab-menu", newtab_menu_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Where every shown view of the first window is on screen (physical pixels):
 /// toolbar, active page and the side views. Each view sits in its own host window
 /// (its controller's parent), whose screen rectangle is the view's real place.
@@ -3989,6 +4049,161 @@ fn native_private_windows_follow_vertical_tabs_read_only() {
     // Nothing was written to the normal session.
     let after = std::fs::read(root.join("session.json")).unwrap();
     assert_eq!(before, after);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Going back from a page to the start of a new tab (as the mouse's back button
+/// does, inside the page) shows the new-tab page again, not a blank `about:blank`;
+/// Forward returns to the page.
+fn back_to_new_tab_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let s = p.s()?;
+            if s.tabs.items.len() != 1 || s.tabs.items[0].url != navigation::HOME {
+                return Err(format!("Expected one new tab: {:?}", urls(&s.windows[0])));
+            }
+            p.command(el, 0, Command::Navigate(format!("{url}?back-home")))?;
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?back-home") && !tab.content.state.loading {
+                if !tab.content.state.back {
+                    return Err("The page has no back entry to the new tab".into());
+                }
+                // Engine-initiated, like the mouse's back button: no toolbar command.
+                tab.content
+                    .engine
+                    .view
+                    .evaluate_script("history.back()")
+                    .map_err(|_| "Back script failed".to_string())?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("The page did not load: {}", tab.url));
+            }
+        }
+        2 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url == navigation::HOME && !tab.content.state.loading {
+                if s.effective_panel() != Some(Panel::NewTab) {
+                    return Err("The new-tab page is not shown".into());
+                }
+                if view_visible(&tab.content.engine.view) {
+                    return Err("The blank page stayed visible over the new-tab page".into());
+                }
+                if tab.title != "New tab" || !tab.content.state.forward {
+                    return Err(format!(
+                        "Wrong title or no way forward: {:?} {}",
+                        tab.title, tab.content.state.forward
+                    ));
+                }
+                p.command(el, 0, Command::Forward)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "Back did not return to the new-tab page: {} ({:?})",
+                    tab.url,
+                    tab.content.engine.view.url()
+                ));
+            }
+        }
+        3 => {
+            let s = p.s()?;
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?back-home") && !tab.content.state.loading {
+                if s.effective_panel().is_some() || !view_visible(&tab.content.engine.view) {
+                    return Err("Forward did not show the page again".into());
+                }
+                p.log.push(
+                    "back: the start of a new tab is the new-tab page; Forward returns".into(),
+                );
+                p.done = true;
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("Forward did not return to the page: {}", tab.url));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_back_to_the_start_of_a_new_tab_shows_the_new_tab_page() {
+    let (root, _) = run("back-home", back_to_new_tab_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Records which tab cards the toolbar animates, so the check does not depend on
+/// catching a 180 ms animation while it runs.
+const RECORD_GROWTH: &str = "window.__grown=[];const animate=Element.prototype.animate;Element.prototype.animate=function(...a){if(this.dataset.tabId)window.__grown.push(this.dataset.tabId);return animate.apply(this,a)}";
+
+/// A tab opened with the + button grows into the strip; tabs already shown do not
+/// animate again on later renders, and nothing animates with reduced motion.
+fn tab_growth_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            p.s()?.windows[0]
+                .toolbar
+                .evaluate_script(RECORD_GROWTH)
+                .map_err(|_| "Record script failed".to_string())?;
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 if waited > Duration::from_millis(700) => {
+            eval_toolbar(p, "JSON.stringify(window.__grown)")?;
+            p.next();
+        }
+        2 => {
+            if let Some(grown) = polish_report(p)? {
+                let s = p.s()?;
+                let new = s.tabs.items.last().ok_or("No tab")?.id;
+                if s.tabs.items.len() != 2 || grown != serde_json::json!([new.to_string()]) {
+                    return Err(format!("Only the new tab {new:?} should grow: {grown}"));
+                }
+                toolbar_cdp(
+                    s,
+                    "Emulation.setEmulatedMedia",
+                    serde_json::json!({ "features": [{ "name": "prefers-reduced-motion", "value": "reduce" }] }),
+                )?;
+                p.next();
+            }
+        }
+        3 if waited > Duration::from_millis(300) => {
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        4 if waited > Duration::from_millis(700) => {
+            eval_toolbar(p, "JSON.stringify(window.__grown)")?;
+            p.next();
+        }
+        5 => {
+            if let Some(grown) = polish_report(p)? {
+                let s = p.s()?;
+                if s.tabs.items.len() != 3 || grown.as_array().map(Vec::len) != Some(1) {
+                    return Err(format!("A tab grew with reduced motion: {grown}"));
+                }
+                p.log
+                    .push("tabs: a new tab grows into place; not with reduced motion".into());
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_new_tabs_grow_into_the_tab_strip() {
+    let (root, _) = run("tab-growth", tab_growth_steps, |_, _| {});
     let _ = std::fs::remove_dir_all(root);
 }
 
