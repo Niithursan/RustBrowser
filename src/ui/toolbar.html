@@ -202,11 +202,13 @@ h3{font:600 15px/1.3 var(--display);margin:20px 0 8px}
 .row:has(>.open)>button:not(.open):hover{color:var(--text)}
 #library-results .day{margin:20px 8px 4px;font:600 13px/1.3 var(--ui);color:var(--secondary)}
 #library-query{flex:1 1 240px}
-#history-dates>summary,.settings-details>summary{cursor:pointer;width:max-content;padding:4px 8px;border-radius:6px;color:var(--secondary)}
-#history-dates>summary:hover,.settings-details>summary:hover{background:var(--hover);color:var(--text)}
-#history-dates>summary:focus-visible,.settings-details>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-#history-dates[open]{flex-basis:100%}
-.date-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 8px 0}
+.settings-details>summary{cursor:pointer;width:max-content;padding:4px 8px;border-radius:6px;color:var(--secondary)}
+.settings-details>summary:hover{background:var(--hover);color:var(--text)}
+.settings-details>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#history-dates{padding:0 8px;border-color:transparent;background:transparent;color:var(--secondary)}
+#history-dates:hover{background:var(--hover);color:var(--text)}
+#history-dates[aria-expanded=true]{color:var(--text)}
+.date-fields{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:0 8px}
 .date-fields label{display:flex;align-items:center;gap:8px}
 .settings-details{margin:4px 0 8px}.settings-details p{margin:4px 8px 0}
 /* Destructive actions name themselves in the error colour. */
@@ -292,7 +294,7 @@ Menu, Keyboard shortcuts: all of them" placeholder="Search or enter address" aut
 </div><button type="button" id="library-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the library panel" aria-valuemin="260" aria-valuemax="640" title="Drag, or use the Left and Right arrow keys, to resize"></button><section id="manager" hidden aria-label="Browser library">
 <div class="manager-head"><h1 id="manager-title" tabindex="-1">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
-<div id="library-tools" class="manager-tools"><input id="library-query" type="search" aria-label="Search library" placeholder="Search titles and addresses" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><details id="history-dates" class="history-only"><summary id="history-dates-summary">Filter by date</summary><div class="date-fields"><label>From <input id="history-from" type="date" aria-label="History from date"></label><label>Through <input id="history-until" type="date" aria-label="History through date"></label></div></details><button type="button" id="import-bookmarks" class="bookmarks-only" title="Import an exported bookmarks HTML file from Firefox, Chrome or Edge">Import from file…</button><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only danger">Clear all history…</button></div>
+<div id="library-tools" class="manager-tools"><input id="library-query" type="search" aria-label="Search library" placeholder="Search titles and addresses" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><button type="button" id="history-dates" class="history-only" aria-expanded="false" aria-controls="date-fields">Filter by date</button><div id="date-fields" class="date-fields" hidden><label>From <input id="history-from" type="date" aria-label="History from date"></label><label>Through <input id="history-until" type="date" aria-label="History through date"></label></div><button type="button" id="import-bookmarks" class="bookmarks-only" title="Import an exported bookmarks HTML file from Firefox, Chrome or Edge">Import from file…</button><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only danger">Clear all history…</button></div>
 <div id="bookmark-editor"><h2>Add or edit bookmark</h2><form id="bookmark-form"><input id="bookmark-id" type="hidden"><input id="bookmark-title" aria-label="Bookmark title" placeholder="Title" maxlength="256" required><input id="bookmark-url" aria-label="Bookmark URL" placeholder="https://example.com/" maxlength="8192" required><select id="bookmark-folder" aria-label="Bookmark folder"></select><button type="submit">Save bookmark</button><button type="button" id="reset-bookmark">New bookmark</button></form>
 <div class="folder-tools"><select id="edit-folder" aria-label="Choose folder to edit"></select><input id="folder-name" aria-label="Folder name" placeholder="Folder name" maxlength="80"><label>Parent <select id="folder-parent" aria-label="Parent folder"></select></label><button type="button" id="save-folder">Save folder</button><button type="button" id="remove-folder">Remove folder</button><span class="muted">Removing a folder moves its bookmarks to Unfiled and subfolders up one level. Rename any conflicting subfolder first.</span></div></div>
 <section id="newtab-body" hidden aria-label="New tab page"><h2>Where would you like to go?</h2><p class="muted" id="home-description"></p><form id="newtab-search"><input id="home-query" aria-label="Search or enter a website" placeholder="Search or enter a website" autocomplete="off" maxlength="8192"><button type="submit">Search or go</button></form><div class="home-tools"><button type="button" id="home-bookmarks">Open bookmarks</button><label>Theme <select id="home-theme" aria-label="New tab theme"><option value="dark">Dark</option><option value="slate">Slate</option><option value="plum">Plum</option></select></label><label>Background <select id="home-background" aria-label="New tab background"><option value="plain">Plain</option><option value="dusk">Dusk</option><option value="glow">Glow</option><option value="panels">Panels</option></select></label><label class="settings-label"><input type="checkbox" id="home-recent">Show recent history</label></div><h3>Favorites</h3><div id="favorite-list"></div><form id="favorite-form"><input id="favorite-title" aria-label="Favorite title" placeholder="Website name" maxlength="60" required><input id="favorite-url" aria-label="Favorite URL" placeholder="https://example.com/" maxlength="8192" required><button type="submit">Add favorite</button></form><section id="home-history" hidden><h3>Recent pages</h3><div id="recent-list"></div></section></section><section id="settings-body" hidden>
@@ -403,7 +405,10 @@ function queryLibrary(){
 }
 let queryTimer;byId('library-query').oninput=()=>{clearTimeout(queryTimer);queryTimer=setTimeout(queryLibrary,300)};
 // The collapsed date filter says when it is narrowing the list.
-function updateDateSummary(){const on=!!(byId('history-from').value||byId('history-until').value);byId('history-dates-summary').textContent=on?'Filter by date: on':'Filter by date'}
+function updateDateSummary(){const on=!!(byId('history-from').value||byId('history-until').value);byId('history-dates').textContent=on?'Filter by date: on':'Filter by date'}
+// The dates show under the toolbar row only when asked for.
+function showDates(open){byId('history-dates').setAttribute('aria-expanded',String(open));byId('date-fields').hidden=!open}
+byId('history-dates').onclick=()=>showDates(byId('history-dates').getAttribute('aria-expanded')!=='true');
 for(const id of ['folder-filter','history-from','history-until'])byId(id).onchange=()=>{updateDateSummary();queryLibrary()};
 byId('history-enabled').onchange=e=>send('set_history_enabled',e.target.checked);
 byId('clear-history').onclick=()=>confirmAction({title:'Clear all browsing history?',body:'Every page in Rust Browser’s history list is deleted. This cannot be undone.',keep:'Bookmarks, cookies and each tab’s back and forward history are kept.',action:'Clear history',onConfirm:()=>send('library',{kind:'clear_history',confirmed:true})});
@@ -605,7 +610,7 @@ window.render=incoming=>{
         for(const element of document.querySelectorAll('.history-only'))element.hidden=s.panel!=='history';
         for(const element of document.querySelectorAll('.bookmarks-only'))element.hidden=s.panel!=='bookmarks'||s.private;
         byId('history-enabled').checked=!s.private&&s.history_enabled;
-        if(changedPanel){byId('library-query').value='';byId('history-from').value='';byId('history-until').value='';byId('folder-filter').value='';byId('history-dates').open=false;updateDateSummary();}
+        if(changedPanel){byId('library-query').value='';byId('history-from').value='';byId('history-until').value='';byId('folder-filter').value='';showDates(false);updateDateSummary();}
         // Orient keyboard and screen-reader users on the opened panel.
         if(changedPanel&&s.panel!=='new_tab')byId('manager-title').focus({preventScroll:true});
         if(settingsSection&&s.panel==='settings'){const heading=byId(settingsSection);settingsSection=null;heading.scrollIntoView({block:'start'});heading.focus({preventScroll:true})}
