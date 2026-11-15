@@ -2,6 +2,13 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Notices under the toolbar and in Settings were always in the error colour, so
+  "Extension added" looked like a failure, and long ones were cut to one line. A
+  completed action or progress (an extension added, switched or removed, a window
+  closed, bookmarks imported, data cleared without a failure) now shows in the text
+  colour with an information icon; problems keep the error colour with a warning
+  icon. Anything not marked as information stays an error. Notices wrap to two lines
+  (the tooltip still has the full text), and the dismiss button is a drawn icon.
 - Menu (⋮): its 19 items were one flat list. They are now labelled groups (This page,
   This tab, Library, Windows, then Settings, Keyboard shortcuts and Exit), each item
   shows its shortcut at the right, and zoom is one row (− 100% +) that shows the

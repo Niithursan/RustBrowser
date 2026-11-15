@@ -484,6 +484,10 @@ struct WindowState {
     side_restarts: [Vec<Instant>; 2],
     window: Window,
     notice: String,
+    /// The text of the last notice shown as information (see `inform`). A notice
+    /// is information only while it is exactly this text; any other reads as a
+    /// problem, which is the safe default for the many places that report one.
+    info_notice: String,
     panel: Option<Panel>,
     fullscreen: Option<TabId>,
     focus_pending: bool,
@@ -900,10 +904,10 @@ impl Session {
                             blocks,
                         });
                 }
-                self.notice = format!(
+                self.inform(format!(
                     "Extension added: {}. It can read and change every website you open in normal windows.",
                     info.name
-                );
+                ));
                 self.persist();
                 self.refresh_extensions();
                 self.count_blocked_everywhere();
@@ -928,17 +932,18 @@ impl Session {
                     .iter()
                     .find(|e| e.id == id)
                     .map_or("The extension", |e| e.name.as_str());
-                self.notice = format!(
+                let text = format!(
                     "{name} is now {}. This lasts after a restart.",
                     if enabled { "on" } else { "off" }
                 );
+                self.inform(text);
                 self.refresh_extensions();
             }
             Reply::Changed(_, Err(message)) => self.notice = message,
             Reply::Removed(id, Ok(())) => {
                 self.settings.extensions.retain(|e| e.id != id);
                 self.extensions.retain(|e| e.id != id);
-                self.notice = "Extension removed.".into();
+                self.inform("Extension removed.".into());
                 if self.settings.extensions.is_empty() {
                     // Nothing left to count for: stop the engine's network events.
                     self.stop_counting_everywhere();
@@ -1048,6 +1053,7 @@ impl Session {
             side_restarts: [Vec::new(), Vec::new()],
             window,
             notice: String::new(),
+            info_notice: String::new(),
             panel: None,
             fullscreen: None,
             focus_pending: false,
@@ -1153,10 +1159,10 @@ impl Session {
             .count();
         self.retire_window(self.current, true);
         if tabs > 0 {
-            self.notice = format!(
+            self.inform(format!(
                 "A window with {tabs} tab{} was closed. Menu (⋮) > Reopen closed window brings it back until Rust Browser exits.",
                 if tabs == 1 { "" } else { "s" }
-            );
+            ));
         }
         let _ = self.activate();
         self.persist();
@@ -1234,6 +1240,14 @@ impl Session {
             Event::WindowCommand(_, command) => Event::Command(command),
             other => other,
         }
+    }
+}
+
+impl WindowState {
+    /// Show `text` as information (a completed action, progress), not as a problem.
+    fn inform(&mut self, text: String) {
+        self.info_notice.clone_from(&text);
+        self.notice = text;
     }
 }
 
@@ -1505,6 +1519,7 @@ impl Session {
             } else {
                 String::new()
             },
+            info_notice: String::new(),
             panel: None,
             fullscreen: None,
             focus_pending: false,
@@ -2268,6 +2283,7 @@ impl Session {
             active_id: active.id,
             search_engine: self.settings.search_engine,
             notice: &self.notice,
+            notice_kind: ui::notice_kind(&self.notice, &self.info_notice),
             panel: self.effective_panel(),
             library: &self.library_data,
             library_folder: self.filter.folder,
@@ -2900,7 +2916,7 @@ impl Session {
             }
             Command::ReopenClosedTab => {
                 let Some(url) = self.closed.pop() else {
-                    self.notice = "No recently closed tab to reopen in this window.".into();
+                    self.inform("No recently closed tab to reopen in this window.".into());
                     return Ok(());
                 };
                 self.panel = None;
@@ -3449,7 +3465,7 @@ impl Session {
                     .push("Application database clearing failed.".into());
             }
         }
-        self.notice="Clearing selected data. Tabs were closed; waiting for the blank page and engine confirmation.".into();
+        self.inform("Clearing selected data. Tabs were closed; waiting for the blank page and engine confirmation.".into());
         Ok(())
     }
     fn start_engine_clear(&mut self) {
@@ -3497,12 +3513,18 @@ impl Session {
         if done && let Some(clear) = self.clearing.take() {
             self.permission_lockout |= clear.failed && clear.request.permissions;
             self.permissions.borrow_mut().enabled = !self.permission_lockout;
-            self.notice = format!(
+            let mut text = format!(
                 "{} Bookmarks and downloaded files were kept. Library recovery backups were retained and may contain old history or permissions. New browsing can create new data; this is not secure disk erasure.",
                 clear.results.join(" ")
             );
             if clear.failed && clear.request.permissions {
-                self.notice.push_str(" Website permission requests remain denied until restart because revocation was not fully confirmed.");
+                text.push_str(" Website permission requests remain denied until restart because revocation was not fully confirmed.");
+            }
+            // A clear that did not fully succeed is reported as a problem.
+            if clear.failed {
+                self.notice = text;
+            } else {
+                self.inform(text);
             }
             self.persist();
         }
@@ -4067,7 +4089,7 @@ impl ApplicationHandler<Event> for App {
                     session.notice = message;
                 }
                 if let Some(summary) = reply.summary {
-                    session.notice = summary;
+                    session.inform(summary);
                 }
                 if reply.revision == session.revision
                     && let Some(data) = reply.data

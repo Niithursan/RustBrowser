@@ -197,6 +197,8 @@ pub struct ToolbarState<'a> {
     pub active_id: TabId,
     pub search_engine: SearchEngine,
     pub notice: &'a str,
+    /// "info" or "error": how the toolbar presents `notice`.
+    pub notice_kind: &'static str,
     pub panel: Option<Panel>,
     /// The menu sidebar is open (the toolbar fills the window).
     pub menu_open: bool,
@@ -220,6 +222,16 @@ pub struct ToolbarState<'a> {
 }
 
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.
+/// "info" when `notice` is the text last shown as information, otherwise "error".
+/// Unmarked notices stay errors, so a problem is never shown as routine.
+pub fn notice_kind(notice: &str, info: &str) -> &'static str {
+    if !notice.is_empty() && notice == info {
+        "info"
+    } else {
+        "error"
+    }
+}
+
 pub fn shortcut(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
     // Windows reports AltGr text entry as Ctrl+Alt. Leave those keys to the page.
     if ctrl && alt {
@@ -464,6 +476,20 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn only_notices_marked_as_information_read_as_information() {
+        assert_eq!(
+            notice_kind("Extension removed.", "Extension removed."),
+            "info"
+        );
+        assert_eq!(
+            notice_kind("Could not resize webpage.", "Extension removed."),
+            "error"
+        );
+        assert_eq!(notice_kind("", ""), "error");
+        assert_eq!(notice_kind("Extension removed.", ""), "error");
+    }
+
     #[test]
     fn altgr_combinations_do_not_run_browser_commands() {
         for key in [0x44, 0x4c, 0x52, 0x54, 0x57, 0x48, 0x4a] {
