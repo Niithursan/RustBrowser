@@ -5,7 +5,8 @@
 - Website permission requests open as a dropdown under the site-information badge,
   over the page that asked, instead of replacing the page with Privacy & security.
   The dropdown names the site and what it wants in plain words, shows how long is
-  left before the request is denied, and starts keyboard focus on Don't allow.
+  left before the request is denied, starts keyboard focus on Don't allow, and
+  ignores Allow for its first half second (a double-click cannot allow by accident).
   Closing it in any way answers Don't allow for that request only. After an answer
   the page stays shown. Remembered rules in Privacy & security now read "Camera ·
   Allowed" instead of the internal names. An open dropdown now takes keyboard focus

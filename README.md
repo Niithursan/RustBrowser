@@ -627,7 +627,8 @@ Camera, microphone, geolocation and notifications can prompt on the active tab a
 a user-initiated request. The request opens as a dropdown under the site-information
 badge, over a dimmed still of the page that asked, and names the requesting site and
 what it wants ("meet.example.com wants to use your camera"). Keyboard focus starts on
-**Don't allow**. Choose Allow or Don't allow, with optional remembering for that exact
+**Don't allow**, and Allow does nothing for the first half second so the second click
+of a double-click on the page cannot allow by accident. Choose Allow or Don't allow, with optional remembering for that exact
 scheme, host, port and capability. Only Allow allows: closing the dropdown (Escape,
 clicking outside it, opening another dropdown) answers Don't allow for that request
 without remembering it. The dropdown counts down the minute before an unanswered

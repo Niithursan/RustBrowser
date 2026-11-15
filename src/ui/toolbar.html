@@ -315,9 +315,12 @@ byId('restore-session').onchange=e=>{if(e.target.checked||window.confirm('Stop r
 // minute run out, answers "Don't allow" for this request only.
 const PERMISSION_ASKS={camera:'use your camera',microphone:'use your microphone',geolocation:'know your location',notifications:'show notifications'};
 const PERMISSION_NAMES={camera:'Camera',microphone:'Microphone',geolocation:'Location',notifications:'Notifications'};
-let permissionPrompt=null,permissionSignature='',permissionShown=null,permissionDeadline=0,permissionTimer=null;
+let permissionPrompt=null,permissionSignature='',permissionShown=null,permissionDeadline=0,permissionTimer=null,permissionOpenedAt=0;
+// The request opens just after a click in the page, near where that click was: a second
+// click of a double-click must not land on Allow, so Allow waits half a second.
+const PERMISSION_ALLOW_DELAY=500;
 function answerPermission(decision,remember){const p=permissionPrompt;if(!p||permissionShown!==p.id)return;permissionShown=null;send('permission_decision',{id:p.id,decision,remember})}
-for(const [id,decision] of [['allow-permission','allow'],['deny-permission','deny']])byId(id).onclick=()=>{answerPermission(decision,byId('remember-permission').checked);closeDropdown(false)};
+for(const [id,decision] of [['allow-permission','allow'],['deny-permission','deny']])byId(id).onclick=()=>{if(decision==='allow'&&Date.now()-permissionOpenedAt<PERMISSION_ALLOW_DELAY)return;answerPermission(decision,byId('remember-permission').checked);closeDropdown(false)};
 function showPermissionTime(){const left=Math.max(0,Math.ceil((permissionDeadline-Date.now())/1000));byId('permission-expiry').textContent='If you don’t choose within '+left+(left===1?' second':' seconds')+', or you close this, the site is not allowed.'}
 function renderPermission(s){
     const p=permissionPrompt;byId('permission-prompt').hidden=!p;byId('site-panel').setAttribute('aria-labelledby',p?'permission-title':'site-title');
@@ -565,7 +568,7 @@ function updatePermission(s){
         // there is nothing left to answer, so close without sending one.
         if(permissionShown!==null){permissionShown=null;if(dropdown?.panel===site)closeDropdown(false)}
         permissionPrompt=prompt;
-        if(prompt){permissionDeadline=Date.now()+(s.permission_seconds??60)*1000;byId('remember-permission').checked=false;renderPermission(s);
+        if(prompt){permissionOpenedAt=Date.now();permissionDeadline=Date.now()+(s.permission_seconds??60)*1000;byId('remember-permission').checked=false;renderPermission(s);
             if(dropdown?.panel===site)byId('deny-permission').focus({preventScroll:true});else openDropdown(byId('security'),site,byId('deny-permission'));
             permissionShown=prompt.id}
         else renderPermission(s);

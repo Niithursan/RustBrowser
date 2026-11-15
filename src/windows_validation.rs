@@ -2012,11 +2012,15 @@ fn eval_page(p: &mut Probe, script: &str) -> Result<(), String> {
 /// Ask for notifications from the page; the answer lands in a data attribute.
 const ASK_NOTIFICATIONS: &str = "delete document.documentElement.dataset.rbPermission;Notification.requestPermission().then(v=>document.documentElement.dataset.rbPermission=v);'asked'";
 /// What the toolbar shows for a pending request, as JSON.
-const PROMPT_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);return JSON.stringify({open:!b('site-panel').hidden,prompt:!b('permission-prompt').hidden,title:b('permission-title').textContent,expiry:b('permission-expiry').textContent,focus:document.activeElement&&document.activeElement.id,labelled:b('site-panel').getAttribute('aria-labelledby'),manager:b('manager').hidden})})()"#;
+const PROMPT_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);return JSON.stringify({open:!b('site-panel').hidden,prompt:!b('permission-prompt').hidden,title:b('permission-title').textContent,expiry:b('permission-expiry').textContent,focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),remember:b('remember-permission-label').textContent,labelled:b('site-panel').getAttribute('aria-labelledby'),manager:b('manager').hidden})})()"#;
+/// A click on Allow the moment the request opens (the second click of a double-click).
+const EARLY_ALLOW: &str = "document.getElementById('allow-permission').click()";
 
 /// A website's permission request opens under the site-information badge over the
-/// page, never as a full panel; focus starts on "Don't allow"; Escape answers
-/// "Don't allow"; and Allow reaches the page. WebView2 does not always treat a
+/// page, never as a full panel; focus starts on "Don't allow" and the toolbar holds
+/// the window's keyboard focus; an Allow click in the first half second is ignored;
+/// Escape answers "Don't allow"; and Allow reaches the page. A private window says
+/// that a remembered choice lasts for that window. WebView2 does not always treat a
 /// script's request as made by the user and then denies it without asking, so a
 /// request that never reaches a prompt is asked again (a few times at most).
 fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
@@ -2039,7 +2043,7 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
             p.next();
         }
         1 | 5 if p.at.elapsed() > Duration::from_millis(800) && loaded(p) => {
-            if p.marks.len() > 6 {
+            if p.marks.iter().filter(|m| **m != 99).count() > 6 {
                 return Err("No notification request reached a prompt".into());
             }
             p.marks.push(p.phase as usize);
@@ -2048,7 +2052,16 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
         }
         2 | 6 => {
             if pending(p)? {
-                if p.at.elapsed() > Duration::from_millis(500) {
+                if p.phase == 6 && !p.marks.contains(&99) {
+                    // Too early to count: the request must still be waiting afterwards.
+                    p.marks.push(99);
+                    let s = p.s()?;
+                    s.windows[0]
+                        .toolbar
+                        .evaluate_script(EARLY_ALLOW)
+                        .map_err(|_| "Toolbar script failed")?;
+                }
+                if p.at.elapsed() > Duration::from_millis(700) {
                     eval_toolbar(p, PROMPT_REPORT)?;
                     p.next();
                 }
@@ -2073,8 +2086,21 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
                     .is_some_and(|t| t.ends_with(" wants to show notifications"))
                 && r["expiry"].as_str().is_some_and(|t| t.contains("seconds"))
                 && r["focus"] == "deny-permission";
-            if !shown || p.s()?.panel.is_some() {
+            if !shown || p.s()?.panel.is_some() || !pending(p)? {
                 return Err(format!("The request was not shown over the page: {r}"));
+            }
+            // The page is hidden under the dropdown, so the toolbar must hold keyboard
+            // focus for Escape to reach it (checked when the window itself is focused).
+            if p.s()?.is_focused() && r["hasFocus"] != true {
+                return Err(format!("The toolbar did not take keyboard focus: {r}"));
+            }
+            let remembered = if p.private {
+                "Remember my choice for this site in this window"
+            } else {
+                "Remember my choice for this site"
+            };
+            if r["remember"] != remembered {
+                return Err(format!("Wrong remember label: {r}"));
             }
             let script = if p.phase == 3 {
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
@@ -2136,6 +2162,17 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_permission_prompt_over_the_page() {
     let (root, _) = run("permission-prompt", permission_prompt_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_private_permission_prompt_over_the_page() {
+    let (root, _) = run(
+        "private-permission-prompt",
+        permission_prompt_steps,
+        |_, _| {},
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 
