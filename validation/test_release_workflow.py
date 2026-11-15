@@ -18,10 +18,14 @@ def ci_native_suites():
 
 
 def release_native_suites():
-    match = re.search(r"foreach \(\$test in @\(([^)]*)\)\)", RELEASE)
-    if not match:
+    matches = re.findall(r"foreach \(\$test in @\(([^)]*)\)\)", RELEASE)
+    if not matches:
         raise AssertionError('release.yml has no native suite list')
-    return set(re.findall(r"'(native_[a-z0-9_]+)'", match.group(1)))
+    return {
+        test
+        for match in matches
+        for test in re.findall(r"'(native_[a-z0-9_]+)'", match)
+    }
 
 
 class SuiteListTests(unittest.TestCase):
