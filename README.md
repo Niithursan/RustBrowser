@@ -701,10 +701,13 @@ The latest 10,000 visits are retained. Failed navigation and query-string/creden
 URLs are not recorded; fragments are stripped. Consequently search-result and many
 sign-in pages are deliberately absent. Page paths and titles can still be sensitive.
 
-Use the history search field and From/Through dates to filter visits. Date boundaries
-use UTC calendar days; displayed visit times use the local timezone. Search is literal
-and SQLite's default case folding primarily covers ASCII. Entries open in the current
-or a new tab. Individual removal is available; Clear all history asks for confirmation.
+Type in the history search field to filter visits as you type; **Filter by date** opens
+From/Through dates (it reads "Filter by date: on" while a date is set). Visits are grouped
+by day (Today, Yesterday, then the date) and show their local time. Date boundaries use
+UTC calendar days. Search is literal and SQLite's default case folding primarily covers
+ASCII. Click an entry's title to open it in the current tab, or use New tab. Individual
+removal is available; Clear all history asks for confirmation in the browser's own
+dialog, which says what is deleted and what is kept, with Cancel focused.
 Clearing this library does not clear WebView2's back stack, cookies, cache or session
 URLs. The Record history checkbox pauses/resumes new recording and persists across
 restarts. Session restoration remains enabled independently and can retain full query
