@@ -188,6 +188,8 @@ pub struct ToolbarState<'a> {
     pub restore_session: bool,
     pub security: rust_browser::security::Indicator,
     pub permission_prompt: Option<crate::native_security::Prompt>,
+    /// Seconds before `permission_prompt` is denied unanswered.
+    pub permission_seconds: Option<u64>,
     pub busy: bool,
     #[serde(flatten)]
     pub page: &'a State,

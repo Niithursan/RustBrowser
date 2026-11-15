@@ -2116,7 +2116,9 @@ impl Session {
         if self.focus_pending || !self.is_focused() {
             return Ok(());
         }
-        if self.effective_panel().is_some() {
+        // An open dropdown hides the page, so keys (Escape, arrows) must reach the
+        // toolbar that shows it, also when it opened without a click.
+        if self.effective_panel().is_some() || self.menu_open {
             self.toolbar.focus()?;
         } else if let Some(tab) = self.tabs.active() {
             tab.content.engine.focus()?;
@@ -2232,6 +2234,17 @@ impl Session {
         } else {
             source.as_str()
         };
+        // A prompt is shown only in the window that holds its tab.
+        let (permission_prompt, permission_seconds) = {
+            let permissions = self.permissions.borrow();
+            match permissions
+                .prompt()
+                .filter(|p| self.tabs.items.iter().any(|t| t.id == p.tab))
+            {
+                Some(prompt) => (Some(prompt), permissions.prompt_seconds_left()),
+                None => (None, None),
+            }
+        };
         let state = ToolbarState {
             zoom_percent: active
                 .content
@@ -2248,12 +2261,8 @@ impl Session {
                 active.content.state.loading,
                 active.content.state.failed,
             ),
-            // A prompt is shown only in the window that holds its tab.
-            permission_prompt: self
-                .permissions
-                .borrow()
-                .prompt()
-                .filter(|p| self.tabs.items.iter().any(|t| t.id == p.tab)),
+            permission_prompt,
+            permission_seconds,
             busy: self.clearing.is_some() || !self.ready,
             page: &active.content.state,
             active_id: active.id,
@@ -2765,7 +2774,7 @@ impl Session {
                         })?;
                     }
                     self.permissions.borrow_mut().resolve(id, decision)?;
-                    self.panel = Some(Panel::Settings);
+                    // The answer was given over the page; stay on it.
                     self.activate()?;
                 }
             }
@@ -4033,7 +4042,9 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::SuspensionResult{id,ticket,success}=>session.suspension_result(id,ticket,success),
-            Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=Some(Panel::Settings);let _=session.activate();}
+            // The request opens under the site-information badge, over the page that
+            // asked; a full panel would hide that page, so it closes.
+            Event::PermissionPrompt=>{session.filter=Filter::default();session.panel=None;let _=session.activate();}
             Event::EngineCleared{startup,success,ticket}=>{
                 if startup {
                     if success {session.diagnostics.record(DiagnosticCode::Started);session.permissions.borrow_mut().enabled=true;session.ready=true;for window in &mut session.windows {for tab in &window.tabs.items {if content_target(&tab.url).map_err(Box::<dyn std::error::Error>::from).and_then(|target|tab.content.engine.load(&target)).is_err(){window.notice="A restored tab could not load.".into();}}}}

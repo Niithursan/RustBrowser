@@ -128,6 +128,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_imported_bookmarks_show_on_the_bookmarks_bar -- --ignored --test-threads=1
       - name: Native star and site information dropdowns
         run: cargo test --locked --bin rust-browser native_star_and_site_information_open_as_dropdowns -- --ignored --test-threads=1
+      - name: Native permission request over the page
+        run: cargo test --locked --bin rust-browser native_permission_prompt_over_the_page -- --ignored --test-threads=1
       - name: Native library sidebar beside a live page
         run: cargo test --locked --bin rust-browser native_library_sidebar_beside_a_live_page -- --ignored --test-threads=1
       - name: Native shield counts what an extension blocks
