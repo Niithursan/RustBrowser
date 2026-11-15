@@ -1,0 +1,387 @@
+---
+name: Rust Browser
+description: Quiet, exact browser chrome for Windows that reports state honestly and leaves the page the room.
+colors:
+  graphite-strip: "#131518"
+  graphite-surface: "#1E2228"
+  graphite-panel: "#191C21"
+  graphite-card: "#272C34"
+  graphite-field: "#15181C"
+  instrument-white: "#E9ECEF"
+  dial-grey: "#9AA5B1"
+  hairline: "#3A414B"
+  disabled-grey: "#5E6772"
+  warning-coral: "#FF9B8F"
+  signal-amber: "#F2C94C"
+  on-signal: "#1E2228"
+  harbour-blue: "#7CC4E4"
+  lilac: "#E3B5FF"
+  cobalt: "#2446B8"
+  paper-strip: "#D9DEE3"
+  paper-surface: "#EEF0F2"
+  paper-panel: "#F8F9FA"
+  paper-card: "#E2E6EA"
+  paper-field: "#FFFFFF"
+  ink: "#1B2430"
+  ink-secondary: "#4A5563"
+  paper-hairline: "#A7B0BA"
+  paper-disabled: "#9BA4AE"
+  warning-crimson: "#A3192A"
+typography:
+  display:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "34px"
+    fontWeight: 600
+    lineHeight: 1.1
+    letterSpacing: "-0.015em"
+  headline:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "28px"
+    fontWeight: 600
+    lineHeight: 1.15
+    letterSpacing: "-0.01em"
+  title:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "19px"
+    fontWeight: 600
+    lineHeight: 1.3
+  display-narrow:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "26px"
+    fontWeight: 600
+    lineHeight: 1.1
+    letterSpacing: "-0.015em"
+  headline-column:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "22px"
+    fontWeight: 600
+    lineHeight: 1.15
+  subtitle:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.3
+  dropdown-heading:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "14px"
+    fontWeight: 600
+    lineHeight: 1.3
+  search-field:
+    fontFamily: "'Segoe UI Variable Text', 'Segoe UI', sans-serif"
+    fontSize: "17px"
+    fontWeight: 400
+  address-origin:
+    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
+    fontSize: "15.5px"
+    fontWeight: 600
+    letterSpacing: "-0.005em"
+  address:
+    fontFamily: "'Segoe UI Variable Text', 'Segoe UI', sans-serif"
+    fontSize: "15px"
+    fontWeight: 400
+  body:
+    fontFamily: "'Segoe UI Variable Text', 'Segoe UI', sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.4
+  label:
+    fontFamily: "'Segoe UI Variable Text', 'Segoe UI', sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+rounded:
+  xs: "4px"
+  sm: "6px"
+  md: "8px"
+  lg: "10px"
+  pill-28: "14px"
+  pill-30: "15px"
+  pill-32: "16px"
+  pill-34: "17px"
+  location: "18px"
+  search: "24px"
+spacing:
+  hair: "2px"
+  xs: "4px"
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "24px"
+  xxl: "32px"
+components:
+  button:
+    backgroundColor: "{colors.graphite-card}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "32px"
+  button-quiet:
+    backgroundColor: "transparent"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "32px"
+  nav-icon-button:
+    backgroundColor: "transparent"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.pill-34}"
+    size: "34px"
+  input:
+    backgroundColor: "{colors.graphite-field}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "32px"
+  location-line:
+    backgroundColor: "{colors.graphite-field}"
+    textColor: "{colors.instrument-white}"
+    typography: "{typography.address}"
+    rounded: "{rounded.location}"
+    height: "36px"
+  security-badge:
+    backgroundColor: "rgba(233,236,239,.07)"
+    textColor: "{colors.instrument-white}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill-28}"
+    padding: "0 12px 0 8px"
+    height: "28px"
+  tab:
+    backgroundColor: "transparent"
+    textColor: "{colors.dial-grey}"
+    typography: "{typography.body}"
+    rounded: "10px 10px 0 0"
+    padding: "0 4px 0 12px"
+    height: "36px"
+  tab-active:
+    backgroundColor: "{colors.graphite-surface}"
+    textColor: "{colors.instrument-white}"
+    rounded: "10px 10px 0 0"
+    height: "36px"
+  dropdown:
+    backgroundColor: "{colors.graphite-panel}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.lg}"
+    padding: "8px"
+  favorite-card:
+    backgroundColor: "{colors.graphite-surface}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.lg}"
+    padding: "12px"
+  private-label:
+    backgroundColor: "{colors.signal-amber}"
+    textColor: "{colors.on-signal}"
+    typography: "{typography.label}"
+    rounded: "{rounded.xs}"
+    padding: "2px 8px"
+---
+
+# Design System: Rust Browser
+
+## Overview
+
+**Creative North Star: "The Instrument Panel"**
+
+Rust Browser's chrome is an instrument panel for the web: a row of precise, legible
+controls whose job is to report state honestly and get out of the way. Every reading
+means something. The connection badge says *Encrypted*, *Not encrypted* or *Browser
+page* in plain words; the shield shows a number only when it is counting; the loading
+bar moves only while a page loads. Nothing on the panel is decoration, and nothing
+pretends to know more than it does.
+
+The panel is graphite and restrained: four stacked tonal layers (tab strip, toolbar,
+panel, card) separated by hairlines rather than shadows, one typeface family from
+Windows itself, and a single **signal** colour per theme that marks what is active,
+focused or in progress. The address line is the one bold element; it carries the
+site's origin in a heavier display cut so the user always knows where they are. All
+else stays quiet so the website, not the browser, is the picture.
+
+The panel has its own look rather than imitating Fluent or Edge, but it is mounted in
+a Windows window and respects that window's behaviour: the native title bar, Snap,
+Narrator, high contrast, reduced motion and display scaling (checked at 100% and 150%).
+Density is compact and desktop-first: 32px controls, 13px text, 4px spacing steps.
+
+**Key Characteristics:**
+- Graphite tonal layers and 1px hairlines; shadows only on things that float.
+- One signal colour per theme, used for state, never for decoration.
+- The address line is the single emphasised element; the origin is set heavier than the path.
+- Segoe UI Variable throughout: Display cut for headings and the origin, Text cut for everything else.
+- Plain-word state readouts over icons alone; every icon button has a name and a shortcut in its tooltip.
+- Compact desktop density: 32px controls, 13px body, a 4px spacing scale.
+
+## Colors
+
+Cool graphite neutrals with one saturated signal per theme; the Light theme inverts to
+cool paper and ink with a cobalt signal.
+
+The browser ships four themes. **Dark** (the default) defines every token; **Slate**
+and **Plum** retint only the five surfaces, the hairline and the signal, inheriting
+text, disabled and warning colours from Dark; **Light** redefines the full set. Theme
+values live on `:root` and `body[data-theme=…]` in `src/ui/toolbar.html`, and their
+names are read by the `ui::tests` contrast checks, so they must stay stable.
+
+### Primary (the signal, one per theme)
+- **Signal Amber** (Dark): selected-tab top rule, focus rings, loading bar, active
+  shield, checkbox and progress accent, the private-window label, the permission-request
+  border, and the Glow new-tab background tint.
+- **Harbour Blue** (Slate): the same roles in the Slate theme.
+- **Lilac** (Plum): the same roles in the Plum theme.
+- **Cobalt** (Light): the same roles in the Light theme, with white text on it.
+- **On Signal** (Dark/Slate/Plum: graphite surface; Light: white): text set on a signal fill.
+
+### Neutral (Dark)
+- **Graphite Strip**: the tab strip and the vertical tab column; the darkest layer.
+- **Graphite Surface**: the toolbar row, the selected tab (which joins it), favourite cards.
+- **Graphite Panel**: dropdowns, the library column, Privacy & security and the new-tab page.
+- **Graphite Card**: default button fill and favourite-tile backing.
+- **Graphite Field**: the address line and text inputs; slightly darker than the surface so the field reads as a recess.
+- **Instrument White**: primary text.
+- **Dial Grey**: secondary text, inactive tab titles, icons at rest, hover borders.
+- **Hairline**: every 1px border and divider.
+- **Disabled Grey**: disabled control text.
+- **Warning Coral**: *Not encrypted* / failed connection, notices, settings errors.
+- Hover and pressed states are translucent washes of the text colour (7% and 14% on dark, 6% and 12% on light), not separate hues. The menu backdrop is a 45% black scrim (28% ink on Light).
+
+### Neutral (Light)
+- **Paper Strip / Paper Surface / Paper Panel / Paper Card / Paper Field**: the same five layers, from greyest to white.
+- **Ink** and **Ink Secondary**: primary and secondary text.
+- **Paper Hairline**, **Paper Disabled**, **Warning Crimson**: as their dark counterparts.
+
+### Named Rules
+**The One Signal Rule.** Each theme has exactly one signal colour, and it only ever means *active, focused, in progress, private or waiting for your decision*. It never fills a large area at full strength: its biggest solid uses are the 2px loading bar, the selected tab's 2px top rule and the small private label. The one area use is the new-tab **Glow** background, which mixes 10% of the signal into the surface and only when the user chooses Glow.
+
+**The Theme-Token Rule.** New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; new-tab backgrounds are mixed only from the current theme's own tokens.
+
+## Typography
+
+**Display Font:** Segoe UI Variable Display (with Segoe UI, sans-serif)
+**Body Font:** Segoe UI Variable Text (with Segoe UI, sans-serif)
+
+**Character:** Windows' own variable family, used in its two optical cuts: the Display
+cut tightened slightly for headings and the address origin, the Text cut for every
+control. It reads as part of the operating system without copying its controls, and
+no web font is ever loaded (the toolbar's security policy forbids it).
+
+### Hierarchy
+- **Display** (600, 34px, 1.1, −0.015em): the new-tab question "Where would you like to go?" only. **Display narrow** (26px) replaces it under 700px.
+- **Headline** (600, 28px, 1.15, −0.01em): full-panel titles. **Headline column** (22px) replaces it in the library column.
+- **Title** (600, 19px, 1.3): section headings on full panels (Background tabs, Appearance, Extensions).
+- **Subtitle** (600, 15px, 1.3): sub-sections (Favorites, Recent pages).
+- **Dropdown heading** (600, 14px, 1.3): the heading of a dropdown (site information, star, shield).
+- **Search field** (400, 17px): the new-tab search field only.
+- **Address origin** (600, 15.5px, −0.005em, Display cut): the host in the address line; the rest of the URL follows at 15px in Dial Grey.
+- **Body** (400, 13px, 1.4; 1.5 on full panels): every control, menu item and tab title. Library row titles step up to 14px/600.
+- **Label** (400, 12px): secondary text, form labels, the connection word (600), the shield count (600), shortcut lists.
+
+### Named Rules
+**The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title is bold (700) but stays at 13px, so it marks selection without competing with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
+
+**The Plain Word Rule.** State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, "Private"), so it survives high contrast, colour blindness and Narrator.
+
+## Layout
+
+The chrome is a stack of rows across the top of the window: the **tab strip** (min 42px,
+8px top padding, tabs bottom-aligned), the **navigation row** (4px top, 8px bottom
+padding) with back, forward, reload/stop and home on the left, the address line filling
+the middle and the Menu (⋮) at the right, an optional **bookmarks bar** (28px items),
+a notice row, and the 2px **loading bar**. The page view starts below `--chrome-height`
+(120px).
+
+The same trusted document is also used for two side views, chosen by `data-role`: the
+**vertical tab column** (one tab per row, 4px gaps, hairline on its right edge) and the
+**library column** at the right of the page (260–640px wide, hairline on its left edge,
+an 8px drag handle). Full panels (library, Privacy & security, new tab) are padded
+24px × 32px with content capped at 1040px; the new-tab body is centred at 860px.
+
+Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
+tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
+the address line takes its own full-width line; full panels drop to 16px padding.
+
+## Elevation & Depth
+
+Flat by default. Depth comes from tonal layering: the strip is the darkest layer, the
+toolbar sits one step lighter, the selected tab takes the toolbar's colour so it reads
+as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlines.
+
+### Shadow Vocabulary
+- **Float** (`box-shadow: 0 6px 18px rgba(0,0,0,.35)`; Light: `rgba(27,36,48,.18)`): dropdowns and the address context menu, the only floating surfaces.
+- **Signal rule** (`box-shadow: inset 0 2px 0 <signal>`): the selected tab's top edge (a 3px left rule in the vertical column). An inset rule, not an elevation.
+- **Focus ring** (`outline: 2px solid <signal>; outline-offset: 2px`): every focusable control. The address line instead shifts its border to the signal and adds a 1px signal ring.
+
+### Named Rules
+**The Float-Only Rule.** Only a surface that floats over the page gets a shadow. Cards, buttons, tabs and panels never do.
+
+**The Still-Page Rule.** While a dropdown is open, the page behind it is a still image under a scrim, never live content. Floating chrome must not depend on drawing over a live page.
+
+## Shapes
+
+Gently rounded, with the radius following function. Rectangular controls (buttons,
+inputs, menu items) use 6px; dropdowns, favourite cards and tab tops use 10px; the
+favourite tile uses 8px; small badges use 4px. Things the eye scans along (the address
+line, the security badge, the shield, the round navigation buttons and the new-tab
+search) are fully rounded at half their height (`pill-28` to `pill-34`, `location`,
+`search`), which sets them apart from the boxy controls. A new pill uses half its own
+height; add it to the scale rather than rounding to the nearest step. Tabs are cards rounded only at the top so they join the toolbar below.
+Icons are drawn for this project on a 24px grid: 1.8px round-capped strokes, no fills
+except the menu dots and the pin.
+
+## Components
+
+### Buttons
+Calm and exact; they confirm a press with a 1px dip, nothing more.
+- **Shape:** gently rounded (6px), 32px tall, 12px horizontal padding.
+- **Default:** Graphite Card fill, Hairline border, Instrument White text.
+- **Quiet:** transparent with no border; used for toolbar, tab-strip, menu and list-row actions. Hover adds the text-colour wash.
+- **Hover / Active / Focus:** hover brightens the border to Dial Grey; active applies the pressed wash and moves 1px down; focus shows the 2px signal ring. Transitions are 120ms ease and switch off under reduced motion.
+- **Disabled:** no fill, no border, Disabled Grey text.
+
+### Navigation icon buttons
+- Round (34px circle), transparent, an 18px stroke icon centred. Hover adds the wash. Reload swaps with Stop while loading. Every one has a label and its shortcut in the tooltip.
+
+### Inputs / Fields
+- **Style:** Graphite Field fill, Hairline border, 6px radius, 32px tall. The new-tab search is a 48px pill with 17px text.
+- **Focus:** 2px signal outline; the address line shows a signal border plus a 1px signal ring.
+- **Checkboxes and progress:** native controls tinted with the signal via `accent-color`.
+
+### The location line (signature component)
+The one bold element on the panel. A 36px pill in Graphite Field containing, left to
+right: the **security badge** (28px pill, text-colour wash, a lock or info icon and a
+12px/600 word; coral on *Not encrypted* or failure, Dial Grey and regular weight on
+browser pages), the **address** (an origin-emphasised view that hides on focus to show
+the editable field), the **star** (30px round) and the **shield** (32px pill, Dial Grey
+at rest, signal when an extension is on, with its blocked-request count in 12px/600).
+
+### Tabs
+- **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
+- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a bold (700) 13px title in Instrument White.
+- **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
+- **Vertical column:** full-width rows, 8px radius on all corners, a 3px signal rule on the left of the active tab.
+
+### Dropdowns
+- Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Menu items are quiet full-width buttons; groups are separated by a hairline. Only one is open at a time, over a still of the page.
+
+### Cards / Containers
+- **Favourite card:** Graphite Surface, Hairline border, 10px radius, 12px padding, no shadow; a 32px tile (8px radius, Graphite Card) holds the site's icon or its first letter.
+- **Library rows:** 12px × 8px padding, a hairline beneath each, a wash on hover; title 14px/600 with a 12px Dial Grey second line.
+- **Permission request:** 2px signal border, 10px radius, 16px padding; the only container that uses the signal as a border, because it asks for a decision.
+
+### Windows high contrast
+Under `forced-colors`, every colour yields to system colours: icons stroke in ButtonText, focus becomes a 3px Highlight outline, and the active tab gains a Highlight outline and an underlined title so selection never depends on colour.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.
+- **Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.
+- **Do** give every icon-only control an accessible name and put its keyboard shortcut in the tooltip.
+- **Do** write state in plain words next to its icon or colour (*Not encrypted*, *Private*, a count).
+- **Do** keep controls 32px tall (34px round navigation buttons, 36px location line) and spacing on the 4px scale.
+- **Do** draw new icons on the 24px grid with 1.8px round-capped strokes.
+- **Do** provide a reduced-motion fallback and a forced-colours fallback for every new state cue.
+
+### Don't:
+- **Don't** add a second accent colour or use the signal for decoration, solid large fills or illustration (the Glow background's 10% tint is the only area use).
+- **Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns and menus get the Float shadow.
+- **Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.
+- **Don't** draw floating chrome over a live page; use the still-page backdrop.
+- **Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.
+- **Don't** set anything else in the toolbar larger than the address origin, or at 600 weight and 15px or more.

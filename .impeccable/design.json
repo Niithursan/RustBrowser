@@ -1,0 +1,605 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-15T00:47:38+00:00",
+  "title": "Design System: Rust Browser",
+  "extensions": {
+    "colorMeta": {
+      "graphite-strip": {
+        "role": "neutral",
+        "displayName": "Graphite Strip",
+        "canonical": "#131518",
+        "tonalRamp": [
+          "oklch(15% 0.002 258)",
+          "oklch(26% 0.003 258)",
+          "oklch(38% 0.004 258)",
+          "oklch(49% 0.006 258)",
+          "oklch(61% 0.007 258)",
+          "oklch(72% 0.005 258)",
+          "oklch(84% 0.004 258)",
+          "oklch(95% 0.003 258)"
+        ]
+      },
+      "graphite-surface": {
+        "role": "neutral",
+        "displayName": "Graphite Surface",
+        "canonical": "#1E2228",
+        "tonalRamp": [
+          "oklch(15% 0.003 258)",
+          "oklch(26% 0.006 258)",
+          "oklch(38% 0.008 258)",
+          "oklch(49% 0.011 258)",
+          "oklch(61% 0.013 258)",
+          "oklch(72% 0.010 258)",
+          "oklch(84% 0.008 258)",
+          "oklch(95% 0.005 258)"
+        ]
+      },
+      "graphite-panel": {
+        "role": "neutral",
+        "displayName": "Graphite Panel",
+        "canonical": "#191C21",
+        "tonalRamp": [
+          "oklch(15% 0.003 261)",
+          "oklch(26% 0.005 261)",
+          "oklch(38% 0.007 261)",
+          "oklch(49% 0.009 261)",
+          "oklch(61% 0.011 261)",
+          "oklch(72% 0.009 261)",
+          "oklch(84% 0.007 261)",
+          "oklch(95% 0.004 261)"
+        ]
+      },
+      "graphite-card": {
+        "role": "neutral",
+        "displayName": "Graphite Card",
+        "canonical": "#272C34",
+        "tonalRamp": [
+          "oklch(15% 0.004 260)",
+          "oklch(26% 0.007 260)",
+          "oklch(38% 0.010 260)",
+          "oklch(49% 0.013 260)",
+          "oklch(61% 0.016 260)",
+          "oklch(72% 0.013 260)",
+          "oklch(84% 0.010 260)",
+          "oklch(95% 0.007 260)"
+        ]
+      },
+      "graphite-field": {
+        "role": "neutral",
+        "displayName": "Graphite Field",
+        "canonical": "#15181C",
+        "tonalRamp": [
+          "oklch(15% 0.002 256)",
+          "oklch(26% 0.004 256)",
+          "oklch(38% 0.006 256)",
+          "oklch(49% 0.008 256)",
+          "oklch(61% 0.009 256)",
+          "oklch(72% 0.007 256)",
+          "oklch(84% 0.006 256)",
+          "oklch(95% 0.004 256)"
+        ]
+      },
+      "instrument-white": {
+        "role": "neutral",
+        "displayName": "Instrument White",
+        "canonical": "#E9ECEF",
+        "tonalRamp": [
+          "oklch(15% 0.001 248)",
+          "oklch(26% 0.002 248)",
+          "oklch(38% 0.003 248)",
+          "oklch(49% 0.004 248)",
+          "oklch(61% 0.005 248)",
+          "oklch(72% 0.004 248)",
+          "oklch(84% 0.003 248)",
+          "oklch(95% 0.002 248)"
+        ]
+      },
+      "dial-grey": {
+        "role": "neutral",
+        "displayName": "Dial Grey",
+        "canonical": "#9AA5B1",
+        "tonalRamp": [
+          "oklch(15% 0.005 250)",
+          "oklch(26% 0.009 250)",
+          "oklch(38% 0.014 250)",
+          "oklch(49% 0.018 250)",
+          "oklch(61% 0.021 250)",
+          "oklch(72% 0.017 250)",
+          "oklch(84% 0.013 250)",
+          "oklch(95% 0.009 250)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#3A414B",
+        "tonalRamp": [
+          "oklch(15% 0.005 257)",
+          "oklch(26% 0.009 257)",
+          "oklch(38% 0.012 257)",
+          "oklch(49% 0.016 257)",
+          "oklch(61% 0.019 257)",
+          "oklch(72% 0.016 257)",
+          "oklch(84% 0.012 257)",
+          "oklch(95% 0.008 257)"
+        ]
+      },
+      "disabled-grey": {
+        "role": "neutral",
+        "displayName": "Disabled Grey",
+        "canonical": "#5E6772",
+        "tonalRamp": [
+          "oklch(15% 0.005 253)",
+          "oklch(26% 0.009 253)",
+          "oklch(38% 0.013 253)",
+          "oklch(49% 0.017 253)",
+          "oklch(61% 0.020 253)",
+          "oklch(72% 0.017 253)",
+          "oklch(84% 0.013 253)",
+          "oklch(95% 0.009 253)"
+        ]
+      },
+      "warning-coral": {
+        "role": "error",
+        "displayName": "Warning Coral",
+        "canonical": "#FF9B8F",
+        "tonalRamp": [
+          "oklch(15% 0.030 27)",
+          "oklch(26% 0.054 27)",
+          "oklch(38% 0.077 27)",
+          "oklch(49% 0.100 27)",
+          "oklch(61% 0.120 27)",
+          "oklch(72% 0.097 27)",
+          "oklch(84% 0.074 27)",
+          "oklch(95% 0.051 27)"
+        ]
+      },
+      "signal-amber": {
+        "role": "primary",
+        "displayName": "Signal Amber (Dark)",
+        "canonical": "#F2C94C",
+        "tonalRamp": [
+          "oklch(15% 0.037 90)",
+          "oklch(26% 0.064 90)",
+          "oklch(38% 0.092 90)",
+          "oklch(49% 0.120 90)",
+          "oklch(61% 0.145 90)",
+          "oklch(72% 0.117 90)",
+          "oklch(84% 0.089 90)",
+          "oklch(95% 0.061 90)"
+        ]
+      },
+      "on-signal": {
+        "role": "neutral",
+        "displayName": "On Signal",
+        "canonical": "#1E2228",
+        "tonalRamp": [
+          "oklch(15% 0.003 258)",
+          "oklch(26% 0.006 258)",
+          "oklch(38% 0.008 258)",
+          "oklch(49% 0.011 258)",
+          "oklch(61% 0.013 258)",
+          "oklch(72% 0.010 258)",
+          "oklch(84% 0.008 258)",
+          "oklch(95% 0.005 258)"
+        ]
+      },
+      "harbour-blue": {
+        "role": "primary",
+        "displayName": "Harbour Blue (Slate)",
+        "canonical": "#7CC4E4",
+        "tonalRamp": [
+          "oklch(15% 0.021 228)",
+          "oklch(26% 0.038 228)",
+          "oklch(38% 0.054 228)",
+          "oklch(49% 0.070 228)",
+          "oklch(61% 0.084 228)",
+          "oklch(72% 0.068 228)",
+          "oklch(84% 0.052 228)",
+          "oklch(95% 0.036 228)"
+        ]
+      },
+      "lilac": {
+        "role": "primary",
+        "displayName": "Lilac (Plum)",
+        "canonical": "#E3B5FF",
+        "tonalRamp": [
+          "oklch(15% 0.028 312)",
+          "oklch(26% 0.049 312)",
+          "oklch(38% 0.071 312)",
+          "oklch(49% 0.092 312)",
+          "oklch(61% 0.111 312)",
+          "oklch(72% 0.089 312)",
+          "oklch(84% 0.068 312)",
+          "oklch(95% 0.047 312)"
+        ]
+      },
+      "cobalt": {
+        "role": "primary",
+        "displayName": "Cobalt (Light)",
+        "canonical": "#2446B8",
+        "tonalRamp": [
+          "oklch(15% 0.046 266)",
+          "oklch(26% 0.081 266)",
+          "oklch(38% 0.116 266)",
+          "oklch(49% 0.151 266)",
+          "oklch(61% 0.182 266)",
+          "oklch(72% 0.147 266)",
+          "oklch(84% 0.112 266)",
+          "oklch(95% 0.077 266)"
+        ]
+      },
+      "paper-strip": {
+        "role": "neutral",
+        "displayName": "Paper Strip",
+        "canonical": "#D9DEE3",
+        "tonalRamp": [
+          "oklch(15% 0.002 248)",
+          "oklch(26% 0.004 248)",
+          "oklch(38% 0.006 248)",
+          "oklch(49% 0.007 248)",
+          "oklch(61% 0.009 248)",
+          "oklch(72% 0.007 248)",
+          "oklch(84% 0.005 248)",
+          "oklch(95% 0.004 248)"
+        ]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "Paper Surface",
+        "canonical": "#EEF0F2",
+        "tonalRamp": [
+          "oklch(15% 0.001 248)",
+          "oklch(26% 0.002 248)",
+          "oklch(38% 0.002 248)",
+          "oklch(49% 0.003 248)",
+          "oklch(61% 0.003 248)",
+          "oklch(72% 0.003 248)",
+          "oklch(84% 0.002 248)",
+          "oklch(95% 0.001 248)"
+        ]
+      },
+      "paper-panel": {
+        "role": "neutral",
+        "displayName": "Paper Panel",
+        "canonical": "#F8F9FA",
+        "tonalRamp": [
+          "oklch(15% 0.000 248)",
+          "oklch(26% 0.001 248)",
+          "oklch(38% 0.001 248)",
+          "oklch(49% 0.001 248)",
+          "oklch(61% 0.002 248)",
+          "oklch(72% 0.001 248)",
+          "oklch(84% 0.001 248)",
+          "oklch(95% 0.001 248)"
+        ]
+      },
+      "paper-card": {
+        "role": "neutral",
+        "displayName": "Paper Card",
+        "canonical": "#E2E6EA",
+        "tonalRamp": [
+          "oklch(15% 0.002 248)",
+          "oklch(26% 0.003 248)",
+          "oklch(38% 0.004 248)",
+          "oklch(49% 0.006 248)",
+          "oklch(61% 0.007 248)",
+          "oklch(72% 0.006 248)",
+          "oklch(84% 0.004 248)",
+          "oklch(95% 0.003 248)"
+        ]
+      },
+      "paper-field": {
+        "role": "neutral",
+        "displayName": "Paper Field",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1B2430",
+        "tonalRamp": [
+          "oklch(15% 0.007 256)",
+          "oklch(26% 0.012 256)",
+          "oklch(38% 0.017 256)",
+          "oklch(49% 0.021 256)",
+          "oklch(61% 0.026 256)",
+          "oklch(72% 0.021 256)",
+          "oklch(84% 0.016 256)",
+          "oklch(95% 0.011 256)"
+        ]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Ink Secondary",
+        "canonical": "#4A5563",
+        "tonalRamp": [
+          "oklch(15% 0.007 255)",
+          "oklch(26% 0.012 255)",
+          "oklch(38% 0.017 255)",
+          "oklch(49% 0.022 255)",
+          "oklch(61% 0.027 255)",
+          "oklch(72% 0.021 255)",
+          "oklch(84% 0.016 255)",
+          "oklch(95% 0.011 255)"
+        ]
+      },
+      "paper-hairline": {
+        "role": "neutral",
+        "displayName": "Paper Hairline",
+        "canonical": "#A7B0BA",
+        "tonalRamp": [
+          "oklch(15% 0.004 251)",
+          "oklch(26% 0.008 251)",
+          "oklch(38% 0.011 251)",
+          "oklch(49% 0.014 251)",
+          "oklch(61% 0.017 251)",
+          "oklch(72% 0.014 251)",
+          "oklch(84% 0.011 251)",
+          "oklch(95% 0.007 251)"
+        ]
+      },
+      "paper-disabled": {
+        "role": "neutral",
+        "displayName": "Paper Disabled",
+        "canonical": "#9BA4AE",
+        "tonalRamp": [
+          "oklch(15% 0.004 251)",
+          "oklch(26% 0.008 251)",
+          "oklch(38% 0.011 251)",
+          "oklch(49% 0.015 251)",
+          "oklch(61% 0.018 251)",
+          "oklch(72% 0.014 251)",
+          "oklch(84% 0.011 251)",
+          "oklch(95% 0.007 251)"
+        ]
+      },
+      "warning-crimson": {
+        "role": "error",
+        "displayName": "Warning Crimson",
+        "canonical": "#A3192A",
+        "tonalRamp": [
+          "oklch(15% 0.043 22)",
+          "oklch(26% 0.075 22)",
+          "oklch(38% 0.108 22)",
+          "oklch(49% 0.140 22)",
+          "oklch(61% 0.169 22)",
+          "oklch(72% 0.136 22)",
+          "oklch(84% 0.104 22)",
+          "oklch(95% 0.071 22)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The new-tab question only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Library and Privacy & security page titles."
+      },
+      "display-narrow": {
+        "displayName": "Display narrow",
+        "purpose": "The new-tab question under 700px."
+      },
+      "headline-column": {
+        "displayName": "Headline column",
+        "purpose": "Panel titles in the narrow library column."
+      },
+      "dropdown-heading": {
+        "displayName": "Dropdown heading",
+        "purpose": "Headings inside dropdowns."
+      },
+      "search-field": {
+        "displayName": "Search field",
+        "purpose": "The new-tab search field only."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings on full panels."
+      },
+      "subtitle": {
+        "displayName": "Subtitle",
+        "purpose": "Sub-sections such as Favorites and Recent pages."
+      },
+      "address-origin": {
+        "displayName": "Address origin",
+        "purpose": "The host in the address line; the heaviest text in the toolbar."
+      },
+      "address": {
+        "displayName": "Address",
+        "purpose": "The editable address and the URL path."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Every control, menu item and tab title."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Secondary text, form labels, the connection word and shield count."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 6px 18px rgba(0,0,0,.35)",
+        "purpose": "Dropdowns and the address context menu only. Light theme: 0 6px 18px rgba(27,36,48,.18)."
+      },
+      {
+        "name": "signal-rule",
+        "value": "inset 0 2px 0 var(--accent)",
+        "purpose": "Selected tab top edge (3px left rule in the vertical column)."
+      },
+      {
+        "name": "location-focus",
+        "value": "0 0 0 1px var(--accent)",
+        "purpose": "Address line focus ring, with a signal border."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "120ms ease",
+        "purpose": "Background, border, colour, opacity and 1px press transitions on controls; removed under reduced motion."
+      },
+      {
+        "name": "loading-slide",
+        "value": "1.2s ease-in-out infinite",
+        "purpose": "The 2px loading bar; a static full-width bar under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "700px",
+        "purpose": "Navigation row wraps; the address line takes its own line; panels pad 16px."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default action button: card fill, hairline border, 32px.",
+      "html": "<button class=\"ds-btn\">Search / refresh</button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;transition:background-color .12s ease,border-color .12s ease,transform .12s ease}.ds-btn:hover{border-color:var(--secondary)}.ds-btn:active{background:var(--pressed);transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-btn:disabled{color:var(--disabled);border-color:transparent;background:transparent}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Borderless action for toolbars, menus and list rows; hover adds a wash.",
+      "html": "<button class=\"ds-btn-quiet\">Find in page</button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn-quiet{font:13px/1.4 var(--ui);color:var(--text);height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer;transition:background-color .12s ease}.ds-btn-quiet:hover{background:var(--hover)}.ds-btn-quiet:active{background:var(--pressed)}.ds-btn-quiet:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Navigation Icon Button",
+      "kind": "button",
+      "refersTo": "nav-icon-button",
+      "description": "34px round icon button for back, forward, reload and home.",
+      "html": "<button class=\"ds-nav\" aria-label=\"Reload\" title=\"Reload (Ctrl+R / F5)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M18.5 12a6.5 6.5 0 1 1-2-4.7\"/><path d=\"M17.5 4v4h-4\"/></svg></button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0}.ds-nav{width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:17px;background:transparent;color:var(--text);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .12s ease}.ds-nav:hover{background:var(--hover)}.ds-nav:active{background:var(--pressed)}.ds-nav:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Recessed field: darker than the surface, hairline border.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search titles and URLs\" aria-label=\"Search library\">",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-input{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:200px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--field)}.ds-input::placeholder{color:var(--secondary)}.ds-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Location Line",
+      "kind": "custom",
+      "refersTo": "location-line",
+      "description": "The one bold element: security badge, origin-emphasised address, star and shield in a 36px pill.",
+      "html": "<div class=\"ds-loc\"><span class=\"ds-sec\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6.5\" y=\"10.5\" width=\"11\" height=\"8\" rx=\"1.5\"/><path d=\"M9 10.5V8a3 3 0 0 1 6 0v2.5\"/></svg>Encrypted</span><span class=\"ds-addr\"><span class=\"ds-origin\">www.rust-lang.org</span><span class=\"ds-rest\">/learn</span></span><button class=\"ds-round\" aria-label=\"Bookmark this page\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 4.8 2.2 4.6 5 .6-3.7 3.4 1 4.9L12 15.9l-4.5 2.4 1-4.9L4.8 10l5-.6Z\"/></svg></button><button class=\"ds-round ds-shield\" aria-label=\"Ad blocking\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3.6 18.6 6v5.6c0 4.1-2.7 7.3-6.6 8.8-3.9-1.5-6.6-4.7-6.6-8.8V6Z\"/><path d=\"m9 12 2.1 2.1L15.2 10\"/></svg><span class=\"ds-count\">12</span></button></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0}.ds-loc{display:flex;align-items:center;width:560px;max-width:100%;height:36px;border:1px solid var(--line);border-radius:18px;background:var(--field);color:var(--text);font:15px var(--ui)}.ds-loc:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.ds-sec{display:inline-flex;align-items:center;gap:4px;height:28px;margin-left:4px;padding:0 12px 0 8px;border-radius:14px;background:var(--hover);font:600 12px var(--ui)}.ds-sec .ds-icon{width:15px;height:15px}.ds-addr{flex:1;min-width:0;padding-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ds-origin{font:600 15.5px var(--display);letter-spacing:-.005em}.ds-rest{color:var(--secondary)}.ds-round{height:30px;min-width:30px;margin-right:4px;padding:0 6px;border:0;border-radius:15px;background:transparent;color:var(--secondary);display:inline-flex;align-items:center;gap:4px;cursor:pointer}.ds-round:hover{background:var(--hover);color:var(--text)}.ds-round:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-shield{color:var(--accent)}.ds-count{font:600 12px var(--ui);color:var(--text)}"
+    },
+    {
+      "name": "Tab Strip",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Card tabs; the active tab joins the toolbar and carries a 2px signal rule on its top edge.",
+      "html": "<div class=\"ds-strip\"><div class=\"ds-tab ds-active\"><span class=\"ds-title\">New tab</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">The Rust Programming Language</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">Docs.rs</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div></div><div class=\"ds-bar\"></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-strip{display:flex;align-items:flex-end;gap:2px;padding:8px 8px 0;background:var(--strip);font:13px/1.4 var(--ui)}.ds-tab{position:relative;display:flex;align-items:center;gap:4px;height:36px;max-width:240px;padding:0 4px 0 12px;border-radius:10px 10px 0 0;color:var(--secondary)}.ds-tab:not(.ds-active):hover{background:var(--hover);color:var(--text)}.ds-tab:not(.ds-active)+.ds-tab:not(.ds-active)::before{content:'';position:absolute;left:-2px;top:10px;bottom:10px;width:1px;background:var(--line)}.ds-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}.ds-active{background:var(--surface);box-shadow:inset 0 2px 0 var(--accent);color:var(--text)}.ds-active .ds-title{font-weight:700}.ds-x{width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;opacity:.55;cursor:pointer}.ds-tab:hover .ds-x,.ds-active .ds-x{opacity:1}.ds-x:hover{background:var(--hover)}.ds-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-bar{height:12px;background:var(--surface)}"
+    },
+    {
+      "name": "Dropdown Menu",
+      "kind": "custom",
+      "refersTo": "dropdown",
+      "description": "The only floating surface: panel fill, hairline, 10px radius, Float shadow.",
+      "html": "<div class=\"ds-menu\" role=\"menu\"><button role=\"menuitem\">Find in page</button><button role=\"menuitem\">Print…</button><button role=\"menuitem\">Pin tab</button><hr><button role=\"menuitem\">Bookmarks</button><button role=\"menuitem\">History</button><button role=\"menuitem\">Privacy &amp; security</button></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-menu{display:flex;flex-direction:column;gap:2px;width:260px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);font:13px/1.4 var(--ui)}.ds-menu button{height:32px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer}.ds-menu button:hover{background:var(--hover)}.ds-menu button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-menu hr{width:100%;margin:6px 0;border:0;border-top:1px solid var(--line)}"
+    },
+    {
+      "name": "Favourite Card",
+      "kind": "card",
+      "refersTo": "favorite-card",
+      "description": "New-tab favourite: flat card, hairline, letter or icon tile.",
+      "html": "<div class=\"ds-fav\"><button class=\"ds-visit\"><span class=\"ds-tile\">R</span>Rust</button></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-fav{width:200px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface)}.ds-visit{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;border:0;background:transparent;padding:0;color:var(--text);font:600 13px var(--ui);text-align:left;cursor:pointer}.ds-visit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-tile{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--card);font:700 15px/1 var(--ui)}"
+    },
+    {
+      "name": "Private Window Label",
+      "kind": "chip",
+      "refersTo": "private-label",
+      "description": "The one signal-filled element: marks a private window in the tab strip.",
+      "html": "<span class=\"ds-private\">Private</span>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-private{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent);color:var(--on-accent);font:600 12px var(--ui)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Panel",
+    "overview": "Rust Browser's chrome is an instrument panel for the web: a row of precise, legible\ncontrols whose job is to report state honestly and get out of the way. Every reading\nmeans something. The connection badge says *Encrypted*, *Not encrypted* or *Browser\npage* in plain words; the shield shows a number only when it is counting; the loading\nbar moves only while a page loads. Nothing on the panel is decoration, and nothing\npretends to know more than it does.\n\nThe panel is graphite and restrained: four stacked tonal layers (tab strip, toolbar,\npanel, card) separated by hairlines rather than shadows, one typeface family from\nWindows itself, and a single **signal** colour per theme that marks what is active,\nfocused or in progress. The address line is the one bold element; it carries the\nsite's origin in a heavier display cut so the user always knows where they are. All\nelse stays quiet so the website, not the browser, is the picture.\n\nThe panel has its own look rather than imitating Fluent or Edge, but it is mounted in\na Windows window and respects that window's behaviour: the native title bar, Snap,\nNarrator, high contrast, reduced motion and display scaling (checked at 100% and 150%).\nDensity is compact and desktop-first: 32px controls, 13px text, 4px spacing steps.",
+    "keyCharacteristics": [
+      "Graphite tonal layers and 1px hairlines; shadows only on things that float.",
+      "One signal colour per theme, used for state, never for decoration.",
+      "The address line is the single emphasised element; the origin is set heavier than the path.",
+      "Segoe UI Variable throughout: Display cut for headings and the origin, Text cut for everything else.",
+      "Plain-word state readouts over icons alone; every icon button has a name and a shortcut in its tooltip.",
+      "Compact desktop density: 32px controls, 13px body, a 4px spacing scale."
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Each theme has exactly one signal colour, and it only ever means *active, focused, in progress, private or waiting for your decision*. It never fills a large area at full strength: its biggest solid uses are the 2px loading bar, the selected tab's 2px top rule and the small private label. The one area use is the new-tab **Glow** background, which mixes 10% of the signal into the surface and only when the user chooses Glow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Theme-Token Rule",
+        "body": "New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; new-tab backgrounds are mixed only from the current theme's own tokens.",
+        "section": "colors"
+      },
+      {
+        "name": "The Origin-First Rule",
+        "body": "The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title is bold (700) but stays at 13px, so it marks selection without competing with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.",
+        "section": "typography"
+      },
+      {
+        "name": "The Plain Word Rule",
+        "body": "State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, \"Private\"), so it survives high contrast, colour blindness and Narrator.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float-Only Rule",
+        "body": "Only a surface that floats over the page gets a shadow. Cards, buttons, tabs and panels never do.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Still-Page Rule",
+        "body": "While a dropdown is open, the page behind it is a still image under a scrim, never live content. Floating chrome must not depend on drawing over a live page.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.",
+      "**Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.",
+      "**Do** give every icon-only control an accessible name and put its keyboard shortcut in the tooltip.",
+      "**Do** write state in plain words next to its icon or colour (*Not encrypted*, *Private*, a count).",
+      "**Do** keep controls 32px tall (34px round navigation buttons, 36px location line) and spacing on the 4px scale.",
+      "**Do** draw new icons on the 24px grid with 1.8px round-capped strokes.",
+      "**Do** provide a reduced-motion fallback and a forced-colours fallback for every new state cue."
+    ],
+    "donts": [
+      "**Don't** add a second accent colour or use the signal for decoration, solid large fills or illustration (the Glow background's 10% tint is the only area use).",
+      "**Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns and menus get the Float shadow.",
+      "**Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.",
+      "**Don't** draw floating chrome over a live page; use the still-page backdrop.",
+      "**Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.",
+      "**Don't** set anything else in the toolbar larger than the address origin, or at 600 weight and 15px or more."
+    ]
+  }
+}
