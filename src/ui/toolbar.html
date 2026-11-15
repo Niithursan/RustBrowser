@@ -195,11 +195,12 @@ h3{font:600 15px/1.3 var(--display);margin:20px 0 8px}
 .folder-tools input{max-width:240px}.folder-tools select,#bookmark-form select,#folder-filter{max-width:180px}
 .row{padding:12px 8px;border-bottom:1px solid var(--line)}.row:hover{background:var(--hover)}
 /* Library rows: the whole title opens the page; the other actions are quiet. */
-.row:has(>.open){flex-wrap:nowrap;gap:4px;padding:4px}
-.row>.open{flex:1;min-width:0;height:auto;padding:8px;border-color:transparent;background:transparent;text-align:left;overflow-wrap:anywhere}
+.row:has(>.open){flex-wrap:wrap;gap:0 4px;padding:4px}
+.row>.open{flex:1 1 160px;min-width:0;height:auto;padding:8px;border-color:transparent;background:transparent;text-align:left;overflow-wrap:anywhere}
 .row>.open:hover:not(:disabled){border-color:transparent}
-.row:has(>.open)>button:not(.open){flex-shrink:0;padding:0 8px;border-color:transparent;color:var(--secondary)}
-.row:has(>.open)>button:not(.open):hover{color:var(--text)}
+.row>.actions{display:flex;flex-shrink:0;gap:2px;margin-left:auto}
+.row>.actions button{padding:0 8px;border-color:transparent;color:var(--secondary)}
+.row>.actions button:hover{color:var(--text)}
 #library-results .day{margin:20px 8px 4px;font:600 13px/1.3 var(--ui);color:var(--secondary)}
 #library-query{flex:1 1 240px}
 .settings-details>summary{cursor:pointer;width:max-content;padding:4px 8px;border-radius:6px;color:var(--secondary)}
@@ -440,9 +441,11 @@ function renderLibrary(data,panel){
         // The whole title opens the page (its name stays "Open <title>").
         const open=button('Open',()=>send('open_saved',{url:item.url,new_tab:false}),name);open.className='open';open.title=item.url;
         const title=document.createElement('span');title.className='title';title.textContent=name;const sub=document.createElement('span');sub.className='secondary';sub.textContent=detail;open.replaceChildren(title,sub);
-        row.append(open,button('New tab',()=>send('open_saved',{url:item.url,new_tab:true}),name));
-        if(panel==='bookmarks')row.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()},name));
-        row.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id}),name));list.append(row);
+        // The actions stay together: beside the title, or under it when the column is narrow.
+        const actions=document.createElement('div');actions.className='actions';row.append(open,actions);
+        actions.append(button('New tab',()=>send('open_saved',{url:item.url,new_tab:true}),name));
+        if(panel==='bookmarks')actions.append(button('Edit',()=>{byId('bookmark-id').value=item.id;byId('bookmark-title').value=item.title;byId('bookmark-url').value=item.url;byId('bookmark-folder').value=item.folder??'';byId('bookmark-title').focus()},name));
+        actions.append(button('Remove',()=>send('library',{kind:panel==='history'?'remove_visit':'remove_bookmark',id:item.id}),name));list.append(row);
     }
 }
 const downloadNodes=new Map();
