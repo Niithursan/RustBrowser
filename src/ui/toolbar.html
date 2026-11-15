@@ -602,6 +602,9 @@ window.render=incoming=>{
     if(rules!==permissionSignature){permissionSignature=rules;const list=byId('permission-rules');list.replaceChildren();for(const rule of s.library.permissions||[]){const row=infoRow(rule.origin,(PERMISSION_NAMES[rule.capability]||rule.capability)+' · '+(rule.decision==='allow'?'Allowed':'Not allowed'));row.append(button('Revoke',()=>confirmAction({title:'Revoke this permission?',body:(PERMISSION_NAMES[rule.capability]||rule.capability)+' for '+rule.origin+'. Every tab closes to stop any access in progress; the site can ask again when you reopen it.',action:'Revoke and close tabs',onConfirm:()=>send('revoke_permission',{origin:rule.origin,capability:rule.capability,confirmed:true})}),rule.capability+' for '+rule.origin));list.append(row)}if(!list.children.length)list.textContent='No remembered permission rules.';}
     for(const id of ['nav','tabrow','settings-body'])byId(id).inert=s.busy;
     const changedPanel=currentPanel!==s.panel;currentPanel=s.panel;
+    // A confirmation belongs to the panel it was asked from: if that panel changes or closes
+    // (F7, a new tab, a permission request), cancel it rather than leave it over another view.
+    if(changedPanel&&byId('confirm-dialog').open)byId('confirm-dialog').close();
     byId('manager').hidden=!s.panel;
     if(s.panel){
         byId('manager-title').textContent={bookmarks:'Bookmarks',history:'Browsing history',downloads:'Downloads',settings:'Settings',new_tab:'New tab'}[s.panel];
