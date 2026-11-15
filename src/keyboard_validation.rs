@@ -309,7 +309,18 @@ impl Probe {
                 self.at = Instant::now();
                 self.step = Step::Settle;
             }
-            Step::Settle if self.at.elapsed() > Duration::from_secs(2) => {
+            // Every tab done loading too: a tab that is still loading shows Stop in
+            // place of Reload, and the controls are listed only once, before the walk.
+            Step::Settle
+                if self.at.elapsed() > Duration::from_secs(2)
+                    && self.app.session.as_ref().is_some_and(|s| {
+                        s.windows[0]
+                            .tabs
+                            .items
+                            .iter()
+                            .all(|t| !t.content.state.loading)
+                    }) =>
+            {
                 self.cdp(
                     "Emulation.setFocusEmulationEnabled",
                     serde_json::json!({ "enabled": true }),

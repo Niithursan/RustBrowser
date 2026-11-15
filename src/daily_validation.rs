@@ -12,6 +12,10 @@ use windows::core::{HSTRING, Interface};
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use wry::WebViewExtWindows;
 
+/// The toolbar shows the light theme (its text colour applied) and an enabled
+/// diagnostics clear button.
+const LIGHT_THEME: &str = "document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(27, 36, 48)' && !document.getElementById('clear-diagnostics').disabled";
+
 struct Probe {
     app: App,
     root: PathBuf,
@@ -148,12 +152,19 @@ impl Probe {
                 })
                 .map_err(|_| "Bookmark setup failed")?;
                 s.render();
-                self.eval(true,"document.body.dataset.theme==='light' && getComputedStyle(document.getElementById('address')).color==='rgb(27, 36, 48)' && !document.getElementById('clear-diagnostics').disabled")?;
+                self.eval(true, LIGHT_THEME)?;
+                self.step = Instant::now();
                 self.phase = 1;
             }
             1 if value.is_some() => {
                 if value.as_deref() != Some("true") {
-                    return Err("Light theme/diagnostic controls failed".into());
+                    // Toolbar text fades to a new theme's colour over 120ms unless
+                    // motion is reduced (as it is on CI): ask until it has settled.
+                    if self.step.elapsed() < Duration::from_secs(5) {
+                        self.eval(true, LIGHT_THEME)?;
+                        return Ok(());
+                    }
+                    return Err(format!("Light theme/diagnostic controls failed: {value:?}"));
                 }
                 s.command(Command::Navigate(format!("{}modern.html", self.urls[0])))
                     .map_err(|_| "Modern navigation failed")?;
