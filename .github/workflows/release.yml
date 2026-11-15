@@ -66,6 +66,10 @@ jobs:
             cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
             if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
           }
+          foreach ($test in @('native_permission_prompt_over_the_page','native_private_permission_prompt_over_the_page')) {
+            cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
+            if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
+          }
           cargo test --locked --test single_instance -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw 'Native single-instance hand-off failed' }
           foreach ($attempt in 1..3) {

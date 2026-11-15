@@ -1661,6 +1661,12 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         ("dark", rust_browser::settings::Theme::Dark, 1.0),
         ("dark", rust_browser::settings::Theme::Dark, 1.5),
     ];
+    const PAGES: [&str; 5] = ["newtab", "website", "menu", "permission", "settings"];
+    /// A request shown with made-up values: the toolbar answers a real one the same way.
+    // Every render passes through, so the request stays open across the theme changes.
+    const FAKE_PROMPT: &str = "if(!window.realRender){window.realRender=window.render;window.render=s=>window.realRender({...s,permission_prompt:{id:999999,tab:0,origin:'https://meet.example.com',capability:'camera'},permission_seconds:52})}";
+    const REAL_RENDER: &str =
+        "if(window.realRender){window.render=window.realRender;delete window.realRender}";
     let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
     let label = std::env::var("RUST_BROWSER_SHOTS_LABEL").unwrap_or_else(|_| "shot".into());
     let url = p.url.clone();
@@ -1669,7 +1675,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     if p.at.elapsed() < Duration::from_millis(if index == 0 { 2000 } else { 900 }) {
         return Ok(());
     }
-    if index > 2 * SHOTS.len() * 3 {
+    if index > 2 * SHOTS.len() * PAGES.len() {
         p.done = true;
         el.exit();
         return Ok(());
@@ -1697,6 +1703,19 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let _ = s.windows[0]
                 .toolbar
                 .evaluate_script("document.getElementById('more').click()");
+        }
+        if page == 3 && shot == 0 {
+            // Close the menu; the request opens its own dropdown.
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let _ = s.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('more').click()");
+            let _ = s.windows[0].toolbar.evaluate_script(FAKE_PROMPT);
+        }
+        if page == 4 && shot == 0 {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let _ = s.windows[0].toolbar.evaluate_script(REAL_RENDER);
+            p.command(el, 0, Command::ShowPanel(Panel::Settings))?;
         }
         let s = p.app.session.as_mut().ok_or("No session")?;
         s.settings.theme = theme;
@@ -1726,7 +1745,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     } else {
         let name = format!(
             "{label}-{}-{theme_name}-{}.png",
-            ["newtab", "website", "menu"][page],
+            PAGES[page],
             (scale * 100.0) as u32
         );
         let path = out.join(name);
@@ -1972,6 +1991,188 @@ fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_toolbar_polish_states() {
     let (root, _) = run("polish", polish_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Run `script` in the active tab's page; the answer arrives in `p.result`.
+fn eval_page(p: &mut Probe, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.tabs
+        .active()
+        .ok_or("No active tab")?
+        .content
+        .engine
+        .view
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Page script failed".to_string())
+}
+
+/// Ask for notifications from the page; the answer lands in a data attribute.
+const ASK_NOTIFICATIONS: &str = "delete document.documentElement.dataset.rbPermission;Notification.requestPermission().then(v=>document.documentElement.dataset.rbPermission=v);'asked'";
+/// What the toolbar shows for a pending request, as JSON.
+const PROMPT_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);return JSON.stringify({open:!b('site-panel').hidden,prompt:!b('permission-prompt').hidden,title:b('permission-title').textContent,expiry:b('permission-expiry').textContent,focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),remember:b('remember-permission-label').textContent,labelled:b('site-panel').getAttribute('aria-labelledby'),manager:b('manager').hidden})})()"#;
+/// A click on Allow the moment the request opens (the second click of a double-click).
+const EARLY_ALLOW: &str = "document.getElementById('allow-permission').click()";
+
+/// A website's permission request opens under the site-information badge over the
+/// page, never as a full panel; focus starts on "Don't allow" and the toolbar holds
+/// the window's keyboard focus; an Allow click in the first half second is ignored;
+/// Escape answers "Don't allow"; and Allow reaches the page. A private window says
+/// that a remembered choice lasts for that window. WebView2 does not always treat a
+/// script's request as made by the user and then denies it without asking, so a
+/// request that never reaches a prompt is asked again (a few times at most).
+fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let pending = |p: &mut Probe| -> Result<bool, String> {
+        Ok(p.s()?.permissions.borrow().prompt().is_some())
+    };
+    let loaded = |p: &Probe| {
+        p.app.session.as_ref().is_some_and(|s| {
+            s.tabs
+                .active()
+                .is_some_and(|t| t.url != navigation::HOME && !t.content.state.loading)
+        })
+    };
+    // Two rounds: phases 1-4 answer with Escape, 5-8 with Allow.
+    let round = |phase: u32| if phase < 5 { 0 } else { 4 };
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let url = p.url.clone();
+            p.command(el, 0, Command::Navigate(url))?;
+            p.next();
+        }
+        1 | 5 if p.at.elapsed() > Duration::from_millis(800) && loaded(p) => {
+            if p.marks.iter().filter(|m| **m != 99).count() > 6 {
+                return Err("No notification request reached a prompt".into());
+            }
+            p.marks.push(p.phase as usize);
+            eval_page(p, ASK_NOTIFICATIONS)?;
+            p.next();
+        }
+        2 | 6 => {
+            if pending(p)? {
+                if p.phase == 6 && !p.marks.contains(&99) {
+                    // Too early to count: the request must still be waiting afterwards.
+                    p.marks.push(99);
+                    let s = p.s()?;
+                    s.windows[0]
+                        .toolbar
+                        .evaluate_script(EARLY_ALLOW)
+                        .map_err(|_| "Toolbar script failed")?;
+                }
+                if p.at.elapsed() > Duration::from_millis(700) {
+                    eval_toolbar(p, PROMPT_REPORT)?;
+                    p.next();
+                }
+            } else if p.at.elapsed() > Duration::from_secs(4) {
+                // Denied without asking (not user-initiated): reload and ask again.
+                let url = p.url.clone();
+                p.command(el, 0, Command::Navigate(url))?;
+                p.phase = 1 + round(p.phase);
+                p.at = Instant::now();
+            }
+        }
+        3 | 7 => {
+            let Some(r) = polish_report(p)? else {
+                return Ok(());
+            };
+            let shown = r["open"] == true
+                && r["prompt"] == true
+                && r["labelled"] == "permission-title"
+                && r["manager"] == true
+                && r["title"]
+                    .as_str()
+                    .is_some_and(|t| t.ends_with(" wants to show notifications"))
+                && r["expiry"].as_str().is_some_and(|t| t.contains("seconds"))
+                && r["focus"] == "deny-permission";
+            if !shown || p.s()?.panel.is_some() || !pending(p)? {
+                return Err(format!("The request was not shown over the page: {r}"));
+            }
+            // The page is hidden under the dropdown, so the toolbar must hold keyboard
+            // focus for Escape to reach it (checked when the window itself is focused).
+            if p.s()?.is_focused() && r["hasFocus"] != true {
+                return Err(format!("The toolbar did not take keyboard focus: {r}"));
+            }
+            let remembered = if p.private {
+                "Remember my choice for this site in this window"
+            } else {
+                "Remember my choice for this site"
+            };
+            if r["remember"] != remembered {
+                return Err(format!("Wrong remember label: {r}"));
+            }
+            let script = if p.phase == 3 {
+                "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
+            } else {
+                "document.getElementById('allow-permission').click()"
+            };
+            *p.result.lock().unwrap() = None;
+            let s = p.s()?;
+            s.windows[0]
+                .toolbar
+                .evaluate_script(script)
+                .map_err(|_| "Toolbar script failed")?;
+            p.next();
+        }
+        4 | 8 if p.at.elapsed() > Duration::from_millis(300) => {
+            if pending(p)? {
+                if p.at.elapsed() > Duration::from_secs(5) {
+                    return Err("The answer did not reach the request".into());
+                }
+                return Ok(());
+            }
+            let answer = p.result.lock().unwrap().clone();
+            match answer {
+                None => eval_page(
+                    p,
+                    "document.documentElement.dataset.rbPermission||'pending'",
+                )?,
+                Some(text) => {
+                    let value: String = serde_json::from_str(&text).unwrap_or_default();
+                    let expected = if p.phase == 4 { "denied" } else { "granted" };
+                    if value == "pending" || value.is_empty() {
+                        *p.result.lock().unwrap() = None;
+                        return Ok(());
+                    }
+                    if value != expected || p.s()?.panel.is_some() {
+                        return Err(format!("Expected the page to be {expected}, got {value}"));
+                    }
+                    if p.phase == 4 {
+                        // A fresh page for the second request.
+                        let url = p.url.clone();
+                        p.command(el, 0, Command::Navigate(format!("{url}?again")))?;
+                        p.next();
+                    } else {
+                        p.log.push(
+                            "permission prompt: over the page, Escape denies, Allow allows".into(),
+                        );
+                        p.done = true;
+                        el.exit();
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_permission_prompt_over_the_page() {
+    let (root, _) = run("permission-prompt", permission_prompt_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_private_permission_prompt_over_the_page() {
+    let (root, _) = run(
+        "private-permission-prompt",
+        permission_prompt_steps,
+        |_, _| {},
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

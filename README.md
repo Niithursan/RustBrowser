@@ -624,12 +624,18 @@ the old extension in Rust Browser and add the new folder.
 ## Website permissions
 
 Camera, microphone, geolocation and notifications can prompt on the active tab after
-a user-initiated request. The prompt shows the actual requesting origin and capability.
-Choose Allow or Deny, with optional remembering for that exact scheme, host, port and
-capability. Private remembered decisions last only for that window. Unsupported
+a user-initiated request. The request opens as a dropdown under the site-information
+badge, over a dimmed still of the page that asked, and names the requesting site and
+what it wants ("meet.example.com wants to use your camera"). Keyboard focus starts on
+**Don't allow**, and Allow does nothing for the first half second so the second click
+of a double-click on the page cannot allow by accident. Choose Allow or Don't allow, with optional remembering for that exact
+scheme, host, port and capability. Only Allow allows: closing the dropdown (Escape,
+clicking outside it, opening another dropdown) answers Don't allow for that request
+without remembering it. The dropdown counts down the minute before an unanswered
+request is denied. Private remembered decisions last only for that window. Unsupported
 capabilities, background requests, cross-origin frames and nonsecure origins other
-than loopback are denied. Pending requests expire after one minute and are denied when
-their tab navigates, switches or closes. Windows and WebView2 policies still apply.
+than loopback are denied. Pending requests are denied when their tab navigates,
+switches or closes. Windows and WebView2 policies still apply.
 
 Privacy & security lists remembered rules. Revoking a rule closes tabs to stop
 active access and preserves other application rules. The app suppresses WebView2's

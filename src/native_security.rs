@@ -20,6 +20,17 @@ use winit::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewExtWindows};
 
 pub type Shared = Rc<RefCell<Permissions>>;
+
+/// How long a website's permission request waits for an answer before it is denied.
+pub const PROMPT_LIFETIME: Duration = Duration::from_secs(60);
+
+/// Whole seconds left before a request made `elapsed` ago expires, rounded up so a
+/// new request shows the full minute and the last second shows 1, not 0.
+pub fn seconds_left(elapsed: Duration) -> u64 {
+    let left = PROMPT_LIFETIME.saturating_sub(elapsed);
+    left.as_secs() + u64::from(left.subsec_nanos() > 0)
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Prompt {
     pub id: u64,
@@ -144,6 +155,12 @@ impl Permissions {
     pub fn prompt(&self) -> Option<Prompt> {
         self.pending.first().map(|p| p.prompt.clone())
     }
+    /// Seconds before the request [`Self::prompt`] returns is denied unanswered.
+    pub fn prompt_seconds_left(&self) -> Option<u64> {
+        self.pending
+            .first()
+            .map(|p| seconds_left(p.created.elapsed()))
+    }
     pub fn resolve(&mut self, id: u64, decision: Decision) -> windows::core::Result<()> {
         let Some(index) = self.pending.iter().position(|p| p.prompt.id == id) else {
             return Ok(());
@@ -153,7 +170,7 @@ impl Permissions {
         unsafe {
             let state = if decision == Decision::Allow
                 && self.active == Some(pending.prompt.tab)
-                && pending.created.elapsed() < Duration::from_secs(60)
+                && pending.created.elapsed() < PROMPT_LIFETIME
             {
                 COREWEBVIEW2_PERMISSION_STATE_ALLOW
             } else {
@@ -192,7 +209,7 @@ impl Permissions {
         let ids: Vec<_> = self
             .pending
             .iter()
-            .filter(|p| p.created.elapsed() >= Duration::from_secs(60))
+            .filter(|p| p.created.elapsed() >= PROMPT_LIFETIME)
             .map(|p| p.prompt.id)
             .collect();
         let changed = !ids.is_empty();
@@ -342,6 +359,21 @@ pub fn clear(
                 Ok(())
             })),
         )
+    }
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::*;
+
+    #[test]
+    fn a_request_counts_down_whole_seconds_and_never_shows_zero_while_open() {
+        assert_eq!(seconds_left(Duration::ZERO), 60);
+        assert_eq!(seconds_left(Duration::from_millis(1)), 60);
+        assert_eq!(seconds_left(Duration::from_millis(1_000)), 59);
+        assert_eq!(seconds_left(Duration::from_millis(59_001)), 1);
+        assert_eq!(seconds_left(PROMPT_LIFETIME), 0);
+        assert_eq!(seconds_left(Duration::from_secs(600)), 0);
     }
 }
 
