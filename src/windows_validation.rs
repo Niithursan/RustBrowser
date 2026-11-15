@@ -1661,7 +1661,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         ("dark", rust_browser::settings::Theme::Dark, 1.0),
         ("dark", rust_browser::settings::Theme::Dark, 1.5),
     ];
-    const PAGES: [&str; 8] = [
+    const PAGES: [&str; 10] = [
         "newtab",
         "website",
         "menu",
@@ -1670,6 +1670,8 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         "notice-info",
         "notice-error",
         "clear-confirm",
+        "settings-privacy",
+        "settings-clear",
     ];
     /// A request shown with made-up values: the toolbar answers a real one the same way.
     // Every render passes through, so the request stays open across the theme changes.
@@ -1742,6 +1744,17 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let s = p.app.session.as_mut().ok_or("No session")?;
             s.notice.clear();
             let _ = s.windows[0].toolbar.evaluate_script("setTimeout(()=>{for(const id of ['clear-app-history','clear-cookies'])document.getElementById(id).checked=true;document.getElementById('clear-data').click()},300)");
+        }
+        if (page == 8 || page == 9) && shot == 0 {
+            let section = if page == 8 {
+                "settings-privacy"
+            } else {
+                "settings-clear"
+            };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let _ = s.windows[0].toolbar.evaluate_script(&format!(
+                "document.getElementById('confirm-dialog').close();document.getElementById('{section}').scrollIntoView({{block:'start'}})"
+            ));
         }
         let s = p.app.session.as_mut().ok_or("No session")?;
         s.settings.theme = theme;
