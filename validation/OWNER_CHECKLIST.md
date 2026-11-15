@@ -160,7 +160,7 @@ created by a person can remain on disk, including from private browsing.
 Use the bundle's validation-only Setup (`Launch.ps1 -Installed` flow). Its links
 open the bundle's own disposable profile, never your daily one.
 
-1. Start it with `.\Launch.ps1 -Installed`, open Menu (⋮) → Privacy & security,
+1. Start it with `.\Launch.ps1 -Installed`, open Menu (⋮) → Settings → Default browser,
    and select **Make default browser**.
 2. In the Windows Settings page that opens, choose the entry named
    "Rust Browser validation ..." for HTTP and HTTPS.
@@ -253,7 +253,7 @@ password you use anywhere else.
 
 ## 22. Save a password (4 minutes)
 
-1. Menu (⋮) → Privacy & security → turn on **Offer to save passwords**.
+1. Menu (⋮) → Settings → Privacy & security → turn on **Offer to save passwords**.
 2. Sign in to your throwaway test account on its website and accept WebView2's
    offer to save the password.
 3. Sign out, then go back to the sign-in page.
@@ -266,7 +266,7 @@ user name and password are offered.
 1. Open a private window (Ctrl+Shift+N) and sign in to the same test account there.
 
 **Pass:** no offer to save the password appears, the saved password is not offered,
-and the two switches are greyed out in that window's Privacy & security.
+and the two switches are greyed out in that window's Settings → Privacy & security.
 
 ## 24. Fill in a form (3 minutes)
 
@@ -281,7 +281,7 @@ again, nothing is suggested.
 
 ## 25. Clear saved passwords (2 minutes)
 
-1. Privacy & security → Clear browsing data → check only **Saved passwords** →
+1. Settings → Clear browsing data → check only **Saved passwords** →
    Clear selected data.
 2. Go back to the test account's sign-in page.
 
@@ -314,7 +314,7 @@ Use the disposable owner profile from the bundle.
    https://github.com/uBlockOrigin/uBOL-home/releases and check its SHA-256 against
    the digest GitHub shows next to the file (README, "Extensions and ad blocking").
 2. Extract it to a new folder outside the bundle.
-3. Menu (⋮) → Privacy & security → Extensions → **Add from folder…**, and choose the
+3. Menu (⋮) → Settings → Extensions → **Add from folder…**, and choose the
    folder that contains `manifest.json`. Read the warning shown with the list.
 4. Open a news website you know shows ads (do not sign in) and compare it with the
    same page in your usual browser without an ad blocker.
@@ -374,7 +374,7 @@ validation entry from Apps & Features.
 2. Add uBlock Origin Lite as in step 28, open the same news website, and click the
    shield again. Then press Escape.
 3. Turn the extension off, reload, and open the shield. Turn it on again.
-4. Turn off Privacy & security > Extensions > Count blocked requests, reload the news
+4. Turn off Settings > Extensions > Count blocked requests, reload the news
    page and open the shield; turn it back on.
 5. Open a private window and click its shield.
 
@@ -394,7 +394,7 @@ extensions never run there. Note the number and site.
 3. Keep using the page while the library is open: scroll, click a link.
 4. Drag the library's left edge wider and narrower; then Tab to the edge and press
    Left and Right.
-5. Open Privacy & security from the menu, then close it.
+5. Open Settings from the menu, then close it.
 
 **Pass:** the page shrinks to the left and keeps playing and responding; nothing is
 drawn over it; the width changes and stops at a sensible minimum and maximum; Privacy
@@ -403,7 +403,7 @@ drawn over it; the width changes and stops at a sensible minimum and maximum; Pr
 ## 33. Vertical tabs on and off in two windows (5 minutes)
 
 1. Open a second window (Ctrl+N) with two or three tabs in each.
-2. In one window: Menu (⋮) → Privacy & security → Appearance → Show tabs down the
+2. In one window: Menu (⋮) → Settings → Appearance → Show tabs down the
    side.
 3. In both windows: select, close, pin and drag tabs in the column; press Ctrl+Tab;
    click a tab and use the Up and Down keys.

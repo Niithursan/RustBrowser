@@ -9,7 +9,7 @@
   `net::ERR_BLOCKED_BY_CLIENT`, and a redirect from a website address into
   `chrome-extension://`. Addresses are compared and dropped; only a count per page is
   kept, in memory, and nothing is logged. No DevTools client is exposed to pages or
-  to the toolbar. Turning off Privacy & security > Extensions > Count blocked
+  to the toolbar. Turning off Settings > Extensions > Count blocked
   requests, or removing the last extension, removes the three event handlers from
   every page and turns the domain off. Private windows never turn it on. The measured cost is in VALIDATION.md.
 - **What the shield claims.** Whether an extension "can block requests" comes from its
@@ -65,7 +65,7 @@
   installs an extension on its own. The user picks an unpacked folder in a Windows
   folder dialog; the browser checks that it holds a valid `manifest.json` (version 2
   or 3, at most 1 MiB) and passes the folder to WebView2's `AddBrowserExtension`.
-- **What is active is visible.** Privacy & security lists every extension the user
+- **What is active is visible.** Settings > Extensions lists every extension the user
   added and whether it is on; the extension button in the toolbar shows how many are
   on and their names. WebView2 keeps the installed and on or off state in the profile
   across restarts (tested in two processes). The settings only record which extension
@@ -114,7 +114,7 @@
   refused in private windows. The toolbar view always has both off, so the address
   field never offers autofill.
 - Web content cannot change these settings; they are set only from the toolbar's
-  Privacy & security panel through the existing toolbar command bridge.
+  Settings panel through the existing toolbar command bridge.
 - Clearing uses WebView2's `PASSWORD_AUTOSAVE` and `GENERAL_AUTOFILL` kinds only
   when those separate choices are checked; clearing history never includes them.
   WebView2 cannot remove one saved password, so clearing removes all of them.
@@ -148,6 +148,11 @@ what not to include.
 - Only the selected tab of the focused window may show a permission prompt. A
   change of tab or of focused window cancels pending requests, and closing a
   window cancels its tabs' requests and popups.
+- The prompt is part of the trusted toolbar, drawn as a dropdown under the
+  site-information badge over a still image of the page, so page content cannot
+  cover or imitate it. It fails closed: only Allow grants, and Allow is ignored for
+  the first 500 ms so a double-click in the page cannot grant by accident. Closing
+  the dropdown in any way, or letting the minute pass, answers Don't allow.
 - Every `other_windows` entry in `session.json` is validated like the main window
   (at most 8 windows and 64 tabs each, same address rules). An invalid entry makes
   the whole file invalid; it is backed up as `session-invalid-*.json` as before.

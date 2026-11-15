@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-15T00:47:38+00:00",
+  "generatedAt": "2026-11-15T01:34:34+00:00",
   "title": "Design System: Rust Browser",
   "extensions": {
     "colorMeta": {
@@ -587,6 +587,8 @@
     "dos": [
       "**Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.",
       "**Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.",
+      "**Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.",
+      "**Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.",
       "**Do** give every icon-only control an accessible name and put its keyboard shortcut in the tooltip.",
       "**Do** write state in plain words next to its icon or colour (*Not encrypted*, *Private*, a count).",
       "**Do** keep controls 32px tall (34px round navigation buttons, 36px location line) and spacing on the 4px scale.",
@@ -595,7 +597,8 @@
     ],
     "donts": [
       "**Don't** add a second accent colour or use the signal for decoration, solid large fills or illustration (the Glow background's 10% tint is the only area use).",
-      "**Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns and menus get the Float shadow.",
+      "**Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns, menus and the confirmation dialog get the Float shadow.",
+      "**Don't** use the error colour for anything that is not a problem or a destructive action.",
       "**Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.",
       "**Don't** draw floating chrome over a live page; use the still-page backdrop.",
       "**Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.",
