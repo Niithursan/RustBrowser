@@ -1154,7 +1154,7 @@ impl Session {
         self.retire_window(self.current, true);
         if tabs > 0 {
             self.notice = format!(
-                "A window with {tabs} tab{} was closed. More > Reopen closed window brings it back until Rust Browser exits.",
+                "A window with {tabs} tab{} was closed. Menu (⋮) > Reopen closed window brings it back until Rust Browser exits.",
                 if tabs == 1 { "" } else { "s" }
             );
         }
