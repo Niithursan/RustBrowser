@@ -2,6 +2,12 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Polish: the tab scroll arrows show only while the tabs overflow the strip (the
+  all-tabs list stays); in the tab column, + New tab lines up with the tab titles and
+  the selected tab is marked by a short rounded bar instead of a rule that bent around
+  the row's corners; a favourite's Remove is quieter than the favourite; the
+  bookmarks bar keeps the 4px spacing scale; comments that still described the old
+  menu sidebar are corrected.
 - Library and Clear browsing data: history search filters as you type (the Search /
   refresh button is gone) and the dates sit behind Filter by date; visits are grouped
   by day and show the time without seconds; a bookmark's or visit's whole title opens
