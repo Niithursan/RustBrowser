@@ -2,6 +2,14 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Settings: the panel that held every preference was called Privacy & security. It is
+  now Settings, with links to its sections at the top: Appearance (theme, new-tab
+  background, tabs down the side, bookmarks bar), Search (moved out of the menu),
+  Background tabs, Privacy & security (this site's connection, history and sessions,
+  passwords and forms, remembered permissions), Extensions, Clear browsing data,
+  Default browser and Diagnostics. The menu item is Settings; the site-information
+  dropdown's Privacy & security button and the shield's Manage extensions open their
+  sections. The theme and background are no longer only on the new-tab page.
 - Website permission requests open as a dropdown under the site-information badge,
   over the page that asked, instead of replacing the page with Privacy & security.
   The dropdown names the site and what it wants in plain words, shows how long is

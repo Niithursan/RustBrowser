@@ -15,7 +15,7 @@ from a folder, for example uBlock Origin Lite to block ads (see
 private windows. This is not a release candidate.
 
 v0.19 can save passwords and fill in forms using WebView2's own features. Both
-are off until you turn them on in Menu (⋮) → Privacy & security, and private
+are off until you turn them on in Menu (⋮) → Settings → Privacy & security, and private
 windows never save either. **Form autofill is now off by default**: WebView2
 turned it on by itself before this version. Bookmarks can be imported from an
 exported bookmarks HTML file (Firefox, Chrome or Edge). Passwords cannot be
@@ -120,8 +120,8 @@ The toolbar row holds back, forward, reload (stop while loading) and home, then 
 address line. At its start, the site-information badge shows the connection; at its
 end, the star bookmarks the page and the shield shows ad blocking (below). The Menu (⋮)
 at the far right holds everything else: find, zoom, print, pin, move and keep-awake for
-the current tab, the search engine, the list of keyboard shortcuts, bookmarks, history,
-downloads, Privacy & security, new, reopened and private windows, and Exit. Every
+the current tab, the list of keyboard shortcuts, bookmarks, history, downloads,
+Settings, new, reopened and private windows, and Exit. Every
 action keeps its keyboard shortcut.
 
 The menu, the site-information badge, the star, the shield and each folder on the
@@ -132,7 +132,7 @@ an item that goes somewhere, and the live page comes back. Another dropdown's bu
 switches straight to that dropdown.
 
 - **Site information** shows whether the connection is encrypted, the site's origin
-  and what that means, with a button for Privacy & security.
+  and what that means, with a button that opens Settings at Privacy & security.
 - **Star** (or Ctrl+D) saves the page as a bookmark, or finds it if it is already
   saved, and lets you rename it, choose its folder, remove it, or open All bookmarks.
 
@@ -140,7 +140,7 @@ The **shield**'s dropdown lists the extensions that are on and whether each asks
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
 normal windows while you have added an extension and **Count blocked requests**
-(Privacy & security > Extensions, on by default) is on; turned off, no page listens
+(Settings > Extensions, on by default) is on; turned off, no page listens
 for blocked requests at all. WebView2 does not say which
 extension, or whether the engine itself, blocked a request; requests inside frames
 from other sites are not counted; and blocking cannot be turned off for one site
@@ -150,7 +150,7 @@ from other sites are not counted; and blocking cannot be turned off for one site
 page, which shrinks and stays usable. Ctrl+Shift+B shows or hides it; Close in the
 column closes it. Drag its left edge, or focus the edge and use Left and Right, to
 make it 260 to 640 pixels wide; the width lasts for that window until you exit.
-Privacy & security still fills the window.
+Settings still fills the window.
 
 **Settings > Appearance > Show tabs down the side** (off by default) moves the tab
 list into a column at the left of every open window. It has the same actions as the
@@ -228,13 +228,13 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | --- | --- |
 | Open a website | Address field, then Enter |
 | Bookmark the current page | Star at the end of the address line, or Ctrl+D |
-| Choose the search engine | Menu (⋮) → Search with |
+| Choose the search engine | Menu (⋮) → Settings → Search |
 | See every keyboard shortcut | Menu (⋮) → Keyboard shortcuts, or hover the address field |
 | Ad blocking: extensions on and requests blocked | Shield at the end of the address line |
-| Manage extensions | Shield → Manage extensions, or Menu (⋮) → Privacy & security → Extensions |
+| Manage extensions | Shield → Manage extensions, or Menu (⋮) → Settings → Extensions |
 | Library beside the page | Ctrl+Shift+B, or Menu (⋮) → Bookmarks, History or Downloads |
-| Tabs down the side | Menu (⋮) → Privacy & security → Appearance → Show tabs down the side |
-| Bookmarks bar | Under the address line; Menu (⋮) → Privacy & security → Appearance → Show bookmarks bar |
+| Tabs down the side | Menu (⋮) → Settings → Appearance → Show tabs down the side |
+| Bookmarks bar | Under the address line; Menu (⋮) → Settings → Appearance → Show bookmarks bar |
 | Focus/select address | Ctrl+L, Alt+D, F6 |
 | Back / forward | Buttons or Alt+Left / Alt+Right |
 | Reload | Button, Ctrl+R or F5 |
@@ -259,7 +259,7 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Bookmark current page | Ctrl+D |
 | Bookmark manager | Menu (⋮) → Bookmarks, or Ctrl+Shift+O |
 | Import bookmarks from another browser | Menu (⋮) → Bookmarks → Import from file… (an exported bookmarks HTML file) |
-| Offer to save passwords / fill in forms | Menu (⋮) → Privacy & security → Passwords and forms (both off by default) |
+| Offer to save passwords / fill in forms | Menu (⋮) → Settings → Privacy & security → Passwords and forms (both off by default) |
 | Browsing history | Menu (⋮) → History, or Ctrl+H |
 | Download manager | Menu (⋮) → Downloads, or Ctrl+J |
 | New window | Menu (⋮) → New window, or Ctrl+N (up to 8 normal windows) |
@@ -268,8 +268,8 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Close every window | Menu (⋮) → Exit (all of them return at the next start) |
 | New private window | Menu (⋮) → Private window, or Ctrl+Shift+N |
 | Cut, copy, paste or select all in the address field | Right-click the address field, or the menu key |
-| Choose Rust Browser as the default browser | Menu (⋮) → Privacy & security → Make default browser (opens Windows Settings) |
-| Privacy and security | Site-information badge at the start of the address line, Menu (⋮) → Privacy & security |
+| Choose Rust Browser as the default browser | Menu (⋮) → Settings → Default browser → Make default browser (opens Windows Settings) |
+| Privacy and security | Site-information badge at the start of the address line, Menu (⋮) → Settings → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
 
 Find, zoom and print apply to the visible website, including in a private window,
@@ -364,8 +364,8 @@ are coalesced on a background thread, atomically replaced and flushed on normal 
 A profile lock prevents current browser instances from overwriting the same session.
 Do not run v0.1 against the same profile simultaneously.
 
-By default, restart restores every normal window's tab URLs and active tab. The Privacy & security
-panel can disable URL retention while preserving search and history preferences. An optional command
+By default, restart restores every normal window's tab URLs and active tab. Settings
+(Privacy & security → History and sessions) can disable URL retention while preserving search and history preferences. An optional command
 line URL opens an additional tab. Back/forward history, form data, scroll position and
 page JavaScript state are not restored after restarting the application. Up to 64 live
 tabs are supported in each window. Hidden tabs retain their engines; eligible tabs can sleep as
@@ -411,7 +411,7 @@ active download, pending permission prompt or data-clearing operation blocks aut
 sleeping across the window. Audio is queried through WebView2; its own suspension
 heuristics also apply. Grants conservatively protect a document until navigation.
 Arbitrary live-site work cannot be completely inferred: use **Keep awake** for live
-dashboards, calls, uploads or other important background work. In **Privacy & security**,
+dashboards, calls, uploads or other important background work. In **Settings → Background tabs**,
 turn off **Let inactive tabs sleep** to resume sleeping tabs and
 disable automation, or change the delay. Pinning also protects a tab. Performance
 preferences are separate from permission and privacy decisions.
@@ -424,7 +424,8 @@ Each favourite is a tile with its site's icon, saved when a tab shows the favour
 own page (another page of the same site only fills a missing icon), or the first
 letter of its title. Icons are PNG images of at most 8 KiB kept with the favourite;
 a larger icon is not kept and the tile shows the letter. The page's **Background**
-choice (Plain, Dusk, Glow, Panels) is drawn from the current theme's colours.
+choice (Plain, Dusk, Glow, Panels) is drawn from the current theme's colours. Theme and
+background can also be changed in Menu (⋮) → Settings → Appearance.
 Favorite titles/URLs and themes are saved in normal settings independently of session
 URL retention. Private favorites, themes, pins and tab order last only for that window
 and never read the normal session. No background image is fetched.
@@ -557,7 +558,7 @@ Windows, or other software. Downloads and their metadata can remain on disk.
 
 ## Passwords and autofill
 
-Menu (⋮) → Privacy & security → **Passwords and forms** has two switches:
+Menu (⋮) → Settings → Privacy & security → **Passwords and forms** has two switches:
 
 - **Offer to save passwords**: WebView2 offers to save a password when you sign in,
   and fills it in next time.
@@ -586,7 +587,7 @@ separate password manager app.
 
 ## Extensions and ad blocking
 
-Menu (⋮) → Privacy & security → **Extensions** → **Add from folder…** adds a browser
+Menu (⋮) → Settings → **Extensions** → **Add from folder…** adds a browser
 extension from an unpacked folder you downloaded yourself. Rust Browser never
 downloads, bundles or updates extensions. The list shows the extensions you added,
 whether each is on, and lets you turn each off or on and remove it; this lasts after
@@ -607,7 +608,7 @@ To block ads, the recommended extension is **uBlock Origin Lite**:
 3. Extract the ZIP into a folder you keep (for example
    `%LOCALAPPDATA%\RustBrowser-extensions\uBOLite`). Do not delete the folder later:
    the extension runs from it.
-4. In Rust Browser: Menu (⋮) → Privacy & security → Extensions → Add from folder…,
+4. In Rust Browser: Menu (⋮) → Settings → Extensions → Add from folder…,
    and choose the folder that contains `manifest.json`.
 
 uBlock Origin Lite blocks ad and tracker requests by default; it does not hide every
@@ -637,7 +638,7 @@ capabilities, background requests, cross-origin frames and nonsecure origins oth
 than loopback are denied. Pending requests are denied when their tab navigates,
 switches or closes. Windows and WebView2 policies still apply.
 
-Privacy & security lists remembered rules. Revoking a rule closes tabs to stop
+Settings → Privacy & security lists remembered rules. Revoking a rule closes tabs to stop
 active access and preserves other application rules. The app suppresses WebView2's
 automatic persistence for new decisions and resets legacy runtime permission settings
 before navigation on startup. A failed or unconfirmed permission clear leaves requests
@@ -645,7 +646,7 @@ denied until restart. Keep the Runtime updated if startup security checks fail.
 
 ## Clear browsing data
 
-Select categories in **Privacy & security**, then confirm. The browser prepares a
+Select categories in **Settings → Clear browsing data**, then confirm. The browser prepares a
 blank view and closes other tabs before clearing, so active pages cannot immediately
 repopulate the old data. Finish or cancel downloads first. Clearing history covers
 the active library and engine history; cookies include site storage; cache includes
@@ -827,7 +828,7 @@ simply be substituted into Wry. No Servo dependency is included.
 
 ## Local diagnostics
 
-**Privacy & security → Local application diagnostics** shows fixed application
+**Settings → Local application diagnostics** shows fixed application
 event categories, timestamps and counts. Refresh reads the current bounded
 snapshot; Clear requires confirmation and removes only diagnostic records.
 Bookmarks, history, cookies, sessions and downloaded files remain. New events
