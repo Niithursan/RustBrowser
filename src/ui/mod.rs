@@ -15,9 +15,26 @@ pub enum Panel {
 pub const HEIGHT: f64 = 136.0;
 pub const HTML: &str = include_str!("toolbar.html");
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResizeEdge {
+    North,
+    NorthWest,
+    NorthEast,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", content = "value", rename_all = "snake_case")]
 pub enum Command {
+    MinimizeWindow,
+    ToggleMaximize,
+    CloseWindow,
+    DragWindow,
+    ResizeWindow(ResizeEdge),
+    ShowWindowMenu {
+        x: f64,
+        y: f64,
+    },
     RefreshDiagnostics,
     /// Open Windows Default apps for this browser. Windows asks the user to choose.
     OpenDefaultApps,
@@ -206,6 +223,12 @@ pub struct ToolbarState<'a> {
     pub library_panel: Option<Panel>,
     /// Tabs are shown in the column at the left (the toolbar has no tab strip).
     pub vertical_tabs: bool,
+    /// Whether this window is maximized (switches Maximize to Restore and removes top drag-resize padding).
+    pub maximized: bool,
+    /// Whether a webpage is in borderless fullscreen (hides window caption buttons).
+    pub fullscreen: bool,
+    /// Whether the library column sits at the top-right corner of the window (`New tab + library`), hosting `#window-controls`.
+    pub controls_in_library: bool,
     /// Requests extensions stopped for the active page, as the engine reported
     /// them; `None` when nothing is counted (no extension added, counting off, or a
     /// private window).

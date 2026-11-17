@@ -13,7 +13,7 @@ is introduced into normal browsing by this milestone.
 | `ui/` | Bundled trusted HTML in a separate toolbar WebContext. Only its exact generated document receives the privileged command bridge. Ordinary pages receive no application bridge. |
 | `background.rs`, `native_background.rs`, `native_activity.rs` | Suspension policy, native suspend/resume and conservative protected-activity observation. Existing controllers/documents survive sleeping. |
 | `storage.rs` | Locked normal profile, coalesced atomic session snapshots, recovery barriers and committed-data restoration. Private sessions do not open this store. |
-| `library.rs`, `library_worker.rs` | SQLite schema/migrations and one background worker for bookmarks/history/permission rules. Existing schema remains 3. |
+| `library.rs`, `library_worker.rs` | SQLite schema/migrations and one background worker for bookmarks/history/permission rules. Schema 5 stores validated raster `data:image/...` bookmark icons (`bookmarks.icon`) with automatic migration from older schemas. |
 | `privacy.rs`, `security.rs`, `native_security.rs` | Separate private leases/contexts, origin/capability decisions, default denial and callback-confirmed engine deletion. |
 | `native_popup.rs`, `native_downloads.rs`, `downloads.rs`, `download_recovery.rs` | Linked popup deferrals and profile identity; destination selection, progress/cancel, staging/no-overwrite publication and conservative abandoned-staging handling. |
 | `diagnostics.rs` | Bounded 32-message worker channel and fixed typed events. At most 128 records/32 KiB per journal plus a same-sized temporary journal. No free-form browsing data or private writer. |
@@ -42,6 +42,20 @@ panel, the new-tab page or an open dropdown fills the window:
 
 The library keeps at least 320 pixels for the page (or new-tab column). A unit test checks 1,080
 combinations for overlap, and native tests measure the real windows.
+
+**Frameless window and flush caption controls.** Browser windows are created with
+`winit` `with_decorations(false).with_undecorated_shadow(true)`, removing the separate
+top OS title bar while preserving the native Win32 frame styles (`WS_CAPTION`,
+`WS_SYSMENU`, `WS_SIZEBOX`, `WS_MAXIMIZEBOX`, `WS_MINIMIZEBOX`), Aero Snap, Windows 11
+rounded corners, and theme-coloured borders. Because child WebView2 surfaces cover
+`(0, 0, width, height)`, the three `46x36` caption buttons (`#win-minimize`,
+`#win-maximize`, `#win-close`) are rendered inside the trusted chrome surface that owns
+`(width, 0)`: `#tabrow` in horizontal-tabs mode, `#nav` in vertical-tabs mode, and
+`#library-caption` when the library column sits beside `New tab` (`y == 0`), hiding
+during HTML5 page fullscreen. Empty strip space starts `window.drag_window()` after a
+`4px` pointer threshold (preserving `dblclick` maximize/restore), right-click opens
+`window.show_window_menu()`, and a `4px` `#resize-top` strip invokes
+`window.drag_resize_window(North | NorthWest | NorthEast)` when restored.
 
 **Why the side views never overlap the page.** Each WebView2 view is a separate window
 under the browser window, and PR #27 found that Windows does not keep their stacking
@@ -139,8 +153,9 @@ independent. Private calls use `None` and create no diagnostic directory/thread.
 
 ## Persistence and upgrades
 
-Default `%LOCALAPPDATA%/RustBrowser/v0.1`, session format 1 and library schema 3
-remain unchanged. Application version 0.11.0 intentionally follows production
+Default `%LOCALAPPDATA%/RustBrowser/v0.1` and session format 1 remain unchanged; library
+schema 5 adds `bookmarks.icon` via transactional `ALTER TABLE` migration from earlier
+schemas. Application version 0.11.0 intentionally follows production
 0.8.0. Light is an additive preference; old binaries can reject new enum values,
 so rollback needs a closed whole-profile backup. There is no profile migration,
 automatic update, telemetry upload or shared experimental browsing storage.

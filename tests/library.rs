@@ -537,12 +537,14 @@ fn folder_dropdowns_and_the_current_pages_bookmark() {
             BarItem::Link {
                 id: 1,
                 title: "Second".into(),
-                url: "https://example.com/2".into()
+                url: "https://example.com/2".into(),
+                icon: String::new(),
             },
             BarItem::Link {
                 id: 2,
                 title: "First".into(),
-                url: "https://example.com/1".into()
+                url: "https://example.com/1".into(),
+                icon: String::new(),
             },
         ]
     );
@@ -562,4 +564,49 @@ fn folder_dropdowns_and_the_current_pages_bookmark() {
     let sent: Filter =
         serde_json::from_str(r#"{"menu_folder":1,"page":"https://example.com/3"}"#).unwrap();
     assert!(sent.menu_folder.is_none() && sent.page.is_none());
+}
+
+#[test]
+fn schema_v4_migrates_to_v5_and_updates_bookmark_icons_for_matching_site() {
+    use rust_browser::library::BarItem;
+    let p = Profile::new();
+    let connection = rusqlite::Connection::open(p.db()).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE folders(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE,
+                 parent_id INTEGER REFERENCES folders(id) ON DELETE SET NULL);
+             CREATE UNIQUE INDEX folders_root_name ON folders(name COLLATE NOCASE) WHERE parent_id IS NULL;
+             CREATE UNIQUE INDEX folders_child_name ON folders(parent_id,name COLLATE NOCASE) WHERE parent_id IS NOT NULL;
+             CREATE TABLE bookmarks(id INTEGER PRIMARY KEY,title TEXT NOT NULL,url TEXT NOT NULL UNIQUE,
+                 folder INTEGER REFERENCES folders(id) ON DELETE SET NULL);
+             CREATE TABLE visits(id INTEGER PRIMARY KEY,event_key TEXT NOT NULL UNIQUE,url TEXT NOT NULL,
+                 title TEXT NOT NULL,visited_at INTEGER NOT NULL);
+             CREATE TABLE permissions(origin TEXT NOT NULL,capability TEXT NOT NULL,decision TEXT NOT NULL,
+                 PRIMARY KEY(origin,capability));
+             INSERT INTO bookmarks(id,title,url,folder) VALUES
+                 (1,'Watch','https://www.youtube.com/watch?v=1',NULL),
+                 (2,'Channel','https://youtube.com/@rust',NULL),
+                 (3,'Other','https://example.org/',NULL);
+             PRAGMA user_version=4;",
+        )
+        .unwrap();
+    drop(connection);
+
+    let (mut db, recovered) = Database::open(&p.db()).unwrap();
+    assert!(!recovered);
+    let icon = "data:image/png;base64,iVBORw0KGgo=";
+    db.apply(Action::UpdateBookmarkIcon {
+        url: "https://www.youtube.com/".into(),
+        icon: icon.into(),
+    })
+    .unwrap();
+    let data = db.query(&Filter::default()).unwrap();
+    let by_title = |t: &str| data.bookmarks.iter().find(|b| b.title == t).unwrap();
+    assert_eq!(by_title("Watch").icon, icon);
+    assert_eq!(by_title("Channel").icon, icon);
+    assert_eq!(by_title("Other").icon, "");
+    assert!(matches!(
+        &data.bar[0],
+        BarItem::Link { icon: i, .. } if i == icon
+    ));
 }

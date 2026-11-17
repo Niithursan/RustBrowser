@@ -1895,7 +1895,7 @@ fn eval_toolbar(p: &mut Probe, script: &str) -> Result<(), String> {
 }
 
 /// The toolbar state the polish defines, as JSON.
-const POLISH_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const shown=e=>!!e&&!e.hidden&&e.getClientRects().length>0;const tab=document.querySelector('.tab.active .select');return JSON.stringify({reload:shown(b('reload')),stop:shown(b('stop')),status:!!b('status'),address:b('address').title,picker:b('tab-picker').tagName+'|'+b('tab-picker').getAttribute('aria-label'),pickerShown:shown(b('tab-picker')),shortcuts:shown(b('show-shortcuts'))||!!b('show-shortcuts'),tabTitle:tab?tab.title:'',tabLabel:tab?tab.getAttribute('aria-label'):''})})()"#;
+const POLISH_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);const shown=e=>!!e&&!e.hidden&&e.getClientRects().length>0;const tab=document.querySelector('.tab.active .select');const wc=b('window-controls'),wcr=wc?wc.getBoundingClientRect():{top:-99,right:-99,height:0};return JSON.stringify({reload:shown(b('reload')),stop:shown(b('stop')),status:!!b('status'),address:b('address').title,picker:b('tab-picker').tagName+'|'+b('tab-picker').getAttribute('aria-label'),pickerShown:shown(b('tab-picker')),shortcuts:shown(b('show-shortcuts'))||!!b('show-shortcuts'),captionFlush:shown(wc)&&Math.abs(wcr.top)<=1&&Math.abs(wcr.right-innerWidth)<=1&&wcr.height>=36&&wcr.height<=48&&shown(b('win-minimize'))&&shown(b('win-maximize'))&&shown(b('win-close')),tabTitle:tab?tab.title:'',tabLabel:tab?tab.getAttribute('aria-label'):''})})()"#;
 
 fn polish_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
     let Some(text) = p.result.lock().unwrap().clone() else {
@@ -1946,9 +1946,25 @@ fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         "the all-tabs list keeps its name",
                     ),
                     (r["shortcuts"] == true, "the Keyboard shortcuts item exists"),
+                    (
+                        r["captionFlush"] == true,
+                        "window caption controls sit flush at top-right",
+                    ),
                 ];
                 if let Some((_, what)) = checks.iter().find(|(ok, _)| !ok) {
                     return Err(format!("Idle toolbar: {what}: {r}"));
+                }
+                {
+                    let win = &p.s()?.windows[0].window;
+                    if win.is_decorated() {
+                        return Err("Browser window still has a separate OS title bar".into());
+                    }
+                    if win.title().contains(env!("CARGO_PKG_VERSION")) {
+                        return Err(format!(
+                            "Window title still carries version suffix: {}",
+                            win.title()
+                        ));
+                    }
                 }
                 let s = p.app.session.as_mut().ok_or("No session")?;
                 if let Some(tab) = s.tabs.active_mut() {
@@ -4687,10 +4703,10 @@ fn native_new_tabs_grow_into_the_tab_strip() {
 
 /// The open folder dropdown: its rows, whether it sits under its button, and
 /// whether its first row is the way back.
-const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel'),rows=[...p.querySelectorAll('button')],a=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.getAttribute('aria-expanded')==='true'),r=p.getBoundingClientRect(),q=a?a.getBoundingClientRect():{bottom:-99,left:-99};return JSON.stringify({rows:rows.map(b=>b.textContent),back:!!rows[0]&&rows[0].classList.contains('folder-back'),under:!p.hidden&&r.top>=q.bottom&&r.top-q.bottom<12&&Math.abs(r.left-q.left)<=1,expanded:a?a.getAttribute('aria-expanded'):''})})()";
+const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel'),rows=[...p.querySelectorAll('button')],a=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.getAttribute('aria-expanded')==='true'),r=p.getBoundingClientRect(),q=a?a.getBoundingClientRect():{bottom:-99,left:-99};return JSON.stringify({rows:rows.map(b=>b.textContent),icons:rows.map(b=>b.querySelector('img')?'img':b.querySelector('.bm-letter')?'letter:'+b.querySelector('.bm-letter').dataset.letter:'svg'),back:!!rows[0]&&rows[0].classList.contains('folder-back'),under:!p.hidden&&r.top>=q.bottom&&r.top-q.bottom<12&&Math.abs(r.left-q.left)<=1,expanded:a?a.getAttribute('aria-expanded'):''})})()";
 
 /// The bookmarks bar's buttons as `{labels, hidden}` JSON (only the shown buttons).
-const BAR_REPORT: &str = "JSON.stringify({hidden:document.getElementById('bookmarks-bar').hidden,labels:[...document.querySelectorAll('#bar-items .bar-item')].filter(b=>!b.hidden).map(b=>b.textContent),setting:document.getElementById('bookmarks-bar-setting').checked})";
+const BAR_REPORT: &str = r#"JSON.stringify({hidden:document.getElementById('bookmarks-bar').hidden,labels:[...document.querySelectorAll('#bar-items .bar-item')].filter(b=>!b.hidden).map(b=>b.textContent),barLinkImg:!!document.querySelector('#bar-items .bar-item img[src^="data:image/png;base64,"]'),noGlobe:!document.querySelector('#bar-items .icon-favicon'),setting:document.getElementById('bookmarks-bar-setting').checked})"#;
 
 /// The toolbar's own measure of its height (as it reports it to the browser), and
 /// whether the bookmarks bar is hidden and the notice empty, as JSON.
@@ -4740,7 +4756,7 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 return Ok(());
             }
             let file = format!(
-                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><H3>Deep</H3><DL><p><DT><A HREF=\"{url}?deep\">Deep link</A></DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
+                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Barre de favoris</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\" ICON=\"data:image/png;base64,iVBORw0KGgo=\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><H3>Deep</H3><DL><p><DT><A HREF=\"{url}?deep\" ICON=\"data:image/png;base64,iVBORw0KGgo=\">Deep link</A></DL><p><DT><A HREF=\"{url}?work\">Work link</A></DL><p></DL><p>\n<DT><H3>Other</H3><DL><p><DT><A HREF=\"{url}?other\">Other link</A></DL><p>\n</DL><p>\n"
             );
             p.app
                 .proxy
@@ -4764,6 +4780,8 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             if let Some(r) = polish_report(p)? {
                 if r["hidden"] != false
                     || r["labels"] != serde_json::json!(["Bar link", "Work", "Other"])
+                    || r["barLinkImg"] != true
+                    || r["noGlobe"] != true
                     || r["setting"] != true
                 {
                     return Err(format!("Wrong bookmarks bar: {r}"));
@@ -4803,6 +4821,7 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         5 => {
             if let Some(r) = polish_report(p)? {
                 if r["rows"] != serde_json::json!(["Deep", "Work link"])
+                    || r["icons"] != serde_json::json!(["svg", "letter:W"])
                     || r["under"] != true
                     || r["expanded"] != "true"
                 {
@@ -4831,7 +4850,10 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         7 => {
             if let Some(r) = polish_report(p)? {
                 // A way back (named after the open folder), then its bookmark.
-                if r["rows"] != serde_json::json!(["Deep", "Deep link"]) || r["back"] != true {
+                if r["rows"] != serde_json::json!(["Deep", "Deep link"])
+                    || r["icons"] != serde_json::json!(["svg", "img"])
+                    || r["back"] != true
+                {
                     return Err(format!("Wrong subfolder dropdown: {r}"));
                 }
                 eval_toolbar(

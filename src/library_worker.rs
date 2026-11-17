@@ -16,7 +16,7 @@ pub struct Job {
 #[derive(Debug)]
 pub struct Reply {
     pub revision: u64,
-    pub data: Option<Data>,
+    pub data: Option<Box<Data>>,
     pub message: Option<String>,
     /// What an import did, shown as a notice (not a failure).
     pub summary: Option<String>,
@@ -39,7 +39,7 @@ impl Worker {
             while let Ok(job) = receiver.recv() {
                 if let Action::ImportBookmarks(parsed) = &job.action {
                     let reply = match database.import_bookmarks(parsed) {
-                        Ok(summary) => Reply { revision: job.revision, data: database.query(&job.filter).ok(), message: None, summary: Some(summary.message()) },
+                        Ok(summary) => Reply { revision: job.revision, data: database.query(&job.filter).ok().map(Box::new), message: None, summary: Some(summary.message()) },
                         Err(error) => {
                             let text = error.to_string();
                             Reply { revision: job.revision, data: None, summary: None, message: Some(if text.contains("nothing was imported") { text } else { "Bookmark import failed, so nothing was imported. Check profile access and disk space.".into() }) }
@@ -49,7 +49,7 @@ impl Worker {
                     continue;
                 }
                 let record = matches!(job.action, Action::Record { .. });
-                let result = database.apply(job.action).and_then(|()| if record { Ok(None) } else { database.query(&job.filter).map(Some) });
+                let result = database.apply(job.action).and_then(|()| if record { Ok(None) } else { database.query(&job.filter).map(|d| Some(Box::new(d))) });
                 let reply = match result {
                     Ok(data) => Reply { revision: job.revision, data, message: None, summary: None },
                     Err(_) => Reply { revision: job.revision, data: None, summary: None, message: Some("Library action failed. Check the values, duplicate URLs/folder names, date range and profile access.".into()) },

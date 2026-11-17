@@ -50,6 +50,7 @@ fn entry(title: &str, url: &str, folder: Option<&str>) -> Entry {
         title: title.into(),
         url: url.into(),
         folder: folder.map(|name| vec![name.into()]).unwrap_or_default(),
+        icon: String::new(),
     }
 }
 
@@ -86,7 +87,10 @@ fn a_firefox_export_is_read_with_its_folders() {
     assert_eq!(
         parsed.entries,
         vec![
-            entry("Menu item & more", "https://www.example.org/menu", None),
+            Entry {
+                icon: "data:image/png;base64,iVBORw0KGgo=".into(),
+                ..entry("Menu item & more", "https://www.example.org/menu", None)
+            },
             entry(
                 "An article",
                 "https://news.example.com/article?id=7",
@@ -96,6 +100,7 @@ fn a_firefox_export_is_read_with_its_folders() {
                 title: "Read later".into(),
                 url: "https://example.net/later".into(),
                 folder: vec!["Reading".into(), "Later".into()],
+                icon: String::new(),
             },
             entry(
                 "Get Help",
@@ -202,11 +207,14 @@ fn an_edge_export_refuses_local_data_and_credential_addresses() {
     assert_eq!(
         parsed.entries,
         vec![
-            entry(
-                "Edge example",
-                "https://www.example.com/edge",
-                Some("Favorites bar")
-            ),
+            Entry {
+                icon: "data:image/png;base64,iVBORw0KGgo=".into(),
+                ..entry(
+                    "Edge example",
+                    "https://www.example.com/edge",
+                    Some("Favorites bar")
+                )
+            },
             entry("Plain http", "http://intranet.example.test/", None),
         ]
     );
@@ -536,4 +544,43 @@ fn unfiled_bookmarks_follow_the_bar_folder_on_the_bar() {
         bar(&db),
         ["Example", "Starred", "[Work]", "[Other bookmarks]"]
     );
+}
+
+#[test]
+fn imported_raster_icons_are_stored_backfilled_and_unsafe_icons_dropped() {
+    let profile = Profile::new();
+    let mut db = profile.database();
+    // Pre-save Example without an icon; importing chrome.html should backfill its PNG icon
+    // without creating a duplicate bookmark.
+    db.apply(Action::SaveBookmark {
+        id: None,
+        title: "Example".into(),
+        url: "https://www.example.com/".into(),
+        folder: None,
+    })
+    .unwrap();
+    assert_eq!(db.query(&Filter::default()).unwrap().bookmarks[0].icon, "");
+    let parsed = bookmark_import::parse(&fixture("chrome.html")).unwrap();
+    let summary = db.import_bookmarks(&parsed).unwrap();
+    assert_eq!((summary.imported, summary.duplicates), (2, 2));
+    let saved = db.query(&Filter::default()).unwrap();
+    let example = saved
+        .bookmarks
+        .iter()
+        .find(|b| b.url == "https://www.example.com/")
+        .unwrap();
+    assert_eq!(example.icon, "data:image/png;base64,iVBORw0KGgo=");
+
+    // SVG, remote URLs, and corrupt base64 payloads are stripped while keeping the bookmark.
+    let hostile = bookmark_import::parse(&export(
+        r#"<DT><A HREF="https://svg.example/" ICON="data:image/svg+xml;base64,PHN2Zz4=">SVG</A>
+<DT><A HREF="https://remote.example/" ICON="https://evil.example/icon.png">Remote</A>
+<DT><A HREF="https://corrupt.example/" ICON="data:image/png;base64,not-a-png">Corrupt</A>
+<DT><A HREF="https://ico.example/" ICON="data:image/x-icon;base64,AAABAA==">ICO</A>"#,
+    ))
+    .unwrap();
+    assert_eq!(hostile.entries[0].icon, "");
+    assert_eq!(hostile.entries[1].icon, "");
+    assert_eq!(hostile.entries[2].icon, "");
+    assert_eq!(hostile.entries[3].icon, "data:image/x-icon;base64,AAABAA==");
 }

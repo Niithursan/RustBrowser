@@ -195,9 +195,11 @@ focused or in progress. The address line is the one bold element; it carries the
 site's origin in a heavier display cut so the user always knows where they are. All
 else stays quiet so the website, not the browser, is the picture.
 
-The panel has its own look rather than imitating Fluent or Edge, but it is mounted in
-a Windows window and respects that window's behaviour: the native title bar, Snap,
-Narrator, high contrast, reduced motion and display scaling (checked at 100% and 150%).
+The panel has its own look rather than imitating Fluent or Edge, and merges the tab strip
+into the top of a frameless Windows window with flush `46x36` Minimize, Maximize/Restore
+and Close caption buttons at the top-right corner while preserving Windows 11 rounded
+corners, theme-coloured borders, Snap, Narrator, high contrast, reduced motion and display
+scaling (checked at 100% and 150%).
 Density is compact and desktop-first: 32px controls, 13px text, 4px spacing steps.
 
 **Key Characteristics:**
@@ -280,18 +282,22 @@ no web font is ever loaded (the toolbar's security policy forbids it).
 
 ## Layout
 
-The chrome is a stack of rows across the top of the window: the **tab strip** (min 42px,
-8px top padding, tabs bottom-aligned), the **navigation row** (4px top, 8px bottom
-padding) with back, forward, reload/stop and home on the left, the address line filling
-the middle and the Menu (⋮) at the right, an optional **bookmarks bar** (28px items),
-a notice row, and the 2px **loading bar** (carrying a 1px bottom hairline while idle so
-the toolbar cleanly separates from full panels and light webpages). The page view starts
-below `--chrome-height` (120px).
+The chrome is a stack of rows across the top of the window: the **tab strip** (min 42px
+restored with 6px top padding, 36px maximized, tabs bottom-aligned, and `46x36` Minimize,
+Maximize/Restore and Close caption buttons flush with the top-right window edge), the
+**navigation row** (4px top, 8px bottom padding; hosting the flush caption buttons at its
+right end when vertical tabs are on) with back, forward, reload/stop and home on the left,
+the address line filling the middle and the Menu (⋮) at the right, an optional
+**bookmarks bar** (28px items with `16x16` site icons or `4px`-rounded letter monogram
+chips), a notice row, and the 2px **loading bar** (carrying a 1px bottom hairline while
+idle so the toolbar cleanly separates from full panels and light webpages). The page view
+starts below `--chrome-height` (120px).
 
 The same trusted document is also used for two side views, chosen by `data-role`: the
 **vertical tab column** (one tab per row, 4px gaps, hairline on its right edge) and the
 **library column** at the right of a live page or the new-tab page (260-640px wide,
-hairline on its left edge, an 8px drag handle). Full panels (Settings, new tab) are padded
+hairline on its left edge, an 8px drag handle, and a fixed 36px top caption strip holding
+the flush window controls whenever `New tab` sits beside it). Full panels (Settings, new tab) are padded
 24px × 32px with content capped at 1040px and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline and 1px section hairlines so section navigation and Back to page (F7) stay reachable while scrolling; the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
@@ -368,7 +374,7 @@ an extension is on, with its blocked-request count in 12px/600).
 
 ### Cards / Containers
 - **Favourite card:** Graphite Surface, Hairline border, 10px radius, 10px × 12px padding, no shadow; a single horizontal row with a 32px tile (8px radius, Graphite Card, holding the site's icon or its first letter) and bold title on the left, and a quiet 28px `×` remove button on the right.
-- **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under `h2.day` 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
+- **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, preceded by the bookmark's `16x16` site icon or letter monogram chip in Bookmarks, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under `h2.day` 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
 - **Info rows** (downloads, extensions, remembered permissions): 12px × 8px padding, the same title and second line, actions at the right.
 
 ### Confirmation dialog

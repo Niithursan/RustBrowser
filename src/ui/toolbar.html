@@ -11,7 +11,7 @@
  * built: the project · redesign: polish */
 /* Graphite and signal: one bold element (the address line), everything else quiet.
    Theme tokens are read by the ui::tests contrast checks; keep their names stable. */
-:root{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--scrim:rgba(0,0,0,.45);--chrome-height:120px;--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}
+:root{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--close-hover:#C42B1C;--close-pressed:#A82014;--on-close:#fff;--shadow:0 6px 18px rgba(0,0,0,.35);--scrim:rgba(0,0,0,.45);--chrome-height:120px;--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}
 body[data-theme=slate]{--strip:#141C23;--surface:#1F2A33;--panel:#1A232B;--card:#2A3742;--field:#162028;--line:#3D4D5A;--accent:#7CC4E4}
 body[data-theme=plum]{--strip:#1B1420;--surface:#2A2130;--panel:#231B29;--card:#382C40;--field:#1E1724;--line:#4C3D56;--accent:#E3B5FF}
 body[data-theme=light]{color-scheme:light;--strip:#D9DEE3;--surface:#EEF0F2;--panel:#F8F9FA;--card:#E2E6EA;--field:#fff;--text:#1B2430;--secondary:#4A5563;--line:#A7B0BA;--error:#A3192A;--accent:#2446B8;--on-accent:#fff;--hover:rgba(27,36,48,.06);--pressed:rgba(27,36,48,.12);--disabled:#9BA4AE;--shadow:0 6px 18px rgba(27,36,48,.18);--scrim:rgba(27,36,48,.28)}
@@ -30,9 +30,32 @@ button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,pr
 input{height:32px;min-width:48px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--field);caret-color:var(--accent)}
 input::placeholder{color:var(--secondary);opacity:1}
 
-/* Row 1: the tab strip. Tabs are cards; the selected card shares the toolbar's
-   surface so it joins the row below, and carries the signal rule on its top edge. */
-#tabrow{display:flex;align-items:flex-end;gap:2px;min-height:42px;padding:8px 8px 0;background:var(--strip)}
+/* Row 1: the tab strip and flush window caption controls. Tabs are cards; the selected
+   card shares the toolbar's surface so it joins the row below, with a signal rule on top. */
+#tabrow{display:flex;align-items:flex-end;gap:2px;min-height:42px;padding:6px 0 0 8px;background:var(--strip);user-select:none}
+html[data-maximized=true] #tabrow{min-height:36px;padding-top:0}
+#window-controls{display:inline-flex;align-self:stretch;flex-shrink:0;margin:-6px 0 0 6px}
+html[data-maximized=true] #window-controls{margin-top:0}
+#nav>#window-controls{align-self:flex-start;height:44px;margin:-4px -8px 0 6px}
+#library-caption{position:fixed;z-index:4;top:0;left:0;right:0;height:36px;display:flex;justify-content:flex-end;background:var(--panel);border-left:1px solid var(--line);user-select:none}
+#library-caption>#window-controls{margin:0}
+#window-controls button{width:46px;min-width:46px;height:100%;min-height:36px;padding:0;border:0;border-radius:0;background:transparent;color:var(--secondary);display:inline-flex;align-items:center;justify-content:center;transform:none}
+#window-controls button:hover:not(:disabled){background:var(--hover);color:var(--text);border-color:transparent}
+#window-controls button:active:not(:disabled){background:var(--pressed);transform:none}
+#win-close:hover:not(:disabled){background:var(--close-hover);color:var(--on-close)}
+#win-close:active:not(:disabled){background:var(--close-pressed);color:var(--on-close)}
+.win-icon{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.1;shape-rendering:crispEdges;pointer-events:none}
+#win-close .win-icon{stroke-width:1.2;shape-rendering:auto}
+.icon-restore{display:none}
+html[data-maximized=true] .icon-max{display:none}
+html[data-maximized=true] .icon-restore{display:inline}
+#resize-top{position:fixed;z-index:25;top:0;left:0;right:0;height:4px;cursor:ns-resize}
+#resize-top[data-has-controls=true]{right:138px}
+.bm-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0}
+.bm-icon img{width:16px;height:16px;object-fit:contain}
+.bm-letter{border-radius:4px;background:var(--card);border:1px solid var(--line);color:var(--text);font:700 10px/1 var(--ui)}
+.bm-letter::before{content:attr(data-letter)}
+.row .title-row{display:flex;align-items:center;gap:8px}
 #mode{align-self:center;font-size:12px;color:var(--secondary);padding-right:8px}
 /* Only a private window needs a mode label; normal mode stays available to assistive technology. */
 #mode[data-private=false]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -284,13 +307,16 @@ button.danger:hover:not(:disabled){border-color:var(--error)}
 .favorite-card .remove:hover{background:var(--hover);color:var(--error)}
 .recent-row{display:block;width:100%;height:auto;margin:4px 0;padding:12px;text-align:left;overflow-wrap:anywhere;background:transparent}
 
-@media(max-width:700px){#tab-picker{max-width:100px}#nav{flex-wrap:wrap}#location{order:2;flex-basis:100%;margin:4px 0 0}#more{order:1}#security{max-width:110px}#manager{padding:0 16px 16px}.manager-head,#newtab-body{padding-top:16px}#newtab-body h2{font-size:26px}#newtab-search{flex-wrap:wrap}#newtab-search input{flex-basis:100%}}
+@media(max-width:700px){#tab-picker{max-width:100px}#nav{flex-wrap:wrap}#location{order:2;flex-basis:100%;margin:4px 0 0}#more{order:1}#nav:has(>#window-controls:not([hidden]))>#more{margin-left:auto}#nav>#window-controls{order:1}#security{max-width:110px}#manager{padding:0 16px 16px}.manager-head,#newtab-body{padding-top:16px}#newtab-body h2{font-size:26px}#newtab-search{flex-wrap:wrap}#newtab-search input{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){button,select,input{transition:none!important}button:active:not(:disabled){transform:none}#load-progress[aria-hidden=false]::after{animation:none;width:100%}#tabs{scroll-behavior:auto}}
 /* Windows high contrast: system colours, and a non-colour active-tab cue. */
 @media(forced-colors:active){.tab.active{outline:2px solid Highlight;outline-offset:-2px;box-shadow:none}
 .tab.drop,.tab.drop-end{outline:2px dashed Highlight;outline-offset:-2px;box-shadow:none}
 #settings-index button[aria-current=true]{text-decoration:underline;box-shadow:none}
 .icon{stroke:ButtonText}
+.win-icon{stroke:ButtonText}
+#win-close:hover{background:Highlight;forced-color-adjust:none}
+#win-close:hover .win-icon{stroke:HighlightText}
 .icon-menu{fill:ButtonText}
 #bookmark-star[data-bookmarked=true] .icon-star{fill:Highlight;stroke:Highlight}
 #site-panel:has(#permission-prompt:not([hidden])){border-color:Highlight}
@@ -301,6 +327,7 @@ html[data-role=library] #chrome,html[data-role=tabs] #nav,html[data-role=tabs] #
 html[data-role=tabs] #zoom-row,html[data-role=tabs] #notice-row,html[data-role=tabs] #load-progress,
 html[data-role=tabs] #manager,html[data-role=library] #menu-backdrop,html[data-role=tabs] .dropdown,html[data-role=library] .dropdown{display:none!important}
 html[data-role=library] #manager{top:0;padding:0 16px 24px 20px;border-left:1px solid var(--line)}
+html[data-role=library][data-controls=true] #manager{top:36px}
 html[data-role=library] .manager-head{padding-top:16px}
 html[data-role=library] #manager>*{max-width:none}
 html[data-role=library] .manager-head h1{font-size:22px}
@@ -316,7 +343,7 @@ html[data-role=tabs] #new{order:1;align-self:stretch;display:flex;align-items:ce
 html[data-role=tabs] #new::after{content:'New tab';font-size:13px}
 html[data-role=tabs] #tabs{order:2;flex:1 1 auto;flex-direction:column;align-items:stretch;min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}
 html[data-role=tabs] #wake-tab{order:3}
-html[data-role=tabs] #tabs-left,html[data-role=tabs] #tabs-right,html[data-role=tabs] #picker-wrap{display:none}
+html[data-role=tabs] #tabs-left,html[data-role=tabs] #tabs-right,html[data-role=tabs] #picker-wrap,html[data-role=tabs] #window-controls{display:none}
 html[data-role=tabs] .tab{max-width:none;height:36px;padding:0 4px 0 12px;border-radius:8px}
 html[data-role=tabs] .tab .select,html[data-role=tabs] .tab.pinned .select{flex:1 1 auto;max-width:none;text-align:left}
 html[data-role=tabs] .tab:not(.active)+.tab:not(.active)::before{display:none}
@@ -326,7 +353,7 @@ html[data-role=tabs] .tab.drop{box-shadow:inset 0 3px 0 var(--accent)}
 html[data-role=tabs] .tab.drop-end{box-shadow:inset 0 -3px 0 var(--accent)}
 #address-menu{position:fixed;z-index:30;min-width:150px;padding:4px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}#address-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:8px 12px;border-radius:4px}#address-menu button:hover,#address-menu button:focus-visible{background:var(--hover)}#address-menu button:disabled{color:var(--secondary)}
 </style></head><body>
-<div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab"><svg class="icon icon-plus" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 6v12M6 12h12"/></svg></button><button type="button" id="tabs-left" aria-label="Scroll tabs left" title="Scroll tabs left"><svg class="icon icon-left" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 7 9 12l5 5"/></svg></button><button type="button" id="tabs-right" aria-label="Scroll tabs right" title="Scroll tabs right"><svg class="icon icon-right" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 7l5 5-5 5"/></svg></button><span id="picker-wrap"><select id="tab-picker" aria-label="All browser tabs" title="All browser tabs"></select><svg class="icon icon-tabs" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="6.5" width="16" height="12" rx="2"/><path d="M4 10h16M9 6.5V10"/></svg></span><button type="button" id="wake-tab">Wake tab</button></div>
+<div id="resize-top" aria-hidden="true"></div><div id="chrome"><div id="tabrow"><span id="mode">Normal</span><div id="tabs" role="tablist" aria-label="Browser tabs"></div><button id="new" type="button" title="New tab (Ctrl+T)" aria-label="New tab"><svg class="icon icon-plus" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 6v12M6 12h12"/></svg></button><button type="button" id="tabs-left" aria-label="Scroll tabs left" title="Scroll tabs left"><svg class="icon icon-left" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 7 9 12l5 5"/></svg></button><button type="button" id="tabs-right" aria-label="Scroll tabs right" title="Scroll tabs right"><svg class="icon icon-right" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 7l5 5-5 5"/></svg></button><span id="picker-wrap"><select id="tab-picker" aria-label="All browser tabs" title="All browser tabs"></select><svg class="icon icon-tabs" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="6.5" width="16" height="12" rx="2"/><path d="M4 10h16M9 6.5V10"/></svg></span><button type="button" id="wake-tab">Wake tab</button><div id="window-controls" role="group" aria-label="Window controls"><button type="button" id="win-minimize" tabindex="-1" aria-label="Minimize window" title="Minimize"><svg class="win-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M1 6h10"/></svg></button><button type="button" id="win-maximize" tabindex="-1" aria-label="Maximize window" title="Maximize"><svg class="win-icon icon-max" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="9" height="9"/></svg><svg class="win-icon icon-restore" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><rect x="1.5" y="3.5" width="7" height="7"/><path d="M3.5 3.5v-2h7v7h-2"/></svg></button><button type="button" id="win-close" tabindex="-1" aria-label="Close window" title="Close"><svg class="win-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="m1.5 1.5 9 9M10.5 1.5l-9 9"/></svg></button></div></div>
 <form id="nav"><button type="button" id="back" title="Back (Alt+Left)" aria-label="Back" disabled><svg class="icon icon-back" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></button><button type="button" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled><svg class="icon icon-forward" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg></button><button type="button" id="reload" title="Reload (Ctrl+R / F5)" aria-label="Reload"><svg class="icon icon-reload" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18.5 12a6.5 6.5 0 1 1-2-4.7"/><path d="M17.5 4v4h-4"/></svg></button><button type="button" id="stop" title="Stop (Escape)" aria-label="Stop"><svg class="icon icon-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"/></svg></button><button type="button" id="home" title="Home (Alt+Home)" aria-label="Home"><svg class="icon icon-home" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 11.5 12 5.5l7 6"/><path d="M7 10v8.5h10V10"/></svg></button><div id="location"><button type="button" id="security" aria-label="Connection information" aria-haspopup="dialog" aria-expanded="false" aria-controls="site-panel"><svg class="icon icon-site" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6.5" y="10.5" width="11" height="8" rx="1.5"/><path d="M9 10.5V8a3 3 0 0 1 6 0v2.5"/></svg><svg class="icon icon-page" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="7"/><path d="M12 11v5M12 8v.5"/></svg><span id="security-word">Connection</span></button><div id="address-wrap"><input id="address" aria-label="Website address or search" title="Ctrl+L, Alt+D or F6: address field
 F7: focus webpage
 Ctrl+T: new tab
@@ -335,7 +362,7 @@ Menu, Keyboard shortcuts: all of them" placeholder="Search or enter address" aut
 <li><kbd>Ctrl+L</kbd>, <kbd>Alt+D</kbd> or <kbd>F6</kbd>: address field</li><li><kbd>F7</kbd>: focus webpage</li><li><kbd>Ctrl+T</kbd>: new tab</li><li><kbd>Ctrl+W</kbd>: close tab</li><li><kbd>Ctrl+Shift+T</kbd>: reopen closed tab</li><li><kbd>Ctrl+Tab</kbd>, <kbd>Ctrl+Shift+Tab</kbd>: next, previous tab</li><li><kbd>Ctrl+1</kbd> to <kbd>Ctrl+9</kbd>: go to a tab</li><li><kbd>Ctrl+N</kbd>: new window</li><li><kbd>Ctrl+Shift+N</kbd>: private window</li><li><kbd>Alt+Left</kbd>, <kbd>Alt+Right</kbd>: back, forward</li><li><kbd>Ctrl+R</kbd> or <kbd>F5</kbd>: reload</li><li><kbd>Escape</kbd>: stop loading</li><li><kbd>Ctrl+F</kbd>: find in page</li><li><kbd>Ctrl+plus</kbd>, <kbd>Ctrl+minus</kbd>, <kbd>Ctrl+0</kbd>: zoom</li><li><kbd>Ctrl+P</kbd>: print</li><li><kbd>Ctrl+D</kbd>: bookmark page</li><li><kbd>Ctrl+Shift+O</kbd>: bookmarks</li><li><kbd>Ctrl+H</kbd>: history</li><li><kbd>Ctrl+J</kbd>: downloads</li><li><kbd>Ctrl+Shift+P</kbd>: pin tab</li>
 </ul></div><div id="menu-backdrop" hidden></div><section id="site-panel" class="dropdown" role="dialog" hidden aria-labelledby="site-title"><div id="permission-prompt" role="group" aria-labelledby="permission-title" aria-describedby="permission-expiry" hidden><h2 id="permission-title"></h2><p id="permission-origin" class="muted"></p><label class="settings-label"><input type="checkbox" id="remember-permission"><span id="remember-permission-label">Remember my choice for this site</span></label><p id="permission-expiry" class="muted"></p><div class="dropdown-actions"><button type="button" id="deny-permission">Don’t allow</button><button type="button" id="allow-permission">Allow</button></div></div><div id="site-connection-info"><h2 id="site-title">Connection</h2><p id="site-origin"></p><p id="site-detail" class="muted"></p><p id="site-private" class="muted" hidden>Private window: cookies and site storage are kept apart and removed when it closes.</p><div class="dropdown-actions"><button type="button" id="site-settings">Privacy &amp; security</button></div></div></section><section id="star-panel" class="dropdown" role="dialog" hidden aria-labelledby="star-title"><h2 id="star-title">Bookmarked</h2><form id="star-form"><label>Name <input id="star-name" maxlength="256" required></label><label>Folder <select id="star-folder"></select></label><div class="dropdown-actions"><button type="button" id="star-remove" class="danger">Remove</button><button type="button" id="star-all">All bookmarks</button><button type="submit" id="star-done">Done</button></div></form></section><div id="folder-panel" class="dropdown" role="menu" aria-label="Bookmarks folder" hidden></div>
 <section id="shield-panel" class="dropdown" role="dialog" hidden aria-labelledby="shield-title"><h2 id="shield-title">Ad blocking in this window</h2><p id="shield-state"></p><p id="shield-count-text"></p><p class="muted" id="shield-limits"></p><div class="dropdown-actions"><button type="button" id="shield-manage">Manage extensions</button><button type="button" id="shield-close">Close</button></div></section><div id="zoom-row" hidden>Page zoom: <button type="button" id="zoom-level" title="Reset page zoom to 100%"></button></div><div id="notice-row"><svg class="icon notice-icon icon-info" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="7.5"/><path d="M12 11v5M12 8v.5"/></svg><svg class="icon notice-icon icon-alert" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4.5 20 18.5H4Z"/><path d="M12 10v4M12 16v.5"/></svg><div id="notice" role="status" aria-live="polite"></div><button type="button" id="notice-diagnostics" hidden>Diagnostics</button><button type="button" id="dismiss-notice" hidden aria-label="Dismiss notification" title="Dismiss"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div><div id="load-progress" role="progressbar" aria-label="Loading page" aria-hidden="true"></div><div id="alert" class="visually-hidden" role="alert"></div>
-</div><button type="button" id="library-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the library panel" aria-valuemin="260" aria-valuemax="640" aria-valuenow="360" title="Drag, or use the Left and Right arrow keys, to resize"></button><section id="manager" hidden aria-label="Browser library">
+</div><button type="button" id="library-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the library panel" aria-valuemin="260" aria-valuemax="640" aria-valuenow="360" title="Drag, or use the Left and Right arrow keys, to resize"></button><div id="library-caption" hidden></div><section id="manager" hidden aria-label="Browser library">
 <div class="manager-head"><h1 id="manager-title" tabindex="-1">Bookmarks</h1><button type="button" id="close-manager">Back to page (F7)</button></div>
 <p id="manager-description" class="muted"></p>
 <div id="library-tools" class="manager-tools"><input id="library-query" type="search" aria-label="Search library" placeholder="Search titles and addresses" maxlength="512"><select id="folder-filter" aria-label="Filter bookmark folder"></select><button type="button" id="toggle-bookmark-form" class="bookmarks-only" aria-expanded="false" aria-controls="bookmark-editor">New bookmark</button><button type="button" id="toggle-folder-tools" class="bookmarks-only quiet-toggle" aria-expanded="false" aria-controls="folder-tools">Folders</button><button type="button" id="import-bookmarks" class="bookmarks-only quiet-toggle" title="Import an exported bookmarks HTML file from Firefox, Chrome or Edge">Import from file…</button><button type="button" id="history-dates" class="history-only quiet-toggle" aria-expanded="false" aria-controls="date-fields">Filter by date</button><div id="date-fields" class="date-fields" hidden><label>From <input id="history-from" type="date" aria-label="History from date"></label><label>Through <input id="history-until" type="date" aria-label="History through date"></label></div><label class="history-only"><input id="history-enabled" type="checkbox">Record history</label><button type="button" id="clear-history" class="history-only danger">Clear all history…</button></div>
@@ -567,6 +594,18 @@ function infoRow(title,secondary){const row=document.createElement('div');row.cl
 function folderOptions(id,first,folders,excluded=new Set()){const select=byId(id),value=select.value;select.replaceChildren();for(const [value,label] of first){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option)}for(const folder of folders){if(excluded.has(folder.id))continue;const option=document.createElement('option');option.value=String(folder.id);option.textContent=folder.path.join(' / ');select.append(option)}if([...select.options].some(o=>o.value===value))select.value=value}
 function updateFolderParents(){const selected=libraryData.folders.find(f=>f.id===Number(byId('edit-folder').value));byId('remove-folder').disabled=!selected;const excluded=new Set();if(selected){excluded.add(selected.id);let changed=true;while(changed){changed=false;for(const folder of libraryData.folders)if(folder.parent_id!==null&&excluded.has(folder.parent_id)&&!excluded.has(folder.id)){excluded.add(folder.id);changed=true}}}const previous=byId('folder-parent').value;folderOptions('folder-parent',[['','Top level']],libraryData.folders,excluded);const parent=selected?String(selected.parent_id??''):previous;if([...byId('folder-parent').options].some(option=>option.value===parent))byId('folder-parent').value=parent}
 function dayLabel(seconds){const date=new Date(seconds*1000),today=new Date();const start=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();const days=Math.round((start(today)-start(date))/86400000);return days===0?'Today':days===1?'Yesterday':date.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',year:date.getFullYear()===today.getFullYear()?undefined:'numeric'})}
+const ICON_RE=/^data:image\/(?:png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+\/=]+$/;
+function bookmarkLetter(title,url){
+    const m=(title||'').trim().match(/[\p{L}\p{N}]/u);if(m)return m[0].toUpperCase();
+    try{const h=new URL(url).hostname.replace(/^www\./i,''),hm=h.match(/[\p{L}\p{N}]/u);if(hm)return hm[0].toUpperCase()}catch{}
+    return '?';
+}
+function bookmarkIconNode(icon,title,url){
+    const wrap=document.createElement('span');wrap.className='bm-icon';wrap.setAttribute('aria-hidden','true');
+    if(ICON_RE.test(icon||'')){const img=document.createElement('img');img.alt='';img.src=icon;wrap.append(img)}
+    else{wrap.classList.add('bm-letter');wrap.dataset.letter=bookmarkLetter(title,url)}
+    return wrap;
+}
 function renderLibrary(data,panel){
     libraryData=data;
     folderOptions('folder-filter',[['','All folders'],['0','Unfiled']],data.folders);
@@ -584,7 +623,9 @@ function renderLibrary(data,panel){
         const name=item.title||item.url,row=document.createElement('div');row.className='row';
         // The whole title opens the page (its name stays "Open <title>").
         const open=button('Open',()=>send('open_saved',{url:item.url,new_tab:false}),name);open.className='open';open.title=item.url;
-        const title=document.createElement('span');title.className='title';title.textContent=name;const sub=document.createElement('span');sub.className='secondary';sub.textContent=detail;open.replaceChildren(title,sub);
+        const title=document.createElement('span');title.className='title';title.textContent=name;const sub=document.createElement('span');sub.className='secondary';sub.textContent=detail;
+        if(panel==='bookmarks'){const tr=document.createElement('span');tr.className='title-row';tr.append(bookmarkIconNode(item.icon,item.title,item.url),title);open.replaceChildren(tr,sub)}
+        else open.replaceChildren(title,sub);
         // The actions stay together: beside the title, or under it when the column is narrow.
         const actions=document.createElement('div');actions.className='actions';row.append(open,actions);
         actions.append(button('New tab',()=>send('open_saved',{url:item.url,new_tab:true}),name));
@@ -761,6 +802,14 @@ window.render=incoming=>{
     // The library column renders its own panel; the toolbar never shows library panels.
     const s=ROLE==='library'?{...incoming,panel:incoming.library_panel}:incoming;
     document.documentElement.dataset.vertical=String(!!s.vertical_tabs);
+    document.documentElement.dataset.maximized=String(!!s.maximized);
+    {const wc=byId('window-controls'),cap=byId('library-caption'),showControls=!s.fullscreen&&(ROLE==='toolbar'?!s.controls_in_library:ROLE==='library'&&!!s.controls_in_library);
+     document.documentElement.dataset.controls=String(showControls);
+     wc.hidden=!showControls;cap.hidden=!(ROLE==='library'&&showControls);
+     const host=ROLE==='library'?cap:s.vertical_tabs?byId('nav'):byId('tabrow');if(wc.parentElement!==host)host.append(wc);
+     const maxBtn=byId('win-maximize'),maxLabel=s.maximized?'Restore window':'Maximize window';maxBtn.setAttribute('aria-label',maxLabel);maxBtn.title=s.maximized?'Restore':'Maximize';
+     const rt=byId('resize-top'),atTop=ROLE==='tabs'||ROLE==='toolbar'||(ROLE==='library'&&!!s.controls_in_library);
+     rt.hidden=!!s.maximized||!!s.fullscreen||!atTop;rt.dataset.hasControls=String(showControls)}
     for(const id of ['find-page','zoom-in','zoom-out','reset-zoom','print-page'])byId(id).disabled=s.busy||!s.page_tools;
     const zoom=s.zoom_percent;byId('reset-zoom').textContent=(zoom??100)+'%';byId('reset-zoom').setAttribute('aria-label','Page zoom '+(zoom??100)+' percent. Reset to 100 percent (Ctrl+0)');byId('zoom-row').hidden=!s.page_tools||zoom==null||zoom===100;byId('zoom-level').textContent=zoom+'% (reset)';byId('zoom-level').setAttribute('aria-label','Page zoom '+zoom+' percent. Reset to 100 percent');
     document.body.dataset.theme=s.settings.theme;byId('settings-theme').value=s.settings.theme;byId('settings-background').value=s.settings.newtab_background;byId('automatic-suspension').checked=s.settings.automatic_suspension;byId('suspend-delay').value=String(s.settings.suspend_after_seconds);byId('suspend-delay').disabled=!s.settings.automatic_suspension;
@@ -848,12 +897,12 @@ let barSignature='',shownFolder='',latestState=null;
 // button. A subfolder opens in the same dropdown, with a way back.
 let folderPath=[];
 function openFolder(anchor,id,name){if(dropdown?.anchor===anchor){closeDropdown(false);return}folderPath=[{id,name}];send('open_bookmark_folder',id);openDropdown(anchor,byId('folder-panel'));renderFolder()}
-function folderButton(icon,text,action){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.innerHTML=icon;const label=document.createElement('span');label.textContent=text;b.append(label);b.onclick=action;return b}
+function folderButton(icon,text,action){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');if(typeof icon==='string')b.innerHTML=icon;else b.append(icon);const label=document.createElement('span');label.textContent=text;b.append(label);b.onclick=action;return b}
 function renderFolder(){
     const panel=byId('folder-panel'),current=folderPath.at(-1);if(!current)return;const menu=latestState?.library?.menu;const rows=[];
     if(folderPath.length>1){const back=folderButton(BACK_ICON,current.name,()=>{folderPath.pop();send('open_bookmark_folder',folderPath.at(-1).id);renderFolder()});back.classList.add('folder-back');back.setAttribute('aria-label','Back from '+current.name);rows.push(back)}
     if(!menu||menu.id!==current.id){const p=document.createElement('p');p.className='muted';p.textContent='Loading…';rows.push(p)}
-    else{for(const item of menu.items){if(item.kind==='folder')rows.push(folderButton(FOLDER_ICON,item.name,()=>{folderPath.push({id:item.id,name:item.name});send('open_bookmark_folder',item.id);renderFolder()}));else{const b=folderButton(DEFAULT_FAVICON,item.title||item.url,e=>{closeDropdown(false);send('open_saved',{url:item.url,new_tab:e.ctrlKey})});b.title=item.url;b.onauxclick=e=>{if(e.button===1){e.preventDefault();closeDropdown(false);send('open_saved',{url:item.url,new_tab:true})}};rows.push(b)}}
+    else{for(const item of menu.items){if(item.kind==='folder')rows.push(folderButton(FOLDER_ICON,item.name,()=>{folderPath.push({id:item.id,name:item.name});send('open_bookmark_folder',item.id);renderFolder()}));else{const b=folderButton(bookmarkIconNode(item.icon,item.title,item.url),item.title||item.url,e=>{closeDropdown(false);send('open_saved',{url:item.url,new_tab:e.ctrlKey})});b.title=item.url;b.onauxclick=e=>{if(e.button===1){e.preventDefault();closeDropdown(false);send('open_saved',{url:item.url,new_tab:true})}};rows.push(b)}}
         if(!menu.items.length){const p=document.createElement('p');p.className='muted';p.textContent='This folder is empty.';rows.push(p)}}
     const focused=panel.contains(document.activeElement);panel.replaceChildren(...rows);placeDropdown();if(focused||document.activeElement===document.body)panel.querySelector('button')?.focus({preventScroll:true});
 }
@@ -879,11 +928,26 @@ function renderBar(s){
     if(dropdown?.panel===byId('folder-panel'))closeDropdown(false);
     const list=byId('bar-items');list.replaceChildren();
     for(const item of items){const b=document.createElement('button');b.type='button';b.className='bar-item';const label=document.createElement('span');
-        if(item.kind==='link'){b.innerHTML=DEFAULT_FAVICON;label.textContent=item.title||item.url;b.title=(item.title?item.title+'\n':'')+item.url;b.onclick=e=>send('open_saved',{url:item.url,new_tab:e.ctrlKey});b.onauxclick=e=>{if(e.button===1){e.preventDefault();send('open_saved',{url:item.url,new_tab:true})}};b.onmousedown=e=>{if(e.button===1)e.preventDefault()}}
+        if(item.kind==='link'){b.append(bookmarkIconNode(item.icon,item.title,item.url));label.textContent=item.title||item.url;b.title=(item.title?item.title+'\n':'')+item.url;b.onclick=e=>send('open_saved',{url:item.url,new_tab:e.ctrlKey});b.onauxclick=e=>{if(e.button===1){e.preventDefault();send('open_saved',{url:item.url,new_tab:true})}};b.onmousedown=e=>{if(e.button===1)e.preventDefault()}}
         else{b.innerHTML=FOLDER_ICON;label.textContent=item.name;b.title=item.name;b.setAttribute('aria-label',item.name+', folder');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.onclick=()=>openFolder(b,item.id,item.name)}
         b.append(label);list.append(b)}
     fitBar();
 }
+byId('win-minimize').onclick=()=>send('minimize_window');
+byId('win-maximize').onclick=()=>send('toggle_maximize');
+byId('win-close').onclick=()=>send('close_window');
+{const rt=byId('resize-top');const edgeAt=x=>{const leftEdge=(ROLE==='tabs'||(ROLE==='toolbar'&&document.documentElement.dataset.vertical!=='true'))&&x<8,rightEdge=rt.dataset.hasControls!=='true'&&x>innerWidth-8&&ROLE!=='tabs';return leftEdge?'north_west':rightEdge?'north_east':'north'};
+ rt.onmousemove=e=>{const d=edgeAt(e.clientX);rt.style.cursor=d==='north_west'?'nwse-resize':d==='north_east'?'nesw-resize':'ns-resize'};
+ rt.onmousedown=e=>{if(e.button===0){e.preventDefault();send('resize_window',edgeAt(e.clientX))}};
+ const isCaptionSpace=el=>!el.closest('button,input,select,a,summary,label,.tab,#location,.bar-item,.dropdown,#library-resizer,#resize-top');
+ let dragStart=null;
+ for(const host of [byId('tabrow'),byId('nav'),byId('library-caption')]){
+     host.addEventListener('pointerdown',e=>{if(e.button===0&&isCaptionSpace(e.target))dragStart={x:e.screenX,y:e.screenY}});
+     host.addEventListener('pointermove',e=>{if(dragStart&&(e.buttons&1)&&Math.hypot(e.screenX-dragStart.x,e.screenY-dragStart.y)>4){dragStart=null;send('drag_window')}});
+     host.addEventListener('pointerup',()=>{dragStart=null});host.addEventListener('pointercancel',()=>{dragStart=null});
+     host.addEventListener('dblclick',e=>{if(e.button===0&&isCaptionSpace(e.target))send('toggle_maximize')});
+     host.addEventListener('contextmenu',e=>{if(isCaptionSpace(e.target)){e.preventDefault();send('show_window_menu',{x:e.clientX,y:e.clientY})}});
+ }}
 // Hide the buttons that wrapped past the single row, so keyboard focus never reaches them.
 function fitBar(){
     const items=[...byId('bar-items').children];for(const item of items)item.hidden=false;

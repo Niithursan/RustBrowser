@@ -1,6 +1,6 @@
 use rust_browser::settings::Theme;
 use winit::{
-    platform::windows::{Color, WindowExtWindows},
+    platform::windows::{Color, CornerPreference, WindowExtWindows},
     window::Window,
 };
 
@@ -19,6 +19,7 @@ pub fn apply_theme(window: &Window, theme: Theme) {
     window.set_title_background_color(Some(background));
     window.set_border_color(Some(background));
     window.set_title_text_color(Color::from_rgb(foreground[0], foreground[1], foreground[2]));
+    window.set_corner_preference(CornerPreference::Round);
 }
 
 #[cfg(test)]
