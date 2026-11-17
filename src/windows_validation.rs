@@ -2051,7 +2051,7 @@ fn eval_page(p: &mut Probe, script: &str) -> Result<(), String> {
 /// Ask for notifications from the page; the answer lands in a data attribute.
 const ASK_NOTIFICATIONS: &str = "delete document.documentElement.dataset.rbPermission;Notification.requestPermission().then(v=>document.documentElement.dataset.rbPermission=v);'asked'";
 /// What the toolbar shows for a pending request, as JSON.
-const PROMPT_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);return JSON.stringify({open:!b('site-panel').hidden,prompt:!b('permission-prompt').hidden,title:b('permission-title').textContent,expiry:b('permission-expiry').textContent,focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),remember:b('remember-permission-label').textContent,labelled:b('site-panel').getAttribute('aria-labelledby'),manager:b('manager').hidden})})()"#;
+const PROMPT_REPORT: &str = r#"(()=>{const b=id=>document.getElementById(id);return JSON.stringify({open:!b('site-panel').hidden,prompt:!b('permission-prompt').hidden,isolated:b('site-connection-info').hidden,title:b('permission-title').textContent,expiry:b('permission-expiry').textContent,focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),remember:b('remember-permission-label').textContent,labelled:b('site-panel').getAttribute('aria-labelledby'),manager:b('manager').hidden})})()"#;
 /// A click on Allow the moment the request opens (the second click of a double-click).
 const EARLY_ALLOW: &str = "document.getElementById('allow-permission').click()";
 
@@ -2118,6 +2118,7 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
             };
             let shown = r["open"] == true
                 && r["prompt"] == true
+                && r["isolated"] == true
                 && r["labelled"] == "permission-title"
                 && r["manager"] == true
                 && r["title"]
@@ -2332,8 +2333,9 @@ fn script_json(p: &Probe) -> Result<Option<serde_json::Value>, String> {
     polish_report(p)
 }
 
-const MENU_KEYS: &str = r#"(()=>{const m=document.getElementById('menu-items');const key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));const items=[...m.querySelectorAll('[role^=menuitem]:not(:disabled)')];items[0].focus();const id=()=>document.activeElement.id;key('ArrowDown');const down=id();key('End');const end=id();key('Home');const home=id();key('ArrowUp');const up=id();return JSON.stringify({down,end,home,up,first:items[0].id,second:items[1].id,last:items.at(-1).id})})()"#;
-const SECTION_LINK: &str = r#"(()=>{const before=document.activeElement.id;document.querySelector('#settings-index [data-section=settings-clear]').click();return JSON.stringify({before,after:document.activeElement.id})})()"#;
+const MENU_KEYS: &str = r#"(()=>{const m=document.getElementById('menu-items');const key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));const items=[...m.querySelectorAll('[role^=menuitem]:not(:disabled)')];items[0].focus();const id=()=>document.activeElement.id;key('ArrowDown');const down=id();key('End');const end=id();key('Home');const home=id();key('ArrowUp');const up=id();const awake=document.getElementById('keep-awake-state').textContent;return JSON.stringify({down,end,home,up,first:items[0].id,second:items[1].id,last:items.at(-1).id,awake})})()"#;
+const SECTION_LINK: &str = r#"(()=>{const before=document.activeElement.id;document.querySelector('#settings-index [data-section=settings-clear]').click();const current=document.querySelector('#settings-index [aria-current=true]')?.dataset.section;const headTop=Math.round(document.querySelector('.manager-head').getBoundingClientRect().top-document.getElementById('manager').getBoundingClientRect().top);return JSON.stringify({before,after:document.activeElement.id,current,headTop})})()"#;
+const BOOKMARK_DISCLOSURE: &str = r#"(()=>{const editorHidden=document.getElementById('bookmark-editor').hidden,foldersHidden=document.getElementById('folder-tools').hidden;document.getElementById('toggle-folder-tools').click();const opened=!document.getElementById('folder-tools').hidden,disabledNew=document.getElementById('remove-folder').disabled;renderLibrary({folders:[{id:7,name:'Work',parent_id:null,path:['Work']}],bookmarks:[],history:[]},'bookmarks');const sel=document.getElementById('edit-folder');sel.value='7';sel.dispatchEvent(new Event('change'));const enabledExisting=!document.getElementById('remove-folder').disabled;document.getElementById('remove-folder').click();const dialog=document.getElementById('confirm-dialog'),confirmOpen=dialog.open,focus=document.activeElement?.id;document.getElementById('confirm-cancel').click();return JSON.stringify({editorHidden,foldersHidden,opened,disabledNew,enabledExisting,confirmOpen,focus,closed:!dialog.open})})()"#;
 const CONFIRM_CANCEL: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');if(!r.checked)return JSON.stringify({start:false});r.click();const open=d.open,title=document.getElementById('confirm-title').textContent,focus=document.activeElement.id;document.getElementById('confirm-cancel').click();return JSON.stringify({start:true,open,title,focus,checked:r.checked,closed:!d.open})})()"#;
 const CONFIRM_OK: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');const rechecked=r.checked;r.click();const open=d.open,action=document.getElementById('confirm-ok').textContent;document.getElementById('confirm-ok').click();return JSON.stringify({rechecked,open,action,closed:!d.open,checked:r.checked})})()"#;
 const CONFIRM_STRANDED: &str = r#"(()=>{document.getElementById('clear-cache').checked=true;document.getElementById('clear-data').click();return JSON.stringify({open:document.getElementById('confirm-dialog').open})})()"#;
@@ -2368,6 +2370,7 @@ fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), S
                 || r["home"] != r["first"]
                 || r["up"] != r["last"]
                 || r["last"] != "exit-browser"
+                || r["awake"] != "Off"
             {
                 return Err(format!("Menu keys: {r}"));
             }
@@ -2391,7 +2394,11 @@ fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), S
             let Some(r) = script_json(p)? else {
                 return Ok(());
             };
-            if r["before"] != "settings-privacy" || r["after"] != "settings-clear" {
+            if r["before"] != "settings-privacy"
+                || r["after"] != "settings-clear"
+                || r["current"] != "settings-clear"
+                || r["headTop"] != 0
+            {
                 return Err(format!("Settings sections: {r}"));
             }
             eval_toolbar(p, CONFIRM_CANCEL)?;
@@ -2475,6 +2482,28 @@ fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), S
             };
             if r["before"] != true || r["shown"] != true || r["label"] != "Filter by date: on" {
                 return Err(format!("Date filter: {r}"));
+            }
+            p.command(el, 0, Command::ShowPanel(Panel::Bookmarks))?;
+            p.next();
+        }
+        14 if wait(p, 800) => {
+            eval_library(p, BOOKMARK_DISCLOSURE)?;
+            p.next();
+        }
+        15 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["editorHidden"] != true
+                || r["foldersHidden"] != true
+                || r["opened"] != true
+                || r["disabledNew"] != true
+                || r["enabledExisting"] != true
+                || r["confirmOpen"] != true
+                || r["focus"] != "confirm-cancel"
+                || r["closed"] != true
+            {
+                return Err(format!("Bookmark disclosure and folder confirmation: {r}"));
             }
             p.log.push(
                 "chrome interactions: menu keys, settings sections, confirmations, date filter"

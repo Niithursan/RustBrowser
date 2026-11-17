@@ -2,6 +2,18 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Chrome polish pass: input placeholders use `--secondary` across all four themes for
+  WCAG AA contrast; active permission prompts hide static connection details inside the
+  site dropdown, disable Allow during the 500ms double-click guard, and count down only
+  in the final 10 seconds; panel headers and the Settings section bar stay sticky with
+  an `aria-current` active-section cue and a `68ch` prose cap; New tab (`Customize
+  page`, `Add favorite`) and Bookmarks (`New bookmark`, `Folders`) collapse secondary
+  forms until needed, and `Remove folder…` uses the confirmation dialog; pointer tab
+  dragging highlights the insertion edge, `Keep tab awake` shows `Off`/`On`, overflowing
+  bookmarks-bar items show `All bookmarks (+N)`, history date filters match local
+  calendar days, Clear browsing data groups site data separately from saved credentials
+  and sessions without echoing global notices, and error notices in normal windows offer
+  a quick `Diagnostics` button.
 - Polish: the tab scroll arrows show only while the tabs overflow the strip (the
   all-tabs list stays); in the tab column, + New tab lines up with the tab titles and
   the selected tab is marked by a short rounded bar instead of a rule that bent around
