@@ -291,7 +291,7 @@ The same trusted document is also used for two side views, chosen by `data-role`
 **vertical tab column** (one tab per row, 4px gaps, hairline on its right edge) and the
 **library column** at the right of the page (260–640px wide, hairline on its left edge,
 an 8px drag handle). Full panels (library, Privacy & security, new tab) are padded
-24px × 32px with content capped at 1040px; the new-tab body is centred at 860px.
+24px × 32px with content capped at 1040px and explanatory prose capped at 68ch; panel headers and the Settings section bar stick to the top with an active-section signal underline so section navigation and Back to page (F7) stay reachable while scrolling; the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
 tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
@@ -340,7 +340,7 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 - Round (34px circle), transparent, an 18px stroke icon centred. Hover adds the wash. Reload swaps with Stop while loading. Every one has a label and its shortcut in the tooltip.
 
 ### Inputs / Fields
-- **Style:** Graphite Field fill, Hairline border, 6px radius, 32px tall. The new-tab search is a 48px pill with 17px text.
+- **Style:** Graphite Field fill, Hairline border, 6px radius, 32px tall; placeholders use Dial Grey (`--secondary`, `opacity: 1`) so every theme meets 4.5:1 AA contrast; carets and text selection follow the theme signal (`caret-color: var(--accent)`, 28% signal mix). The new-tab search is a 48px pill with 17px text.
 - **Focus:** 2px signal outline; the address line shows a signal border plus a 1px signal ring.
 - **Checkboxes and progress:** native controls tinted with the signal via `accent-color`.
 
@@ -361,7 +361,7 @@ at rest, signal when an extension is on, with its blocked-request count in 12px/
 ### Dropdowns
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over a still of the page.
 - **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.
-- **Permission request:** sits at the top of the site-information dropdown when a website asks. A 2px signal border, 8px radius, 12px padding; a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a countdown, then Don't allow and Allow as two equal default buttons. Neither is styled as the primary action, so the design never nudges toward granting.
+- **Permission request:** takes over the site-information dropdown when a website asks (hiding the static connection details until answered so a misclick never dismisses the request). A 2px signal border, 8px radius, 12px padding; a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers
 - **Favourite card:** Graphite Surface, Hairline border, 10px radius, 12px padding, no shadow; a 32px tile (8px radius, Graphite Card) holds the site's icon or its first letter.

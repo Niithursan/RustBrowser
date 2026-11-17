@@ -425,7 +425,8 @@ Each favourite is a tile with its site's icon, saved when a tab shows the favour
 own page (another page of the same site only fills a missing icon), or the first
 letter of its title. Icons are PNG images of at most 8 KiB kept with the favourite;
 a larger icon is not kept and the tile shows the letter. The page's **Background**
-choice (Plain, Dusk, Glow, Panels) is drawn from the current theme's colours. Theme and
+choice (Plain, Dusk, Glow, Panels), **Theme**, and **Show recent history** open under
+**Customize page**, and **Add favorite** opens the form to save a site. Theme and
 background can also be changed in Menu (⋮) → Settings → Appearance.
 Favorite titles/URLs and themes are saved in normal settings independently of session
 URL retention. Private favorites, themes, pins and tab order last only for that window
@@ -671,11 +672,11 @@ and [asynchronous browsing data clearing](https://learn.microsoft.com/en-us/micr
 ## Bookmarks and history
 
 Ctrl+D (or the star) saves the current tab once and opens the star's dropdown to
-rename it, move it to a folder or remove it. The bookmark manager supports
+rename it, move it to a folder or remove it. The bookmark manager (**New bookmark** and **Folders** in the toolbar) supports
 adding/editing titles and HTTP(S) URLs, removing bookmarks, nested folders, moving a
 bookmark with its folder selector, searching titles/URLs and opening entries in the
-current or a new tab. Folder selectors show the full path. Removing a folder moves its
-bookmarks to Unfiled and its subfolders to the top level. Duplicate bookmark URLs are
+current or a new tab. Folder selectors show the full path. Removing a folder asks for
+confirmation, then moves its bookmarks to Unfiled and its subfolders up one level. Duplicate bookmark URLs are
 not added again. There are limits of 5000 bookmarks and 200 folders; queries show the
 first 200 matching results, so narrow the search to find others.
 
@@ -690,8 +691,8 @@ Show bookmarks bar, on by default) shows, in the order they were added:
 Click a bookmark to open it in the current tab, or Ctrl+click or middle-click it for a
 new tab. A folder opens a dropdown listing its subfolders and bookmarks (up to 200;
 the library shows the rest); a subfolder opens in the same dropdown, with its name at
-the top to go back. Buttons that do not fit in one row are hidden; **All bookmarks** at
-the right opens the library. The bar is hidden while there is nothing to show, and in
+the top to go back. Buttons that do not fit in one row are hidden, and **All bookmarks** at
+the right shows a `(+N)` count of hidden items and opens the library. The bar is hidden while there is nothing to show, and in
 private windows. Bookmarks cannot be dragged onto it or reordered on it.
 
 History records successful top-level navigation completions with titles, URLs and
@@ -704,7 +705,7 @@ sign-in pages are deliberately absent. Page paths and titles can still be sensit
 Type in the history search field to filter visits as you type; **Filter by date** opens
 From/Through dates (it reads "Filter by date: on" while a date is set). Visits are grouped
 by day (Today, Yesterday, then the date) and show their local time. Date boundaries use
-UTC calendar days. Search is literal and SQLite's default case folding primarily covers
+local calendar days. Search is literal and SQLite's default case folding primarily covers
 ASCII. Click an entry's title to open it in the current tab, or use New tab. Individual
 removal is available; Clear all history asks for confirmation in the browser's own
 dialog, which says what is deleted and what is kept, with Cancel focused.
