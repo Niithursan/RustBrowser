@@ -169,12 +169,16 @@ error page when a site cannot be reached. Screen readers still hear navigation
 failures. The keyboard shortcuts are listed in Menu (⋮) → Keyboard shortcuts and in the
 tooltip of the address field.
 
-Tab icons come from WebView2 as image data checked by the browser; the toolbar never
-loads anything from a website. All icons are drawn for this project. The four themes,
-Windows high contrast and reduced motion are supported as before. The native title bar
-and border follow the selected theme on Windows 11 build 22000 and later. The title
-bar remains separate from the tabs to preserve Snap layouts, title-bar dragging,
-double-click to maximise and Narrator.
+Tab and bookmark icons come from WebView2 or imported bookmark HTML files as validated
+raster `data:image/...` payloads checked by the browser (bookmarks without a saved icon
+show a crisp letter monogram chip until visited or re-imported); the toolbar never loads
+anything from a website. All chrome icons are drawn for this project. The four themes,
+Windows high contrast and reduced motion are supported as before. The tab strip merges
+into the top of the window with Minimize, Maximize/Restore and Close buttons flush at
+the top-right edge (`#tabrow`, `#nav` in vertical-tabs mode, or `#library-caption` when
+the library sits beside `New tab`), while preserving Windows 11 rounded corners,
+theme-coloured window borders, Aero Snap, title-strip dragging, double-click to
+maximize, system context menu and Narrator.
 
 ## Setup on Windows
 

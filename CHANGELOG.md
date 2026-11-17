@@ -2,6 +2,18 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Bookmark icons and flush window controls: bookmarks now persist validated raster
+  `data:image/...` site icons in SQLite (schema 5), importing `ICON` data URLs from
+  Firefox, Chrome and Edge HTML exports (and backfilling missing icons on existing
+  bookmarks when re-importing), learning live favicons from WebView2 when bookmarking or
+  visiting saved sites in normal windows, and rendering a letter monogram chip instead
+  of a generic globe placeholder when no site icon is stored yet across the bookmarks
+  bar, folder dropdowns and the Bookmarks panel. Browser windows now merge the tab strip
+  with the window frame (`with_decorations(false).with_undecorated_shadow(true)`),
+  removing the separate `Rust Browser 0.21.0` title bar and placing `46x36` Minimize,
+  Maximize/Restore and Close controls flush with the top-right edge across horizontal
+  tabs, vertical tabs and `New tab + library` while keeping Aero Snap, drag, top-edge
+  resize, double-click maximize and the native system menu.
 - Chrome harden, audit, layout, clarify and polish pass: Bookmarks, History and
   Downloads now open side by side with the new-tab page instead of staying hidden
   behind `toolbar`; narrow address bars collapse subdomains before the registrable
