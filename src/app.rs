@@ -249,16 +249,27 @@ struct Layout {
     library: Option<(f64, f64, f64, f64)>,
 }
 
-/// The layout table (see ARCHITECTURE.md). `full` is a full panel, the new-tab page
-/// or the menu sidebar: the toolbar then covers its whole column and the page and
-/// library are hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Full {
+    /// A webpage is shown below the toolbar.
+    None,
+    /// The new-tab page fills the toolbar's column; the library may still sit beside it.
+    NewTab,
+    /// A full panel (Settings) or an open dropdown covers everything except the tab column.
+    Cover,
+}
+
+/// The layout table (see ARCHITECTURE.md). In `Full::Cover` (Settings or an open
+/// dropdown), the toolbar covers its whole column and the page and library are hidden.
+/// In `Full::NewTab`, the toolbar fills the height of its column and shrinks its width
+/// when the library column is open beside it.
 fn layout(
     width: f64,
     height: f64,
     chrome: f64,
     vertical: bool,
     library: Option<f64>,
-    full: bool,
+    full: Full,
 ) -> Layout {
     let left = if vertical {
         TABS_WIDTH.min(width / 2.0)
@@ -267,18 +278,31 @@ fn layout(
     };
     let rest = (width - left).max(1.0);
     let lib = library
-        .filter(|_| !full)
+        .filter(|_| full != Full::Cover)
         .map(|w| {
             w.clamp(LIBRARY_MIN, LIBRARY_MAX)
                 .min((rest - PAGE_MIN).max(0.0))
         })
         .filter(|w| *w >= LIBRARY_MIN.min(rest / 2.0) && *w > 0.0);
     let body = (height - chrome).max(1.0);
+    let (toolbar_w, toolbar_h) = match full {
+        Full::None => (rest, chrome),
+        Full::NewTab => ((rest - lib.unwrap_or(0.0)).max(1.0), height),
+        Full::Cover => (rest, height),
+    };
     Layout {
-        toolbar: (left, 0.0, rest, if full { height } else { chrome }),
-        page: (!full).then_some((left, chrome, (rest - lib.unwrap_or(0.0)).max(1.0), body)),
+        toolbar: (left, 0.0, toolbar_w, toolbar_h),
+        page: (full == Full::None).then_some((
+            left,
+            chrome,
+            (rest - lib.unwrap_or(0.0)).max(1.0),
+            body,
+        )),
         tabs: vertical.then_some((0.0, 0.0, left, height)),
-        library: lib.map(|w| (width - w, chrome, w, body)),
+        library: lib.map(|w| match full {
+            Full::NewTab => (width - w, 0.0, w, height),
+            _ => (width - w, chrome, w, body),
+        }),
     }
 }
 
@@ -2030,6 +2054,13 @@ impl Session {
         // A fullscreen page keeps the toolbar (its address and origin) but takes
         // the room of the tab column and the library.
         let fullscreen = window.fullscreen.is_some();
+        let full = if self.panel.is_some() || self.menu_open {
+            Full::Cover
+        } else if self.effective_panel() == Some(Panel::NewTab) {
+            Full::NewTab
+        } else {
+            Full::None
+        };
         layout(
             size.width,
             size.height,
@@ -2039,7 +2070,7 @@ impl Session {
                 .library_panel
                 .filter(|_| window.library_view.is_some() && !fullscreen)
                 .map(|_| window.library_width),
-            self.effective_panel().is_some() || self.menu_open,
+            full,
         )
     }
 
@@ -3578,7 +3609,7 @@ mod tests {
                 for chrome in [80.0, 119.0, 160.0] {
                     for vertical in [false, true] {
                         for library in [None, Some(200.0), Some(360.0), Some(900.0)] {
-                            for full in [false, true] {
+                            for full in [Full::None, Full::NewTab, Full::Cover] {
                                 let plan = layout(width, height, chrome, vertical, library, full);
                                 let shown: Vec<_> =
                                     [Some(plan.toolbar), plan.page, plan.tabs, plan.library]
@@ -3596,13 +3627,13 @@ mod tests {
                                     for b in &shown[i + 1..] {
                                         assert!(
                                             !overlap(*a, *b),
-                                            "{a:?} overlaps {b:?} ({width}x{height}, vertical {vertical}, library {library:?}, full {full})"
+                                            "{a:?} overlaps {b:?} ({width}x{height}, vertical {vertical}, library {library:?}, full {full:?})"
                                         );
                                     }
                                 }
-                                // A full panel hides the page and the library; otherwise the page shows.
-                                assert_eq!(plan.page.is_none(), full);
-                                if full {
+                                // Only Full::None shows the webpage; Full::Cover hides the library too.
+                                assert_eq!(plan.page.is_some(), full == Full::None);
+                                if full == Full::Cover {
                                     assert!(plan.library.is_none());
                                 }
                                 assert_eq!(plan.tabs.is_some(), vertical);
@@ -3613,15 +3644,23 @@ mod tests {
                 }
             }
         }
-        assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 2);
+        assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 3);
     }
 
     #[test]
     fn the_library_keeps_room_for_the_page() {
-        let plan = layout(1200.0, 820.0, 119.0, true, Some(LIBRARY_MAX), false);
+        let plan = layout(1200.0, 820.0, 119.0, true, Some(LIBRARY_MAX), Full::None);
         let page = plan.page.unwrap();
         assert!(page.2 >= PAGE_MIN, "page width {}", page.2);
-        let narrow = layout(560.0, 820.0, 119.0, true, Some(LIBRARY_WIDTH), false);
+        let newtab = layout(1200.0, 820.0, 119.0, true, Some(LIBRARY_MAX), Full::NewTab);
+        assert!(newtab.page.is_none());
+        assert!(newtab.library.is_some());
+        assert!(
+            newtab.toolbar.2 >= PAGE_MIN,
+            "newtab width {}",
+            newtab.toolbar.2
+        );
+        let narrow = layout(560.0, 820.0, 119.0, true, Some(LIBRARY_WIDTH), Full::None);
         assert!(narrow.page.unwrap().2 >= 1.0);
     }
     #[test]
