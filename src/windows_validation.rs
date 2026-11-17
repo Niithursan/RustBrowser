@@ -2000,7 +2000,7 @@ fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         5 if p.at.elapsed() > Duration::from_millis(300) => {
             eval_toolbar(
                 p,
-                "document.getElementById('show-shortcuts').getAttribute('aria-expanded')+'|'+!document.getElementById('shortcut-list').hidden+'|'+document.querySelectorAll('#shortcut-list li').length",
+                "document.getElementById('show-shortcuts').getAttribute('aria-expanded')+'|'+!document.getElementById('shortcut-list').hidden+'|'+document.querySelectorAll('#shortcut-list li').length+'|'+Math.round(document.getElementById('shortcut-list').getBoundingClientRect().height)",
             )?;
             p.next();
         }
@@ -2008,12 +2008,15 @@ fn polish_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             if let Some(text) = p.result.lock().unwrap().clone() {
                 let inner: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
                 let parts: Vec<&str> = inner.split('|').collect();
-                if parts.len() != 3
+                if parts.len() != 4
                     || parts[0] != "true"
                     || parts[1] != "true"
                     || parts[2].parse::<usize>().unwrap_or(0) < 15
+                    || parts[3].parse::<usize>().unwrap_or(0) < 120
                 {
-                    return Err(format!("Keyboard shortcuts list did not open: {inner}"));
+                    return Err(format!(
+                        "Keyboard shortcuts list did not open cleanly: {inner}"
+                    ));
                 }
                 p.log
                     .push("toolbar polish: states, status, shortcuts and tooltips".into());
@@ -2333,9 +2336,9 @@ fn script_json(p: &Probe) -> Result<Option<serde_json::Value>, String> {
     polish_report(p)
 }
 
-const MENU_KEYS: &str = r#"(()=>{const m=document.getElementById('menu-items');const key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));const items=[...m.querySelectorAll('[role^=menuitem]:not(:disabled)')];items[0].focus();const id=()=>document.activeElement.id;key('ArrowDown');const down=id();key('End');const end=id();key('Home');const home=id();key('ArrowUp');const up=id();const awake=document.getElementById('keep-awake-state').textContent;return JSON.stringify({down,end,home,up,first:items[0].id,second:items[1].id,last:items.at(-1).id,awake})})()"#;
+const MENU_KEYS: &str = r#"(()=>{const m=document.getElementById('menu-items');const key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));const items=[...m.querySelectorAll('[role^=menuitem]:not(:disabled)')];items[0].focus();const id=()=>document.activeElement.id;key('ArrowDown');const down=id();key('End');const end=id();key('Home');const home=id();key('ArrowUp');const up=id();const awake=document.getElementById('keep-awake-state').textContent;const draft=input.value;input.value='https://login.sub.evil.example:8443/?q=1';updateAddressView();const v=document.getElementById('address-view'),originOk=v.firstChild.firstChild.textContent==='login.sub.'&&v.firstChild.lastChild.textContent==='evil.example:8443'&&v.lastChild.textContent==='/?q=1';input.value=draft;updateAddressView();return JSON.stringify({down,end,home,up,first:items[0].id,second:items[1].id,last:items.at(-1).id,awake,originOk})})()"#;
 const SECTION_LINK: &str = r#"(()=>{const before=document.activeElement.id;document.querySelector('#settings-index [data-section=settings-clear]').click();const current=document.querySelector('#settings-index [aria-current=true]')?.dataset.section;const headTop=Math.round(document.querySelector('.manager-head').getBoundingClientRect().top-document.getElementById('manager').getBoundingClientRect().top);return JSON.stringify({before,after:document.activeElement.id,current,headTop})})()"#;
-const BOOKMARK_DISCLOSURE: &str = r#"(()=>{const editorHidden=document.getElementById('bookmark-editor').hidden,foldersHidden=document.getElementById('folder-tools').hidden;document.getElementById('toggle-folder-tools').click();const opened=!document.getElementById('folder-tools').hidden,disabledNew=document.getElementById('remove-folder').disabled;renderLibrary({folders:[{id:7,name:'Work',parent_id:null,path:['Work']}],bookmarks:[],history:[]},'bookmarks');const sel=document.getElementById('edit-folder');sel.value='7';sel.dispatchEvent(new Event('change'));const enabledExisting=!document.getElementById('remove-folder').disabled;document.getElementById('remove-folder').click();const dialog=document.getElementById('confirm-dialog'),confirmOpen=dialog.open,focus=document.activeElement?.id;document.getElementById('confirm-cancel').click();return JSON.stringify({editorHidden,foldersHidden,opened,disabledNew,enabledExisting,confirmOpen,focus,closed:!dialog.open})})()"#;
+const BOOKMARK_DISCLOSURE: &str = r#"(()=>{const editorHidden=document.getElementById('bookmark-editor').hidden,foldersHidden=document.getElementById('folder-tools').hidden;document.getElementById('toggle-bookmark-form').click();document.getElementById('bookmark-title').value='Kept title';document.getElementById('bookmark-url').value='javascript:alert(1)';document.getElementById('bookmark-form').dispatchEvent(new Event('submit',{cancelable:true}));const retained=!document.getElementById('bookmark-editor').hidden&&document.getElementById('bookmark-title').value==='Kept title'&&document.getElementById('bookmark-url').getAttribute('aria-invalid')==='true'&&document.getElementById('bookmark-form-error').textContent.includes('http');document.getElementById('reset-bookmark').click();document.getElementById('toggle-folder-tools').click();const opened=!document.getElementById('folder-tools').hidden,disabledNew=document.getElementById('remove-folder').disabled;renderLibrary({folders:[{id:7,name:'Work',parent_id:null,path:['Work']}],bookmarks:[],history:[]},'bookmarks');const sel=document.getElementById('edit-folder');sel.value='7';sel.dispatchEvent(new Event('change'));const enabledExisting=!document.getElementById('remove-folder').disabled;document.getElementById('remove-folder').click();const dialog=document.getElementById('confirm-dialog'),confirmOpen=dialog.open,focus=document.activeElement?.id;document.getElementById('confirm-cancel').click();return JSON.stringify({editorHidden,foldersHidden,retained,opened,disabledNew,enabledExisting,confirmOpen,focus,closed:!dialog.open})})()"#;
 const CONFIRM_CANCEL: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');if(!r.checked)return JSON.stringify({start:false});r.click();const open=d.open,title=document.getElementById('confirm-title').textContent,focus=document.activeElement.id;document.getElementById('confirm-cancel').click();return JSON.stringify({start:true,open,title,focus,checked:r.checked,closed:!d.open})})()"#;
 const CONFIRM_OK: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');const rechecked=r.checked;r.click();const open=d.open,action=document.getElementById('confirm-ok').textContent;document.getElementById('confirm-ok').click();return JSON.stringify({rechecked,open,action,closed:!d.open,checked:r.checked})})()"#;
 const CONFIRM_STRANDED: &str = r#"(()=>{document.getElementById('clear-cache').checked=true;document.getElementById('clear-data').click();return JSON.stringify({open:document.getElementById('confirm-dialog').open})})()"#;
@@ -2371,8 +2374,9 @@ fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), S
                 || r["up"] != r["last"]
                 || r["last"] != "exit-browser"
                 || r["awake"] != "Off"
+                || r["originOk"] != true
             {
-                return Err(format!("Menu keys: {r}"));
+                return Err(format!("Menu keys or origin split: {r}"));
             }
             // The site-information dropdown's button opens Settings at Privacy & security.
             p.s()?.windows[0]
@@ -2496,6 +2500,7 @@ fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), S
             };
             if r["editorHidden"] != true
                 || r["foldersHidden"] != true
+                || r["retained"] != true
                 || r["opened"] != true
                 || r["disabledNew"] != true
                 || r["enabledExisting"] != true
@@ -2678,7 +2683,33 @@ fn library_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
         0 if p.at.elapsed() > Duration::from_secs(1) => {
+            p.s()?.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('home-bookmarks').click()")
+                .map_err(|_| "New-tab Open bookmarks click failed")?;
+            p.phase = 8;
+            p.next();
+        }
+        9 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "library beside new tab")?;
+            let views = shown_views(s);
+            let (Some(toolbar), Some(library)) =
+                (named(&views, "toolbar"), named(&views, "library"))
+            else {
+                return Err(format!(
+                    "New tab and library should both show side by side: {views:?}"
+                ));
+            };
+            if named(&views, "page").is_some()
+                || (toolbar.right - library.left).abs() > 2
+                || s.windows[0].library_panel != Some(Panel::Bookmarks)
+            {
+                return Err(format!("Library beside new tab is misplaced: {views:?}"));
+            }
+            p.command(el, 0, Command::CloseLibrary)?;
             p.command(el, 0, Command::Navigate(format!("{url}?library")))?;
+            p.phase = 0;
             p.next();
         }
         1 if p.at.elapsed() > Duration::from_secs(2)
@@ -4863,7 +4894,7 @@ fn native_imported_bookmarks_show_on_the_bookmarks_bar() {
 }
 
 /// The star and site-information dropdowns as JSON.
-const STAR_REPORT: &str = "(()=>{const b=id=>document.getElementById(id),p=b('star-panel'),s=b('site-panel'),r=p.getBoundingClientRect(),a=b('bookmark-star').getBoundingClientRect(),t=s.getBoundingClientRect(),c=b('security').getBoundingClientRect();return JSON.stringify({star:!p.hidden,starUnder:r.top>=a.bottom&&r.top-a.bottom<12&&r.right<=innerWidth,title:b('star-title').textContent,name:b('star-name').value,enabled:!b('star-name').disabled,focus:document.activeElement&&document.activeElement.id,site:!s.hidden,siteUnder:t.top>=c.bottom&&t.top-c.bottom<12&&Math.abs(t.left-c.left)<=1,siteTitle:b('site-title').textContent,siteOrigin:b('site-origin').textContent})})()";
+const STAR_REPORT: &str = "(()=>{const b=id=>document.getElementById(id),p=b('star-panel'),s=b('site-panel'),r=p.getBoundingClientRect(),a=b('bookmark-star').getBoundingClientRect(),t=s.getBoundingClientRect(),c=b('security').getBoundingClientRect();return JSON.stringify({star:!p.hidden,starUnder:r.top>=a.bottom&&r.top-a.bottom<12&&r.right<=innerWidth,marked:b('bookmark-star').dataset.bookmarked,title:b('star-title').textContent,name:b('star-name').value,enabled:!b('star-name').disabled,focus:document.activeElement&&document.activeElement.id,site:!s.hidden,siteUnder:t.top>=c.bottom&&t.top-c.bottom<12&&Math.abs(t.left-c.left)<=1,siteTitle:b('site-title').textContent,siteOrigin:b('site-origin').textContent})})()";
 
 /// Ctrl+D bookmarks the page and opens the star's dropdown to rename it, move it or
 /// remove it; the site badge opens connection information under itself. Both show
@@ -4922,6 +4953,7 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             if let Some(r) = polish_report(p)? {
                 if r["star"] != true
                     || r["starUnder"] != true
+                    || r["marked"] != "true"
                     || r["title"] != "Bookmarked"
                     || r["enabled"] != true
                     || r["focus"] != "star-name"
@@ -4994,6 +5026,7 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 if r["site"] != true
                     || r["siteUnder"] != true
                     || r["star"] != false
+                    || r["marked"] != "false"
                     || r["siteTitle"] != "Not encrypted"
                     || !r["siteOrigin"].as_str().is_some_and(|o| url.starts_with(o))
                 {
