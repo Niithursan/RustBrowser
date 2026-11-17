@@ -352,6 +352,7 @@ mod tests {
     }
     #[test]
     fn every_theme_meets_wcag_contrast_for_text_and_focus_indicators() {
+        assert!(HTML.contains("input::placeholder{color:var(--secondary);opacity:1}"));
         let dark = tokens(":root");
         for theme in ["dark", "slate", "plum", "light"] {
             let mut palette = dark.clone();
@@ -370,7 +371,7 @@ mod tests {
                 );
             }
             for foreground in ["--secondary", "--error"] {
-                for background in ["--surface", "--panel", "--strip"] {
+                for background in ["--surface", "--panel", "--field", "--strip"] {
                     let ratio = contrast(token(foreground), token(background));
                     assert!(
                         ratio >= 4.5,
