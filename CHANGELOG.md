@@ -2,6 +2,11 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Menu (⋮): its 19 items were one flat list. They are now labelled groups (This page,
+  This tab, Library, Windows, then Settings, Keyboard shortcuts and Exit), each item
+  shows its shortcut at the right, and zoom is one row (− 100% +) that shows the
+  current percentage. Screen readers hear real menu items (Keep tab awake as a
+  checkbox), and Up, Down, Home and End move through them; Tab still works.
 - Settings: the panel that held every preference was called Privacy & security. It is
   now Settings, with links to its sections at the top: Appearance (theme, new-tab
   background, tabs down the side, bookmarks bar), Search (moved out of the menu),

@@ -119,10 +119,11 @@ the next line.
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
 address line. At its start, the site-information badge shows the connection; at its
 end, the star bookmarks the page and the shield shows ad blocking (below). The Menu (⋮)
-at the far right holds everything else: find, zoom, print, pin, move and keep-awake for
-the current tab, the list of keyboard shortcuts, bookmarks, history, downloads,
-Settings, new, reopened and private windows, and Exit. Every
-action keeps its keyboard shortcut.
+at the far right holds everything else, in labelled groups: This page (find, zoom with
+the current percentage, print), This tab (pin, move, keep awake), Library (bookmarks,
+history, downloads), Windows (new, private, reopen closed) and then Settings, the list
+of keyboard shortcuts and Exit. Each item shows its keyboard shortcut at the right.
+Up and Down move through the items, Home and End jump to the first and last.
 
 The menu, the site-information badge, the star, the shield and each folder on the
 bookmarks bar open a **dropdown** under their button. While one is open the page behind
