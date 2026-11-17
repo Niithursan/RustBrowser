@@ -79,6 +79,7 @@ pub struct Entry {
     pub title: String,
     pub url: String,
     pub folder: Vec<String>,
+    pub icon: String,
 }
 
 /// What a file contained.
@@ -170,7 +171,16 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, FileError> {
                             title = clean(&url, MAX_TITLE);
                         }
                         let folder = lists.iter().flatten().cloned().collect();
-                        parsed.entries.push(Entry { title, url, folder });
+                        let icon = attribute(tag, "ICON")
+                            .map(|v| decode(&v))
+                            .and_then(|raw| crate::library::normalize_bookmark_icon(&raw))
+                            .unwrap_or_default();
+                        parsed.entries.push(Entry {
+                            title,
+                            url,
+                            folder,
+                            icon,
+                        });
                     }
                     Err(reason) => *parsed.refused.entry(reason).or_default() += 1,
                 }

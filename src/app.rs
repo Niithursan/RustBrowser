@@ -394,9 +394,11 @@ fn new_native_window(
         winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
     event_loop.create_window(
         Window::default_attributes()
+            .with_decorations(false)
+            .with_undecorated_shadow(true)
             .with_window_icon(icon.clone())
             .with_taskbar_icon(icon)
-            .with_title(format!("Rust Browser {}", env!("CARGO_PKG_VERSION")))
+            .with_title("Rust Browser")
             .with_inner_size(LogicalSize::new(1200.0, 820.0))
             .with_min_inner_size(LogicalSize::new(560.0, 320.0))
             .with_active(active),
@@ -2291,6 +2293,7 @@ impl Session {
                 None => (None, None),
             }
         };
+        let layout = self.current_layout();
         let state = ToolbarState {
             zoom_percent: active
                 .content
@@ -2322,7 +2325,11 @@ impl Session {
             downloads: self.downloads.borrow().records(),
             menu_open: self.windows[self.current].menu_open,
             library_panel: self.windows[self.current].library_panel,
-            vertical_tabs: self.current_layout().tabs.is_some(),
+            vertical_tabs: layout.tabs.is_some(),
+            maximized: self.window.is_maximized(),
+            fullscreen: self.fullscreen.is_some(),
+            controls_in_library: self.fullscreen.is_none()
+                && layout.library.is_some_and(|(_, y, _, _)| y == 0.0),
             count_blocked: self.settings.count_blocked,
             blocked: if self.counts_blocked() {
                 active.content.engine.blocked.count()
@@ -2389,7 +2396,12 @@ impl Session {
         } else {
             ""
         };
-        let title = format!("{prefix}Rust Browser {}", env!("CARGO_PKG_VERSION"));
+        let page_title = active.title.trim();
+        let title = if page_title.is_empty() || page_title == "New tab" {
+            format!("{prefix}Rust Browser")
+        } else {
+            format!("{prefix}{page_title} - Rust Browser")
+        };
         if self.last_title.borrow().as_str() != title {
             self.window.set_title(&title);
             *self.last_title.borrow_mut() = title;
@@ -2462,6 +2474,42 @@ impl Session {
                     _ => unreachable!(),
                 }
             }
+            Command::MinimizeWindow => {
+                self.window.set_minimized(true);
+                return Ok(());
+            }
+            Command::ToggleMaximize => {
+                if self.fullscreen.is_none() {
+                    self.window.set_maximized(!self.window.is_maximized());
+                }
+                return Ok(());
+            }
+            Command::DragWindow => {
+                if self.fullscreen.is_none() {
+                    let _ = self.window.drag_window();
+                }
+                return Ok(());
+            }
+            Command::ResizeWindow(edge) => {
+                if self.fullscreen.is_none() && !self.window.is_maximized() {
+                    use winit::window::ResizeDirection;
+                    let direction = match edge {
+                        ui::ResizeEdge::North => ResizeDirection::North,
+                        ui::ResizeEdge::NorthWest => ResizeDirection::NorthWest,
+                        ui::ResizeEdge::NorthEast => ResizeDirection::NorthEast,
+                    };
+                    let _ = self.window.drag_resize_window(direction);
+                }
+                return Ok(());
+            }
+            Command::ShowWindowMenu { x, y } => {
+                if x.is_finite() && y.is_finite() {
+                    self.window
+                        .show_window_menu(winit::dpi::LogicalPosition::new(x, y));
+                }
+                return Ok(());
+            }
+            Command::CloseWindow => return Ok(()),
             Command::RefreshDiagnostics => self.diagnostics.refresh()?,
             Command::OpenDefaultApps => self.open_default_apps(),
             Command::CopyText(text) => {
@@ -2870,25 +2918,38 @@ impl Session {
                 if matches!(&action,Action::RemoveFolder{id} if self.filter.folder==Some(*id)) {
                     self.filter.folder = None;
                 }
+                let saved_url = match &action {
+                    Action::SaveBookmark { url, .. } => Some(url.clone()),
+                    _ => None,
+                };
                 self.library_action(action)?;
+                if let Some(url) = saved_url
+                    && let Some(icon) = self.site_icon_from_tabs(&url)
+                {
+                    let _ = self.library_action(Action::UpdateBookmarkIcon { url, icon });
+                }
             }
             Command::BookmarkCurrent => {
                 if self.private {
                     return Err("Bookmarks are unavailable in private windows; normal bookmarks remain unchanged.".into());
                 }
                 if let Some(tab) = self.tabs.active() {
+                    let url = tab.url.clone();
                     let title = if tab.title == "New tab" {
-                        tab.url.clone()
+                        url.clone()
                     } else {
                         tab.title.clone()
                     };
                     let action = Action::SaveBookmark {
                         id: None,
                         title,
-                        url: tab.url.clone(),
+                        url: url.clone(),
                         folder: None,
                     };
                     self.library_action(action)?;
+                    if let Some(icon) = self.site_icon_from_tabs(&url) {
+                        let _ = self.library_action(Action::UpdateBookmarkIcon { url, icon });
+                    }
                     // The star's dropdown edits or removes it; the reply names it.
                     self.toolbar
                         .evaluate_script("window.openStar&&window.openStar()")?;
@@ -3201,26 +3262,84 @@ impl Session {
         if was_local != is_local {
             let _ = self.activate();
         }
-        // Favourites on this site keep the icon for their tile. An icon too large
-        // to keep leaves the tile showing a letter.
-        if let Some((url, icon)) = icon_seen
-            && rust_browser::settings::valid_icon(&icon)
-        {
-            // The favourite's own page always updates its icon. Another page of
-            // the same site only fills a missing one: pages without an icon of
-            // their own get the engine's generic icon, which must not replace it.
-            for favorite in &mut self.settings.favorites {
-                let exact = favorite.url == url;
-                if exact
-                    || (favorite.icon.is_empty()
-                        && rust_browser::settings::same_site(&favorite.url, &url))
-                {
-                    favorite.icon.clone_from(&icon);
+        // Favourites and bookmarks on this site keep the icon. An icon too large
+        // to keep in `session.json` still fits in SQLite bookmarks (`MAX_BOOKMARK_ICON`).
+        if let Some((url, icon)) = icon_seen {
+            if rust_browser::settings::valid_icon(&icon) {
+                // The favourite's own page always updates its icon. Another page of
+                // the same site only fills a missing one: pages without an icon of
+                // their own get the engine's generic icon, which must not replace it.
+                for favorite in &mut self.settings.favorites {
+                    let exact = favorite.url == url;
+                    if exact
+                        || (favorite.icon.is_empty()
+                            && rust_browser::settings::same_site(&favorite.url, &url))
+                    {
+                        favorite.icon.clone_from(&icon);
+                    }
                 }
+            }
+            if !self.private
+                && self.clearing.is_none()
+                && rust_browser::library::valid_bookmark_icon(&icon)
+                && self.should_update_bookmark_icon(&url, &icon)
+            {
+                let _ = self.library_action(Action::UpdateBookmarkIcon { url, icon });
             }
         }
         self.persist();
         self.start_engine_clear();
+    }
+
+    fn site_icon_from_tabs(&self, url: &str) -> Option<String> {
+        let Ok(normalized) = rust_browser::library::bookmark_url(url) else {
+            return None;
+        };
+        let exact = self
+            .windows
+            .iter()
+            .flat_map(|w| &w.tabs.items)
+            .find(|t| {
+                t.url == normalized
+                    && rust_browser::library::valid_bookmark_icon(&t.content.state.favicon)
+            })
+            .map(|t| t.content.state.favicon.clone());
+        if exact.is_some() {
+            return exact;
+        }
+        self.windows
+            .iter()
+            .flat_map(|w| &w.tabs.items)
+            .find(|t| {
+                rust_browser::settings::same_site(&t.url, &normalized)
+                    && rust_browser::library::valid_bookmark_icon(&t.content.state.favicon)
+            })
+            .map(|t| t.content.state.favicon.clone())
+    }
+
+    fn should_update_bookmark_icon(&self, url: &str, icon: &str) -> bool {
+        if self.library_data.bookmarks.len() >= 200 {
+            return true;
+        }
+        let matches_entry = |saved_url: &str, saved_icon: &str| {
+            (saved_url == url && saved_icon != icon)
+                || (saved_icon.is_empty() && rust_browser::settings::same_site(saved_url, url))
+        };
+        self.library_data
+            .page_bookmark
+            .as_ref()
+            .is_some_and(|b| matches_entry(&b.url, &b.icon))
+            || self
+                .library_data
+                .bookmarks
+                .iter()
+                .any(|b| matches_entry(&b.url, &b.icon))
+            || self.library_data.bar.iter().any(|item| match item {
+                rust_browser::library::BarItem::Link {
+                    url: u, icon: ic, ..
+                } => matches_entry(u, ic),
+                _ => false,
+            })
     }
 
     fn library_action(&mut self, action: Action) -> Result<(), Box<dyn std::error::Error>> {
@@ -3229,6 +3348,7 @@ impl Session {
                 action,
                 Action::SaveBookmark { .. }
                     | Action::ImportBookmarks(_)
+                    | Action::UpdateBookmarkIcon { .. }
                     | Action::RemoveBookmark { .. }
                     | Action::SaveFolder { .. }
                     | Action::RemoveFolder { .. }
@@ -3956,10 +4076,10 @@ impl ApplicationHandler<Event> for App {
                 event_loop.set_control_flow(ControlFlow::Poll);
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                if let Some(session) = &mut self.session
-                    && session.resize().is_err()
-                {
-                    session.notice = "Could not resize webpage.".into();
+                if let Some(session) = &mut self.session {
+                    if session.resize().is_err() {
+                        session.notice = "Could not resize webpage.".into();
+                    }
                     session.render_all();
                 }
                 if let Some(session) = &mut self.session
@@ -4022,6 +4142,21 @@ impl ApplicationHandler<Event> for App {
                     session.notice = message;
                     session.render_all();
                 }
+                return;
+            }
+            Event::Command(Command::CloseWindow) => {
+                if session.clearing.is_some() {
+                    session.notice =
+                        "Wait for the clearing result before closing the browser.".into();
+                    session.render_all();
+                    return;
+                }
+                if session.windows.len() > 1 {
+                    session.close_window();
+                    return;
+                }
+                self.begin_shutdown();
+                event_loop.set_control_flow(ControlFlow::Poll);
                 return;
             }
             Event::Command(Command::ExitBrowser) => {
@@ -4133,7 +4268,7 @@ impl ApplicationHandler<Event> for App {
                 if reply.revision == session.revision
                     && let Some(data) = reply.data
                 {
-                    session.library_data = data;
+                    session.library_data = *data;
                 }
             }
             Event::DownloadStopped(id, reason) => {

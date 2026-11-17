@@ -754,8 +754,9 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
         );
     }
     // Kept out of the Tab order on purpose: each tab's close button (Ctrl+W and Ctrl+F4
-    // close tabs from the keyboard) and the panel heading, which receives focus by
-    // script when a panel opens and is not a control.
+    // close tabs from the keyboard), the window caption buttons (Alt+Space and Alt+F4
+    // control the window from the keyboard), and the panel heading, which receives focus
+    // by script when a panel opens and is not a control.
     let unexpected: Vec<&String> = excluded
         .iter()
         .map(|e| {
@@ -765,7 +766,11 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
                     .trim_start_matches("[library]"),
             )
         })
-        .filter(|(_, e)| !e.starts_with("tab-close|") && !e.starts_with("manager-title|h1|"))
+        .filter(|(_, e)| {
+            !e.starts_with("tab-close|")
+                && !e.starts_with("win-")
+                && !e.starts_with("manager-title|h1|")
+        })
         .map(|(e, _)| e)
         .collect();
     assert!(

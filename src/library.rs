@@ -9,8 +9,10 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 pub const HISTORY_LIMIT: i64 = 10_000;
+/// Largest bookmark icon kept as a validated raster `data:image/...;base64,...` string.
+pub const MAX_BOOKMARK_ICON: usize = 48 * 1024;
 type FolderPaths = HashMap<i64, Vec<String>>;
 
 pub fn now() -> i64 {
@@ -84,6 +86,13 @@ pub enum Action {
     /// file the user chose; the toolbar cannot send it.
     #[serde(skip)]
     ImportBookmarks(crate::bookmark_import::Parsed),
+    /// Save a validated site icon on matching bookmarks. Built only by the browser
+    /// from WebView2's PNG favicon stream; the toolbar cannot send it.
+    #[serde(skip)]
+    UpdateBookmarkIcon {
+        url: String,
+        icon: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -92,6 +101,8 @@ pub struct Bookmark {
     pub title: String,
     pub url: String,
     pub folder: Option<i64>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Folder {
@@ -152,8 +163,17 @@ pub const MAX_BAR_FOLDERS: usize = 50;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BarItem {
-    Link { id: i64, title: String, url: String },
-    Folder { id: i64, name: String },
+    Link {
+        id: i64,
+        title: String,
+        url: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        icon: String,
+    },
+    Folder {
+        id: i64,
+        name: String,
+    },
 }
 
 /// Whether a top-level folder of this name is shown opened on the bar.
@@ -196,6 +216,7 @@ fn bar_items(folders: &[Folder], links: Vec<Bookmark>) -> Vec<BarItem> {
             id: b.id,
             title: b.title,
             url: b.url,
+            icon: b.icon,
         })
         .chain(
             shown
@@ -269,6 +290,55 @@ pub fn bookmark_url(value: &str) -> Result<String> {
         return Err("Bookmark URL is too long.".into());
     }
     Ok(value)
+}
+
+/// Validate and normalize a raster `data:image/...;base64,...` bookmark icon.
+/// SVG, HTML, remote URLs and corrupt/oversized payloads return `None`.
+pub fn normalize_bookmark_icon(raw: &str) -> Option<String> {
+    use base64::Engine as _;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_BOOKMARK_ICON + 1024 {
+        return None;
+    }
+    let (prefix, rest) = trimmed.split_once(";base64,")?;
+    let mime = match prefix.to_ascii_lowercase().as_str() {
+        "data:image/png" => "image/png",
+        "data:image/x-icon" => "image/x-icon",
+        "data:image/vnd.microsoft.icon" => "image/vnd.microsoft.icon",
+        "data:image/jpeg" => "image/jpeg",
+        "data:image/webp" => "image/webp",
+        "data:image/gif" => "image/gif",
+        _ => return None,
+    };
+    let compact: String = rest.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    if compact.is_empty() {
+        return None;
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&compact)
+        .ok()?;
+    let header_ok = match mime {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/x-icon" | "image/vnd.microsoft.icon" => {
+            bytes.starts_with(b"\x00\x00\x01\x00") || bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        }
+        "image/jpeg" => bytes.starts_with(b"\xFF\xD8\xFF"),
+        "image/webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        _ => false,
+    };
+    if !header_ok {
+        return None;
+    }
+    let out = format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    );
+    (out.len() <= MAX_BOOKMARK_ICON).then_some(out)
+}
+
+pub fn valid_bookmark_icon(icon: &str) -> bool {
+    normalize_bookmark_icon(icon).as_deref() == Some(icon)
 }
 
 /// Query strings often carry searches, sign-in codes and tokens. Do not record them.
@@ -379,11 +449,45 @@ impl Database {
                 return Err("Library folder migration left invalid references.".into());
             }
         }
+        if version < 5 {
+            let tx = connection.transaction()?;
+            tx.execute_batch(
+                "ALTER TABLE bookmarks ADD COLUMN icon TEXT NOT NULL DEFAULT '';
+                 PRAGMA user_version=5;",
+            )?;
+            tx.commit()?;
+        }
         Ok(Self { connection })
     }
 
     pub fn apply(&mut self, action: Action) -> Result<()> {
         match action {
+            Action::UpdateBookmarkIcon { url, icon } => {
+                let Some(icon) = normalize_bookmark_icon(&icon) else {
+                    return Ok(());
+                };
+                let Ok(url) = bookmark_url(&url) else {
+                    return Ok(());
+                };
+                let tx = self.connection.transaction()?;
+                tx.execute(
+                    "UPDATE bookmarks SET icon=?2 WHERE url=?1 AND icon!=?2",
+                    params![url, icon],
+                )?;
+                let empty: Vec<(i64, String)> = tx
+                    .prepare("SELECT id,url FROM bookmarks WHERE icon=''")?
+                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                for (id, saved_url) in empty {
+                    if crate::settings::same_site(&saved_url, &url) {
+                        tx.execute(
+                            "UPDATE bookmarks SET icon=?2 WHERE id=?1",
+                            params![id, icon],
+                        )?;
+                    }
+                }
+                tx.commit()?;
+            }
             Action::SetPermission {
                 origin,
                 capability,
@@ -435,12 +539,23 @@ impl Database {
                 let title = text(&title, 256)?;
                 let url = bookmark_url(&url)?;
                 if let Some(id) = id {
-                    if self.connection.execute(
-                        "UPDATE bookmarks SET title=?1,url=?2,folder=?3 WHERE id=?4",
-                        params![title, url, folder, id],
-                    )? == 0
-                    {
+                    let old_url: Option<String> = self
+                        .connection
+                        .query_row("SELECT url FROM bookmarks WHERE id=?1", [id], |r| r.get(0))
+                        .optional()?;
+                    let Some(old_url) = old_url else {
                         return Err("Bookmark no longer exists.".into());
+                    };
+                    if crate::settings::same_site(&old_url, &url) {
+                        self.connection.execute(
+                            "UPDATE bookmarks SET title=?1,url=?2,folder=?3 WHERE id=?4",
+                            params![title, url, folder, id],
+                        )?;
+                    } else {
+                        self.connection.execute(
+                            "UPDATE bookmarks SET title=?1,url=?2,folder=?3,icon='' WHERE id=?4",
+                            params![title, url, folder, id],
+                        )?;
                     }
                 } else {
                     let count: i64 =
@@ -685,6 +800,15 @@ impl Database {
             )
             .into());
         }
+        // Re-importing a file can still fill missing icons on already-saved addresses.
+        for entry in &parsed.entries {
+            if let Some(icon) = normalize_bookmark_icon(&entry.icon) {
+                tx.execute(
+                    "UPDATE bookmarks SET icon=?2 WHERE url=?1 AND icon=''",
+                    params![entry.url, icon],
+                )?;
+            }
+        }
         for entry in new {
             let folder = if entry.folder.is_empty() {
                 None
@@ -724,9 +848,10 @@ impl Database {
             };
             let title = text(&entry.title, 256)?;
             let url = bookmark_url(&entry.url)?;
+            let icon = normalize_bookmark_icon(&entry.icon).unwrap_or_default();
             tx.execute(
-                "INSERT INTO bookmarks(title,url,folder) VALUES(?1,?2,?3)",
-                params![title, url, folder],
+                "INSERT INTO bookmarks(title,url,folder,icon) VALUES(?1,?2,?3,?4)",
+                params![title, url, folder, icon],
             )?;
             summary.imported += 1;
         }
@@ -745,13 +870,14 @@ impl Database {
         let ids = serde_json::to_string(&bar)?;
         let rows = self
             .connection
-            .prepare("SELECT id,title,url,folder FROM bookmarks WHERE folder IS NULL OR folder IN (SELECT value FROM json_each(?1)) ORDER BY folder IS NULL,id LIMIT ?2")?
+            .prepare("SELECT id,title,url,folder,icon FROM bookmarks WHERE folder IS NULL OR folder IN (SELECT value FROM json_each(?1)) ORDER BY folder IS NULL,id LIMIT ?2")?
             .query_map(params![ids, MAX_BAR_LINKS as i64], |r| {
                 Ok(Bookmark {
                     id: r.get(0)?,
                     title: r.get(1)?,
                     url: r.get(2)?,
                     folder: r.get(3)?,
+                    icon: r.get(4)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -775,12 +901,15 @@ impl Database {
             .collect();
         let links = self
             .connection
-            .prepare("SELECT id,title,url FROM bookmarks WHERE folder=?1 ORDER BY id LIMIT ?2")?
+            .prepare(
+                "SELECT id,title,url,icon FROM bookmarks WHERE folder=?1 ORDER BY id LIMIT ?2",
+            )?
             .query_map(params![id, MAX_MENU_LINKS as i64], |r| {
                 Ok(BarItem::Link {
                     id: r.get(0)?,
                     title: r.get(1)?,
                     url: r.get(2)?,
+                    icon: r.get(3)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -807,7 +936,7 @@ impl Database {
         }
         let query = filter.query.trim();
         let (folders, _) = load_folders(&self.connection)?;
-        let bookmarks = self.connection.prepare("SELECT id,title,url,folder FROM bookmarks WHERE instr(lower(title||' '||url),lower(?1))>0 AND (?2 IS NULL OR coalesce(folder,0)=?2) ORDER BY title COLLATE NOCASE,id LIMIT 200")?.query_map(params![query,filter.folder], |r| Ok(Bookmark { id:r.get(0)?, title:r.get(1)?, url:r.get(2)?, folder:r.get(3)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let bookmarks = self.connection.prepare("SELECT id,title,url,folder,icon FROM bookmarks WHERE instr(lower(title||' '||url),lower(?1))>0 AND (?2 IS NULL OR coalesce(folder,0)=?2) ORDER BY title COLLATE NOCASE,id LIMIT 200")?.query_map(params![query,filter.folder], |r| Ok(Bookmark { id:r.get(0)?, title:r.get(1)?, url:r.get(2)?, folder:r.get(3)?, icon:r.get(4)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let history = self.connection.prepare("SELECT id,title,url,visited_at FROM visits WHERE instr(lower(title||' '||url),lower(?1))>0 AND (?2 IS NULL OR visited_at>=?2) AND (?3 IS NULL OR visited_at<?3) ORDER BY visited_at DESC,id DESC LIMIT 200")?.query_map(params![query,filter.from,filter.until], |r| Ok(Visit { id:r.get(0)?, title:r.get(1)?, url:r.get(2)?, timestamp:r.get(3)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let mut permissions = Vec::new();
         let mut statement=self.connection.prepare("SELECT origin,capability,decision FROM permissions ORDER BY origin,capability LIMIT 513")?;
@@ -843,7 +972,7 @@ impl Database {
             Some(Ok(url)) => self
                 .connection
                 .query_row(
-                    "SELECT id,title,url,folder FROM bookmarks WHERE url=?1",
+                    "SELECT id,title,url,folder,icon FROM bookmarks WHERE url=?1",
                     [url],
                     |r| {
                         Ok(Bookmark {
@@ -851,6 +980,7 @@ impl Database {
                             title: r.get(1)?,
                             url: r.get(2)?,
                             folder: r.get(3)?,
+                            icon: r.get(4)?,
                         })
                     },
                 )
