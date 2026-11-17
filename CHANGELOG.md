@@ -2,6 +2,16 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Library and Clear browsing data: history search filters as you type (the Search /
+  refresh button is gone) and the dates sit behind Filter by date; visits are grouped
+  by day and show the time without seconds; a bookmark's or visit's whole title opens
+  it, with quiet New tab, Edit and Remove actions. The history description is in plain
+  words. Clear browsing data opens with a short lead and puts its caveats behind "What
+  clearing keeps and what it cannot do". Destructive buttons are in the error colour,
+  and every confirmation (clear data, clear history, clear diagnostics, stop restoring
+  tabs, revoke a permission, remove an extension) uses the browser's own dialog
+  instead of Windows' plain box: it lists what will be cleared and what is kept,
+  names the action on its button, and starts on Cancel.
 - Notices under the toolbar and in Settings were always in the error colour, so
   "Extension added" looked like a failure, and long ones were cut to one line. A
   completed action or progress (an extension added, switched or removed, a window

@@ -1661,7 +1661,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         ("dark", rust_browser::settings::Theme::Dark, 1.0),
         ("dark", rust_browser::settings::Theme::Dark, 1.5),
     ];
-    const PAGES: [&str; 7] = [
+    const PAGES: [&str; 8] = [
         "newtab",
         "website",
         "menu",
@@ -1669,6 +1669,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         "settings",
         "notice-info",
         "notice-error",
+        "clear-confirm",
     ];
     /// A request shown with made-up values: the toolbar answers a real one the same way.
     // Every render passes through, so the request stays open across the theme changes.
@@ -1734,6 +1735,13 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         if page == 6 && shot == 0 {
             let s = p.app.session.as_mut().ok_or("No session")?;
             s.notice = "Library database is unavailable. Browsing remains available; check profile access or use the browser version that created this library. Bookmarks, history and remembered permissions cannot be shown until it opens again.".into();
+        }
+        if page == 7 && shot == 0 {
+            // The confirmation for two chosen categories; nothing is cleared.
+            p.command(el, 0, Command::ShowPanel(Panel::Settings))?;
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            s.notice.clear();
+            let _ = s.windows[0].toolbar.evaluate_script("setTimeout(()=>{for(const id of ['clear-app-history','clear-cookies'])document.getElementById(id).checked=true;document.getElementById('clear-data').click()},300)");
         }
         let s = p.app.session.as_mut().ok_or("No session")?;
         s.settings.theme = theme;
@@ -4662,17 +4670,27 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     };
     match p.phase {
         0 if waited > Duration::from_secs(1) => {
+            if p.s()?.tabs.items[0].content.state.loading {
+                if p.started.elapsed() > Duration::from_secs(20) {
+                    return Err("The new tab's blank document did not finish loading".into());
+                }
+                return Ok(());
+            }
             p.command(el, 0, Command::Navigate(format!("{url}?star")))?;
             p.next();
         }
         1 => {
             let s = p.s()?;
-            if s.tabs.items[0].url.ends_with("?star") && !s.tabs.items[0].content.state.loading {
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?star") && !tab.content.state.loading {
                 // Ctrl+D reaches the browser as this command.
                 p.command(el, 0, Command::BookmarkCurrent)?;
                 p.next();
-            } else if waited > Duration::from_secs(10) {
-                return Err("The page did not load".into());
+            } else if waited > Duration::from_secs(20) {
+                return Err(format!(
+                    "The page did not load: {} ({})",
+                    tab.url, tab.content.state.message
+                ));
             }
         }
         2 => {

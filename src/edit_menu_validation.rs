@@ -75,6 +75,9 @@ impl Probe {
     }
 
     fn poll(&mut self) -> Result<(), String> {
+        if self.phase == 100 {
+            return Ok(());
+        }
         if self.started.elapsed() > Duration::from_secs(60) {
             return Err(format!(
                 "Edit menu fixture timed out at phase {}",
@@ -277,11 +280,19 @@ impl ApplicationHandler<Event> for Probe {
     }
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.app.about_to_wait(el);
+        if self.phase == 100 || self.failure.is_some() {
+            // App::about_to_wait sets ControlFlow::Wait on an idle single-tab
+            // session; switch to Poll so winit exits now instead of blocking.
+            el.exit();
+            el.set_control_flow(ControlFlow::Poll);
+            return;
+        }
         if let Err(error) = self.poll() {
-            self.failure = Some(error);
+            self.failure.get_or_insert(error);
         }
         if self.phase == 100 || self.failure.is_some() {
             el.exit();
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         el.set_control_flow(ControlFlow::WaitUntil(
