@@ -2,6 +2,21 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Chrome harden, audit, layout, clarify and polish pass: Bookmarks, History and
+  Downloads now open side by side with the new-tab page instead of staying hidden
+  behind `toolbar`; narrow address bars collapse subdomains before the registrable
+  domain tail and preserve `/` before query strings; the bookmark star fills in the
+  theme's accent colour when the active page is saved; bookmark, folder and new-tab
+  favorite forms validate inline with warning icons and `aria-invalid` while keeping
+  typed input intact; `Menu > Keyboard shortcuts` expands at full readable height
+  without flex crushing; dropdown panels declare `role="dialog"`, active permission
+  prompts set `aria-modal="true"` with `Tab` focus containment and a single 2px
+  signal border, bookmarks-bar folders support Arrow/Home/End keys, and history day
+  groups use `h2` headings; `#chrome` carries a 1px bottom hairline at idle, Settings
+  adds section dividers and disables `Sleep after` when tab sleeping is off, new-tab
+  favorite cards condense into single-row tiles with quiet `×` remove buttons, `Exit`
+  tooltips reflect private and restoration state, and `F7` copy clarifies `focus
+  webpage`.
 - Chrome polish pass: input placeholders use `--secondary` across all four themes for
   WCAG AA contrast; active permission prompts hide static connection details inside the
   site dropdown, disable Allow during the 500ms double-click guard, and count down only
