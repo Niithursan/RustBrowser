@@ -136,6 +136,12 @@ Never delete tests or suppress genuine errors simply to make checks pass.
 
 Clearly distinguish tests that passed from tests that could not be run.
 
+In native `winit`/WebView2 validation fixtures:
+
+- Wait for observable browser/DOM state rather than fixed sleep delays.
+- When calling `el.exit()` while a session is open, also set `ControlFlow::Poll` so `App::about_to_wait`'s `ControlFlow::Wait` does not block loop shutdown.
+- Preserve the first recorded fixture error (`get_or_insert`) rather than overwriting it on later ticks.
+
 ## 6. CI/CD Standards
 
 GitHub Actions is the project's CI/CD platform.
@@ -216,6 +222,10 @@ Update the README when changes affect:
 
 Maintain a changelog documenting meaningful changes.
 
+Keep `PRODUCT.md` (product context) and `DESIGN.md` (chrome design system derived from shipped UI) aligned with the actual implementation.
+
+Store all text files as UTF-8 without re-encoding, and never use em dashes in repository text files (`tests/source_text.rs` enforces both; use `" - "` in window titles).
+
 Document important architectural decisions when needed.
 
 Do not document planned functionality as though it already exists.
@@ -282,10 +292,19 @@ When working on this repository:
 8. Report blockers and limitations accurately.
 9. Prefer small, reviewable changes over large rewrites.
 10. Keep `main` stable at all times.
+11. Re-read `AGENTS.md` on every prompt and update `AGENTS.md` after each prompt whenever project state, milestones, workflows, or engineering rules change.
 
 Do not ask for approval for ordinary, reversible implementation decisions already covered by the milestone.
 
 Request approval for destructive operations, major architectural changes, and changes to established project requirements.
+
+### Cross-Agent Continuity (Antigravity and Claude Code)
+
+Development alternates between Antigravity and Claude Code on the same working tree:
+
+- **Single instruction source:** Antigravity loads `AGENTS.md` directly; Claude Code loads `CLAUDE.md`, which imports `@AGENTS.md`. Put all repository rules and state updates in `AGENTS.md` so both agents stay synchronized.
+- **Session handoff check:** At the start of a session after switching agents, inspect `git status`, `git branch -vv`, `gh pr list`, `AGENTS.md`, and `DEVELOPMENT_CHECKPOINT.md` (fetching `origin` when needed) rather than assuming local branches match remote PR heads.
+- **Shared skills and artifacts:** UI design and audit skills (`impeccable` with its five `impeccable-*` subagents, and `hallmark`) are installed in `~/.claude/` for Claude Code and in `~/.gemini/config/plugins/rust-browser-skills/` for Antigravity. Both read and update the same repository files (`PRODUCT.md`, `DESIGN.md`, `.impeccable/`, and `docs/hallmark/`) and share `%USERPROFILE%\.impeccable`. Keep agent-local state (`.claude/`, `.impeccable/config.local.json`, `.impeccable/hook.*.json`) untracked.
 
 ## 12. Definition of Done
 
@@ -341,9 +360,10 @@ The project aims to evolve through incremental releases:
 - v0.5: Performance and interface improvements
 - v0.6+: Potential Servo experimentation
 - v0.18: Multiple normal windows (done)
-- v0.19: Saved passwords, form autofill and bookmark import
+- v0.19: Saved passwords, form autofill and bookmark import (done)
 - v0.20: Ad blocking and a new layout (done; the release prepared for it was not published)
-- Then: daily use by the owner, followed by a v0.21 reliability and polish pass
+- v0.21: Reliability and chrome polish pass (toolbar polish, shield counts, vertical tabs, library sidebar, new-tab tiles, bookmarks bar, dropdown menus, permission prompt overlay, unified Settings panel, menu groups, and notice levels merged on `main`; library/confirmations PR #45 and chrome polish PR #46 open with green CI)
+- Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
 
