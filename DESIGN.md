@@ -239,6 +239,7 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 - **Hairline**: every 1px border and divider.
 - **Disabled Grey**: disabled control text.
 - **Warning Coral**: *Not encrypted* / failed connection, notices, settings errors.
+- **Warning Coral** also marks destructive buttons; a notice in it is always a problem.
 - Hover and pressed states are translucent washes of the text colour (7% and 14% on dark, 6% and 12% on light), not separate hues. The menu backdrop is a 45% black scrim (28% ink on Light).
 
 ### Neutral (Light)
@@ -303,8 +304,8 @@ toolbar sits one step lighter, the selected tab takes the toolbar's colour so it
 as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlines.
 
 ### Shadow Vocabulary
-- **Float** (`box-shadow: 0 6px 18px rgba(0,0,0,.35)`; Light: `rgba(27,36,48,.18)`): dropdowns and the address context menu, the only floating surfaces.
-- **Signal rule** (`box-shadow: inset 0 2px 0 <signal>`): the selected tab's top edge (a 3px left rule in the vertical column). An inset rule, not an elevation.
+- **Float** (`box-shadow: 0 6px 18px rgba(0,0,0,.35)`; Light: `rgba(27,36,48,.18)`): dropdowns, the address context menu and the confirmation dialog, the only floating surfaces.
+- **Signal rule** (`box-shadow: inset 0 2px 0 <signal>`): the selected tab's top edge. An inset rule, not an elevation. In the vertical column the selection is a short 3px rounded bar instead (see Tabs).
 - **Focus ring** (`outline: 2px solid <signal>; outline-offset: 2px`): every focusable control. The address line instead shifts its border to the signal and adds a 1px signal ring.
 
 ### Named Rules
@@ -331,6 +332,7 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 - **Shape:** gently rounded (6px), 32px tall, 12px horizontal padding.
 - **Default:** Graphite Card fill, Hairline border, Instrument White text.
 - **Quiet:** transparent with no border; used for toolbar, tab-strip, menu and list-row actions. Hover adds the text-colour wash.
+- **Destructive:** the default button with Warning Coral (Warning Crimson on Light) text, and its border turns that colour on hover. Used for actions that delete or clear (Clear selected data…, Clear all history…, the confirmation's action). The label names the action.
 - **Hover / Active / Focus:** hover brightens the border to Dial Grey; active applies the pressed wash and moves 1px down; focus shows the 2px signal ring. Transitions are 120ms ease and switch off under reduced motion.
 - **Disabled:** no fill, no border, Disabled Grey text.
 
@@ -354,15 +356,23 @@ at rest, signal when an extension is on, with its blocked-request count in 12px/
 - **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
 - **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a bold (700) 13px title in Instrument White.
 - **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
-- **Vertical column:** full-width rows, 8px radius on all corners, a 3px signal rule on the left of the active tab.
+- **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
 ### Dropdowns
-- Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Menu items are quiet full-width buttons; groups are separated by a hairline. Only one is open at a time, over a still of the page.
+- Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over a still of the page.
+- **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.
+- **Permission request:** sits at the top of the site-information dropdown when a website asks. A 2px signal border, 8px radius, 12px padding; a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a countdown, then Don't allow and Allow as two equal default buttons. Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers
 - **Favourite card:** Graphite Surface, Hairline border, 10px radius, 12px padding, no shadow; a 32px tile (8px radius, Graphite Card) holds the site's icon or its first letter.
-- **Library rows:** 12px × 8px padding, a hairline beneath each, a wash on hover; title 14px/600 with a 12px Dial Grey second line.
-- **Permission request:** 2px signal border, 10px radius, 16px padding; the only container that uses the signal as a border, because it asks for a decision.
+- **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
+- **Info rows** (downloads, extensions, remembered permissions): 12px × 8px padding, the same title and second line, actions at the right.
+
+### Confirmation dialog
+The browser's own modal `<dialog>` for anything destructive, never the system confirm box. Graphite Panel, 1px Hairline, 10px radius, 20px padding, the Float shadow, over a scrim; at most 440px wide. A 15px/600 question as the heading, one sentence on what happens, a list of what will be removed when there is a choice, a muted line on what is kept, then Cancel (focused) and a destructive button that names the action ("Clear data", "Revoke and close tabs"). Escape cancels. It closes, as a cancel, if its panel changes.
+
+### Notices
+The line under the toolbar and the Settings status. Information (a completed action, progress) is set in the text colour with an info icon; a problem in the error colour with a warning icon, so the kind never depends on colour. Anything not marked as information is a problem. 12px on an 18px line, up to two lines with the full text in the tooltip, and a drawn 28px dismiss button.
 
 ### Windows high contrast
 Under `forced-colors`, every colour yields to system colours: icons stroke in ButtonText, focus becomes a 3px Highlight outline, and the active tab gains a Highlight outline and an underlined title so selection never depends on colour.
@@ -372,6 +382,8 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 ### Do:
 - **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.
 - **Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.
+- **Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.
+- **Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.
 - **Do** give every icon-only control an accessible name and put its keyboard shortcut in the tooltip.
 - **Do** write state in plain words next to its icon or colour (*Not encrypted*, *Private*, a count).
 - **Do** keep controls 32px tall (34px round navigation buttons, 36px location line) and spacing on the 4px scale.
@@ -380,7 +392,8 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 
 ### Don't:
 - **Don't** add a second accent colour or use the signal for decoration, solid large fills or illustration (the Glow background's 10% tint is the only area use).
-- **Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns and menus get the Float shadow.
+- **Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns, menus and the confirmation dialog get the Float shadow.
+- **Don't** use the error colour for anything that is not a problem or a destructive action.
 - **Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.
 - **Don't** draw floating chrome over a live page; use the still-page backdrop.
 - **Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.

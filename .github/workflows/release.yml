@@ -66,7 +66,7 @@ jobs:
             cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
             if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
           }
-          foreach ($test in @('native_permission_prompt_over_the_page','native_private_permission_prompt_over_the_page')) {
+          foreach ($test in @('native_permission_prompt_over_the_page','native_private_permission_prompt_over_the_page','native_chrome_interactions')) {
             cargo test --locked --bin rust-browser $test -- --ignored --test-threads=1
             if ($LASTEXITCODE -ne 0) { throw "Native regression failed: $test" }
           }

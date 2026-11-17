@@ -7,7 +7,7 @@
 web
 
 The browser chrome (tab strip, toolbar, dropdowns, library column, new-tab page,
-Privacy & security) is one HTML document, `src/ui/toolbar.html`, rendered in its own
+Settings) is one HTML document, `src/ui/toolbar.html`, rendered in its own
 WebView2 view inside a native Windows window (winit). Its design language is web;
 its behaviour must respect Windows (see Capabilities and Constraints).
 
@@ -71,7 +71,8 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 - Ad blocking comes only from user-added extensions (e.g. uBlock Origin Lite); Rust
   Browser has no ad blocker of its own.
 - Terminology in use: Menu (⋮), site-information badge, star, shield, library column,
-  Privacy & security, tabs down the side, bookmarks bar, new tab.
+  Settings (with its Privacy & security section), tabs down the side, bookmarks bar,
+  new tab, Don't allow / Allow.
 
 ## Brand Commitments
 

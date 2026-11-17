@@ -1661,7 +1661,7 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         ("dark", rust_browser::settings::Theme::Dark, 1.0),
         ("dark", rust_browser::settings::Theme::Dark, 1.5),
     ];
-    const PAGES: [&str; 8] = [
+    const PAGES: [&str; 10] = [
         "newtab",
         "website",
         "menu",
@@ -1670,6 +1670,8 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         "notice-info",
         "notice-error",
         "clear-confirm",
+        "settings-privacy",
+        "settings-clear",
     ];
     /// A request shown with made-up values: the toolbar answers a real one the same way.
     // Every render passes through, so the request stays open across the theme changes.
@@ -1742,6 +1744,17 @@ fn screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let s = p.app.session.as_mut().ok_or("No session")?;
             s.notice.clear();
             let _ = s.windows[0].toolbar.evaluate_script("setTimeout(()=>{for(const id of ['clear-app-history','clear-cookies'])document.getElementById(id).checked=true;document.getElementById('clear-data').click()},300)");
+        }
+        if (page == 8 || page == 9) && shot == 0 {
+            let section = if page == 8 {
+                "settings-privacy"
+            } else {
+                "settings-clear"
+            };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let _ = s.windows[0].toolbar.evaluate_script(&format!(
+                "document.getElementById('confirm-dialog').close();document.getElementById('{section}').scrollIntoView({{block:'start'}})"
+            ));
         }
         let s = p.app.session.as_mut().ok_or("No session")?;
         s.settings.theme = theme;
@@ -2312,6 +2325,174 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         _ => {}
     }
     Ok(())
+}
+
+/// Read the JSON a toolbar or library script returned, once it has arrived.
+fn script_json(p: &Probe) -> Result<Option<serde_json::Value>, String> {
+    polish_report(p)
+}
+
+const MENU_KEYS: &str = r#"(()=>{const m=document.getElementById('menu-items');const key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));const items=[...m.querySelectorAll('[role^=menuitem]:not(:disabled)')];items[0].focus();const id=()=>document.activeElement.id;key('ArrowDown');const down=id();key('End');const end=id();key('Home');const home=id();key('ArrowUp');const up=id();return JSON.stringify({down,end,home,up,first:items[0].id,second:items[1].id,last:items.at(-1).id})})()"#;
+const SECTION_LINK: &str = r#"(()=>{const before=document.activeElement.id;document.querySelector('#settings-index [data-section=settings-clear]').click();return JSON.stringify({before,after:document.activeElement.id})})()"#;
+const CONFIRM_CANCEL: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');if(!r.checked)return JSON.stringify({start:false});r.click();const open=d.open,title=document.getElementById('confirm-title').textContent,focus=document.activeElement.id;document.getElementById('confirm-cancel').click();return JSON.stringify({start:true,open,title,focus,checked:r.checked,closed:!d.open})})()"#;
+const CONFIRM_OK: &str = r#"(()=>{const r=document.getElementById('restore-session'),d=document.getElementById('confirm-dialog');const rechecked=r.checked;r.click();const open=d.open,action=document.getElementById('confirm-ok').textContent;document.getElementById('confirm-ok').click();return JSON.stringify({rechecked,open,action,closed:!d.open,checked:r.checked})})()"#;
+const CONFIRM_STRANDED: &str = r#"(()=>{document.getElementById('clear-cache').checked=true;document.getElementById('clear-data').click();return JSON.stringify({open:document.getElementById('confirm-dialog').open})})()"#;
+const DIALOG_OPEN: &str =
+    r#"JSON.stringify({open:document.getElementById('confirm-dialog').open})"#;
+const DATE_FILTER: &str = r#"(()=>{const b=document.getElementById('history-dates'),f=document.getElementById('date-fields'),from=document.getElementById('history-from');const before=f.hidden;b.click();const shown=!f.hidden&&b.getAttribute('aria-expanded')==='true';from.value='2026-01-01';from.dispatchEvent(new Event('change'));return JSON.stringify({before,shown,label:b.textContent})})()"#;
+
+/// The interactions the chrome design pass added: the menu's arrow keys, Settings
+/// opened at a section from the site-information dropdown and from its own section
+/// links, the browser's confirmation (Cancel sends nothing and re-checks the box; the
+/// named action runs it; a panel change cancels it), and the history date filter.
+fn chrome_interaction_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let wait = |p: &Probe, ms: u64| p.at.elapsed() > Duration::from_millis(ms);
+    match p.phase {
+        0 if wait(p, 1000) => {
+            p.s()?.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('more').click()")
+                .map_err(|_| "Toolbar script failed")?;
+            p.next();
+        }
+        1 if wait(p, 400) => {
+            eval_toolbar(p, MENU_KEYS)?;
+            p.next();
+        }
+        2 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["down"] != r["second"]
+                || r["end"] != r["last"]
+                || r["home"] != r["first"]
+                || r["up"] != r["last"]
+                || r["last"] != "exit-browser"
+            {
+                return Err(format!("Menu keys: {r}"));
+            }
+            // The site-information dropdown's button opens Settings at Privacy & security.
+            p.s()?.windows[0]
+                .toolbar
+                .evaluate_script("document.getElementById('site-settings').click()")
+                .map_err(|_| "Toolbar script failed")?;
+            p.next();
+        }
+        3 if wait(p, 600)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.panel == Some(Panel::Settings)) =>
+        {
+            eval_toolbar(p, SECTION_LINK)?;
+            p.next();
+        }
+        4 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["before"] != "settings-privacy" || r["after"] != "settings-clear" {
+                return Err(format!("Settings sections: {r}"));
+            }
+            eval_toolbar(p, CONFIRM_CANCEL)?;
+            p.next();
+        }
+        5 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["start"] != true
+                || r["open"] != true
+                || r["focus"] != "confirm-cancel"
+                || r["closed"] != true
+                || r["title"] != "Stop restoring tabs?"
+            {
+                return Err(format!("Confirmation cancel: {r}"));
+            }
+            p.next();
+        }
+        6 if wait(p, 400) => {
+            if !p.s()?.settings.restore_session {
+                return Err("Cancel changed the setting".into());
+            }
+            eval_toolbar(p, CONFIRM_OK)?;
+            p.next();
+        }
+        7 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            // Cancel re-checks the box once the dialog's close event has run.
+            if r["rechecked"] != true
+                || r["open"] != true
+                || r["action"] != "Stop restoring"
+                || r["closed"] != true
+                || r["checked"] != false
+            {
+                return Err(format!("Confirmation action: {r}"));
+            }
+            p.next();
+        }
+        8 if wait(p, 400) => {
+            if p.s()?.settings.restore_session {
+                return Err("The confirmed action did not reach the browser".into());
+            }
+            p.command(el, 0, Command::SetRestoreSession(true))?;
+            eval_toolbar(p, CONFIRM_STRANDED)?;
+            p.next();
+        }
+        9 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["open"] != true {
+                return Err(format!("Clear data did not ask first: {r}"));
+            }
+            p.command(el, 0, Command::ClosePanel)?;
+            p.next();
+        }
+        10 if wait(p, 600) => {
+            eval_toolbar(p, DIALOG_OPEN)?;
+            p.next();
+        }
+        11 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["open"] != false {
+                return Err(format!("A confirmation outlived its panel: {r}"));
+            }
+            p.command(el, 0, Command::ShowPanel(Panel::History))?;
+            p.next();
+        }
+        12 if wait(p, 1500) => {
+            eval_library(p, DATE_FILTER)?;
+            p.next();
+        }
+        13 => {
+            let Some(r) = script_json(p)? else {
+                return Ok(());
+            };
+            if r["before"] != true || r["shown"] != true || r["label"] != "Filter by date: on" {
+                return Err(format!("Date filter: {r}"));
+            }
+            p.log.push(
+                "chrome interactions: menu keys, settings sections, confirmations, date filter"
+                    .into(),
+            );
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_chrome_interactions() {
+    let (root, _) = run("chrome-interactions", chrome_interaction_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

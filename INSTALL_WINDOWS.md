@@ -55,7 +55,7 @@ source commit, version and unsigned status. Nothing is registered.
 
 Setup (0.17 and later) registers Rust Browser for your Windows user as a browser
 that can handle `http` and `https` links. It does not make itself the default:
-Windows 11 asks you to choose. In Rust Browser open More (⋯) → Privacy & security →
+Windows 11 asks you to choose. In Rust Browser open Menu (⋮) → Settings → Default browser →
 **Make default browser**, which opens Windows Settings at Default apps on Rust
 Browser's page, then set it for HTTP and HTTPS there. You can also open
 Settings → Apps → Default apps and search for Rust Browser. The Settings deep link
