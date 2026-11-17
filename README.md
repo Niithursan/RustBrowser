@@ -133,9 +133,11 @@ an item that goes somewhere, and the live page comes back. Another dropdown's bu
 switches straight to that dropdown.
 
 - **Site information** shows whether the connection is encrypted, the site's origin
+  (collapsing subdomains first on narrow bars so the registrable domain stays visible)
   and what that means, with a button that opens Settings at Privacy & security.
-- **Star** (or Ctrl+D) saves the page as a bookmark, or finds it if it is already
-  saved, and lets you rename it, choose its folder, remove it, or open All bookmarks.
+- **Star** (or Ctrl+D) fills in the theme's accent colour when the current page is
+  bookmarked; clicking it saves the page or opens its bookmark to rename it, choose
+  its folder, remove it, or open All bookmarks.
 
 The **shield**'s dropdown lists the extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
@@ -148,10 +150,10 @@ from other sites are not counted; and blocking cannot be turned off for one site
 (use the extension's own settings). Rust Browser has no ad blocker of its own.
 
 **Bookmarks, history and downloads** open in a library column at the right of the
-page, which shrinks and stays usable. Ctrl+Shift+B shows or hides it; Close in the
-column closes it. Drag its left edge, or focus the edge and use Left and Right, to
-make it 260 to 640 pixels wide; the width lasts for that window until you exit.
-Settings still fills the window.
+page or the new-tab page, which shrinks and stays usable. Ctrl+Shift+B shows or hides
+it; Close in the column closes it. Drag its left edge, or focus the edge and use Left
+and Right, to make it 260 to 640 pixels wide; the width lasts for that window until
+you exit. Settings still fills the window.
 
 **Settings > Appearance > Show tabs down the side** (off by default) moves the tab
 list into a column at the left of every open window. It has the same actions as the

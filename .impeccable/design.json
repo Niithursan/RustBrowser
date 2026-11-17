@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-15T01:34:34+00:00",
+  "generatedAt": "2026-11-17T22:34:02+00:00",
   "title": "Design System: Rust Browser",
   "extensions": {
     "colorMeta": {
@@ -387,7 +387,7 @@
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "Library and Privacy & security page titles."
+        "purpose": "Full-panel titles (Settings, Bookmarks, Browsing history, Downloads)."
       },
       "display-narrow": {
         "displayName": "Display narrow",
@@ -423,7 +423,7 @@
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Every control, menu item and tab title."
+        "purpose": "Every control, menu item and tab title; panel explanatory prose capped at 68ch."
       },
       "label": {
         "displayName": "Label",
@@ -434,12 +434,12 @@
       {
         "name": "float",
         "value": "0 6px 18px rgba(0,0,0,.35)",
-        "purpose": "Dropdowns and the address context menu only. Light theme: 0 6px 18px rgba(27,36,48,.18)."
+        "purpose": "Dropdowns, the address context menu and the confirmation dialog, the only floating surfaces. Light theme: 0 6px 18px rgba(27,36,48,.18)."
       },
       {
         "name": "signal-rule",
         "value": "inset 0 2px 0 var(--accent)",
-        "purpose": "Selected tab top edge (3px left rule in the vertical column)."
+        "purpose": "Selected tab top edge (3px inset bar in the vertical column, 2px bottom rule on the active Settings section, and 3px insertion-edge rule when dragging tabs)."
       },
       {
         "name": "location-focus",
@@ -454,6 +454,11 @@
         "purpose": "Background, border, colour, opacity and 1px press transitions on controls; removed under reduced motion."
       },
       {
+        "name": "tab-enter",
+        "value": "180ms cubic-bezier(.2,0,0,1)",
+        "purpose": "Newly opened tab size and opacity entrance; skipped at startup and under reduced motion."
+      },
+      {
         "name": "loading-slide",
         "value": "1.2s ease-in-out infinite",
         "purpose": "The 2px loading bar; a static full-width bar under reduced motion."
@@ -463,7 +468,7 @@
       {
         "name": "narrow",
         "value": "700px",
-        "purpose": "Navigation row wraps; the address line takes its own line; panels pad 16px."
+        "purpose": "Navigation row wraps; the address line takes its own line; full panels pad 16px."
       }
     ]
   },
@@ -472,40 +477,48 @@
       "name": "Button",
       "kind": "button",
       "refersTo": "button",
-      "description": "Default action button: card fill, hairline border, 32px.",
-      "html": "<button class=\"ds-btn\">Search / refresh</button>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;transition:background-color .12s ease,border-color .12s ease,transform .12s ease}.ds-btn:hover{border-color:var(--secondary)}.ds-btn:active{background:var(--pressed);transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-btn:disabled{color:var(--disabled);border-color:transparent;background:transparent}"
+      "description": "Default action button: card fill, hairline border, 32px height, 1px active dip.",
+      "html": "<button class=\"ds-btn\" type=\"button\">Back to page (F7)</button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;transition:background-color .12s ease,border-color .12s ease,transform .12s ease}.ds-btn:hover{border-color:var(--secondary)}.ds-btn:active{background:var(--pressed);transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-btn:disabled{color:var(--disabled);border-color:transparent;background:transparent;cursor:not-allowed}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Actions that delete or clear: default button shape with Warning Coral text and hover border.",
+      "html": "<button class=\"ds-btn-danger\" type=\"button\">Clear selected data…</button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn-danger{font:13px/1.4 var(--ui);color:var(--error);height:32px;min-width:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;transition:background-color .12s ease,border-color .12s ease,transform .12s ease}.ds-btn-danger:hover{border-color:var(--error)}.ds-btn-danger:active{background:var(--pressed);transform:translateY(1px)}.ds-btn-danger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
     },
     {
       "name": "Quiet Button",
       "kind": "button",
       "refersTo": "button-quiet",
-      "description": "Borderless action for toolbars, menus and list rows; hover adds a wash.",
-      "html": "<button class=\"ds-btn-quiet\">Find in page</button>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn-quiet{font:13px/1.4 var(--ui);color:var(--text);height:32px;padding:0 12px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer;transition:background-color .12s ease}.ds-btn-quiet:hover{background:var(--hover)}.ds-btn-quiet:active{background:var(--pressed)}.ds-btn-quiet:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+      "description": "Borderless action and progressive-disclosure toggle for toolbars, menus and list rows.",
+      "html": "<button class=\"ds-btn-quiet\" type=\"button\" aria-expanded=\"false\">Customize page</button>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-btn-quiet{font:13px/1.4 var(--ui);color:var(--secondary);height:32px;padding:0 10px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer;transition:background-color .12s ease,border-color .12s ease,color .12s ease}.ds-btn-quiet:hover{background:var(--hover);color:var(--text)}.ds-btn-quiet[aria-expanded=true]{background:var(--hover);border-color:var(--line);color:var(--text)}.ds-btn-quiet:active{background:var(--pressed)}.ds-btn-quiet:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
     },
     {
       "name": "Navigation Icon Button",
       "kind": "button",
       "refersTo": "nav-icon-button",
-      "description": "34px round icon button for back, forward, reload and home.",
-      "html": "<button class=\"ds-nav\" aria-label=\"Reload\" title=\"Reload (Ctrl+R / F5)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M18.5 12a6.5 6.5 0 1 1-2-4.7\"/><path d=\"M17.5 4v4h-4\"/></svg></button>",
+      "description": "34px round icon button for back, forward, reload/stop and home.",
+      "html": "<button class=\"ds-nav\" type=\"button\" aria-label=\"Reload\" title=\"Reload (Ctrl+R / F5)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M18.5 12a6.5 6.5 0 1 1-2-4.7\"/><path d=\"M17.5 4v4h-4\"/></svg></button>",
       "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0}.ds-nav{width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:17px;background:transparent;color:var(--text);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .12s ease}.ds-nav:hover{background:var(--hover)}.ds-nav:active{background:var(--pressed)}.ds-nav:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
     },
     {
       "name": "Text Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "Recessed field: darker than the surface, hairline border.",
-      "html": "<input class=\"ds-input\" placeholder=\"Search titles and URLs\" aria-label=\"Search library\">",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-input{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:200px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--field)}.ds-input::placeholder{color:var(--secondary)}.ds-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+      "description": "Recessed field: Graphite Field fill, hairline border, Dial Grey AA placeholder and signal caret.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search titles and addresses\" aria-label=\"Search library\">",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-input{font:13px/1.4 var(--ui);color:var(--text);height:32px;min-width:220px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--field);caret-color:var(--accent);transition:border-color .12s ease}.ds-input::placeholder{color:var(--secondary);opacity:1}.ds-input::selection{background:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--text)}.ds-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
     },
     {
       "name": "Location Line",
       "kind": "custom",
       "refersTo": "location-line",
       "description": "The one bold element: security badge, origin-emphasised address, star and shield in a 36px pill.",
-      "html": "<div class=\"ds-loc\"><span class=\"ds-sec\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6.5\" y=\"10.5\" width=\"11\" height=\"8\" rx=\"1.5\"/><path d=\"M9 10.5V8a3 3 0 0 1 6 0v2.5\"/></svg>Encrypted</span><span class=\"ds-addr\"><span class=\"ds-origin\">www.rust-lang.org</span><span class=\"ds-rest\">/learn</span></span><button class=\"ds-round\" aria-label=\"Bookmark this page\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 4.8 2.2 4.6 5 .6-3.7 3.4 1 4.9L12 15.9l-4.5 2.4 1-4.9L4.8 10l5-.6Z\"/></svg></button><button class=\"ds-round ds-shield\" aria-label=\"Ad blocking\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3.6 18.6 6v5.6c0 4.1-2.7 7.3-6.6 8.8-3.9-1.5-6.6-4.7-6.6-8.8V6Z\"/><path d=\"m9 12 2.1 2.1L15.2 10\"/></svg><span class=\"ds-count\">12</span></button></div>",
+      "html": "<div class=\"ds-loc\"><span class=\"ds-sec\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6.5\" y=\"10.5\" width=\"11\" height=\"8\" rx=\"1.5\"/><path d=\"M9 10.5V8a3 3 0 0 1 6 0v2.5\"/></svg>Encrypted</span><span class=\"ds-addr\"><span class=\"ds-origin\">www.rust-lang.org</span><span class=\"ds-rest\">/learn</span></span><button class=\"ds-round\" type=\"button\" aria-label=\"Bookmark this page (Ctrl+D)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 4.8 2.2 4.6 5 .6-3.7 3.4 1 4.9L12 15.9l-4.5 2.4 1-4.9L4.8 10l5-.6Z\"/></svg></button><button class=\"ds-round ds-shield\" type=\"button\" aria-label=\"Ad blocking\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3.6 18.6 6v5.6c0 4.1-2.7 7.3-6.6 8.8-3.9-1.5-6.6-4.7-6.6-8.8V6Z\"/><path d=\"m9 12 2.1 2.1L15.2 10\"/></svg><span class=\"ds-count\">12</span></button></div>",
       "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0}.ds-loc{display:flex;align-items:center;width:560px;max-width:100%;height:36px;border:1px solid var(--line);border-radius:18px;background:var(--field);color:var(--text);font:15px var(--ui)}.ds-loc:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.ds-sec{display:inline-flex;align-items:center;gap:4px;height:28px;margin-left:4px;padding:0 12px 0 8px;border-radius:14px;background:var(--hover);font:600 12px var(--ui)}.ds-sec .ds-icon{width:15px;height:15px}.ds-addr{flex:1;min-width:0;padding-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ds-origin{font:600 15.5px var(--display);letter-spacing:-.005em}.ds-rest{color:var(--secondary)}.ds-round{height:30px;min-width:30px;margin-right:4px;padding:0 6px;border:0;border-radius:15px;background:transparent;color:var(--secondary);display:inline-flex;align-items:center;gap:4px;cursor:pointer}.ds-round:hover{background:var(--hover);color:var(--text)}.ds-round:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-shield{color:var(--accent)}.ds-count{font:600 12px var(--ui);color:var(--text)}"
     },
     {
@@ -513,32 +526,32 @@
       "kind": "nav",
       "refersTo": "tab",
       "description": "Card tabs; the active tab joins the toolbar and carries a 2px signal rule on its top edge.",
-      "html": "<div class=\"ds-strip\"><div class=\"ds-tab ds-active\"><span class=\"ds-title\">New tab</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">The Rust Programming Language</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">Docs.rs</span><button class=\"ds-x\" aria-label=\"Close tab\">×</button></div></div><div class=\"ds-bar\"></div>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-strip{display:flex;align-items:flex-end;gap:2px;padding:8px 8px 0;background:var(--strip);font:13px/1.4 var(--ui)}.ds-tab{position:relative;display:flex;align-items:center;gap:4px;height:36px;max-width:240px;padding:0 4px 0 12px;border-radius:10px 10px 0 0;color:var(--secondary)}.ds-tab:not(.ds-active):hover{background:var(--hover);color:var(--text)}.ds-tab:not(.ds-active)+.ds-tab:not(.ds-active)::before{content:'';position:absolute;left:-2px;top:10px;bottom:10px;width:1px;background:var(--line)}.ds-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}.ds-active{background:var(--surface);box-shadow:inset 0 2px 0 var(--accent);color:var(--text)}.ds-active .ds-title{font-weight:700}.ds-x{width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;opacity:.55;cursor:pointer}.ds-tab:hover .ds-x,.ds-active .ds-x{opacity:1}.ds-x:hover{background:var(--hover)}.ds-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-bar{height:12px;background:var(--surface)}"
+      "html": "<div class=\"ds-strip\"><div class=\"ds-tab ds-active\"><span class=\"ds-title\">New tab</span><button class=\"ds-x\" type=\"button\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">The Rust Programming Language</span><button class=\"ds-x\" type=\"button\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">Docs.rs</span><button class=\"ds-x\" type=\"button\" aria-label=\"Close tab\">×</button></div></div><div class=\"ds-bar\"></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-strip{display:flex;align-items:flex-end;gap:2px;padding:8px 8px 0;background:var(--strip);font:13px/1.4 var(--ui)}.ds-tab{position:relative;display:flex;align-items:center;gap:4px;height:36px;max-width:240px;padding:0 4px 0 12px;border-radius:10px 10px 0 0;color:var(--secondary);cursor:grab}.ds-tab:not(.ds-active):hover{background:var(--hover);color:var(--text)}.ds-tab:not(.ds-active)+.ds-tab:not(.ds-active)::before{content:'';position:absolute;left:-2px;top:10px;bottom:10px;width:1px;background:var(--line)}.ds-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}.ds-active{background:var(--surface);box-shadow:inset 0 2px 0 var(--accent);color:var(--text)}.ds-active .ds-title{font-weight:700}.ds-x{width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;opacity:.55;cursor:pointer}.ds-tab:hover .ds-x,.ds-active .ds-x{opacity:1}.ds-x:hover{background:var(--hover)}.ds-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-bar{height:12px;background:var(--surface)}"
     },
     {
       "name": "Dropdown Menu",
       "kind": "custom",
       "refersTo": "dropdown",
-      "description": "The only floating surface: panel fill, hairline, 10px radius, Float shadow.",
-      "html": "<div class=\"ds-menu\" role=\"menu\"><button role=\"menuitem\">Find in page</button><button role=\"menuitem\">Print…</button><button role=\"menuitem\">Pin tab</button><hr><button role=\"menuitem\">Bookmarks</button><button role=\"menuitem\">History</button><button role=\"menuitem\">Privacy &amp; security</button></div>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-menu{display:flex;flex-direction:column;gap:2px;width:260px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);font:13px/1.4 var(--ui)}.ds-menu button{height:32px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer}.ds-menu button:hover{background:var(--hover)}.ds-menu button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-menu hr{width:100%;margin:6px 0;border:0;border-top:1px solid var(--line)}"
+      "description": "Floating grouped menu: panel fill, hairline border, 10px radius, Float shadow, shortcuts at the right.",
+      "html": "<div class=\"ds-menu\" role=\"menu\"><span class=\"ds-group\">This page</span><button type=\"button\" role=\"menuitem\"><span>Find in page</span><kbd>Ctrl+F</kbd></button><button type=\"button\" role=\"menuitem\"><span>Print…</span><kbd>Ctrl+P</kbd></button><hr><span class=\"ds-group\">This tab</span><button type=\"button\" role=\"menuitemcheckbox\" aria-checked=\"false\"><span>Keep tab awake</span><span class=\"ds-state\">Off</span></button><hr><button type=\"button\" role=\"menuitem\"><span>Settings</span></button></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-menu{display:flex;flex-direction:column;gap:2px;width:280px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);font:13px/1.4 var(--ui)}.ds-group{padding:4px 12px 2px;font-size:12px;color:var(--secondary)}.ds-menu button{display:flex;align-items:center;justify-content:space-between;gap:12px;height:32px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer}.ds-menu button:hover{background:var(--hover)}.ds-menu button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-menu kbd,.ds-state{font:12px var(--ui);color:var(--secondary)}.ds-menu hr{width:100%;margin:4px 0;border:0;border-top:1px solid var(--line)}"
     },
     {
-      "name": "Favourite Card",
+      "name": "Confirmation Dialog",
+      "kind": "custom",
+      "refersTo": "dropdown",
+      "description": "Modal confirmation for destructive actions: states what changes and what is kept, with Cancel focused.",
+      "html": "<div class=\"ds-dialog\" role=\"dialog\" aria-label=\"Remove folder\"><h2 class=\"ds-dialog-title\">Remove folder \"Work\"?</h2><p>Bookmarks in this folder move to Unfiled, and subfolders move up one level.</p><p class=\"ds-muted\">No bookmarks are deleted.</p><div class=\"ds-actions\"><button class=\"ds-btn\" type=\"button\">Cancel</button><button class=\"ds-btn-danger\" type=\"button\">Remove folder</button></div></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-dialog{width:380px;max-width:100%;padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);box-shadow:var(--shadow);font:13px/1.5 var(--ui)}.ds-dialog-title{margin:0 0 8px;font:600 15px/1.3 var(--display)}.ds-dialog p{margin:4px 0}.ds-muted{color:var(--secondary);font-size:12px}.ds-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.ds-btn,.ds-btn-danger{font:13px/1.4 var(--ui);height:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer}.ds-btn{color:var(--text)}.ds-btn:hover{border-color:var(--secondary)}.ds-btn-danger{color:var(--error)}.ds-btn-danger:hover{border-color:var(--error)}.ds-btn:focus-visible,.ds-btn-danger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Favourite Card & Private Badge",
       "kind": "card",
       "refersTo": "favorite-card",
-      "description": "New-tab favourite: flat card, hairline, letter or icon tile.",
-      "html": "<div class=\"ds-fav\"><button class=\"ds-visit\"><span class=\"ds-tile\">R</span>Rust</button></div>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-fav{width:200px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface)}.ds-visit{display:flex;align-items:center;gap:12px;width:100%;min-height:40px;border:0;background:transparent;padding:0;color:var(--text);font:600 13px var(--ui);text-align:left;cursor:pointer}.ds-visit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-tile{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--card);font:700 15px/1 var(--ui)}"
-    },
-    {
-      "name": "Private Window Label",
-      "kind": "chip",
-      "refersTo": "private-label",
-      "description": "The one signal-filled element: marks a private window in the tab strip.",
-      "html": "<span class=\"ds-private\">Private</span>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-private{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent);color:var(--on-accent);font:600 12px var(--ui)}"
+      "description": "Single-row favourite tile card with quiet remove button alongside the signal-filled Private window badge.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-fav\"><button class=\"ds-visit\" type=\"button\"><span class=\"ds-tile\">R</span><span>Rust</span></button><button class=\"ds-rem\" type=\"button\" aria-label=\"Remove favorite Rust\">×</button></div><span class=\"ds-private\">Private</span></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.ds-fav{display:flex;align-items:center;gap:8px;width:220px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}.ds-visit{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:36px;border:0;background:transparent;padding:0;color:var(--text);font:600 13px var(--ui);text-align:left;cursor:pointer}.ds-visit:focus-visible,.ds-rem:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-tile{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--card);font:700 15px/1 var(--ui)}.ds-rem{width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--secondary);font-size:15px;cursor:pointer}.ds-rem:hover{background:var(--hover);color:var(--error)}.ds-private{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent);color:var(--on-accent);font:600 12px var(--ui)}"
     }
   ],
   "narrative": {

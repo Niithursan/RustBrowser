@@ -166,7 +166,7 @@ components:
     backgroundColor: "{colors.graphite-surface}"
     textColor: "{colors.instrument-white}"
     rounded: "{rounded.lg}"
-    padding: "12px"
+    padding: "10px 12px"
   private-label:
     backgroundColor: "{colors.signal-amber}"
     textColor: "{colors.on-signal}"
@@ -220,9 +220,9 @@ values live on `:root` and `body[data-theme=…]` in `src/ui/toolbar.html`, and 
 names are read by the `ui::tests` contrast checks, so they must stay stable.
 
 ### Primary (the signal, one per theme)
-- **Signal Amber** (Dark): selected-tab top rule, focus rings, loading bar, active
-  shield, checkbox and progress accent, the private-window label, the permission-request
-  border, and the Glow new-tab background tint.
+- **Signal Amber** (Dark): selected-tab top rule, focus rings, loading bar, saved-bookmark
+  star, active shield, checkbox and progress accent, the private-window label, the
+  permission-request border, and the Glow new-tab background tint.
 - **Harbour Blue** (Slate): the same roles in the Slate theme.
 - **Lilac** (Plum): the same roles in the Plum theme.
 - **Cobalt** (Light): the same roles in the Light theme, with white text on it.
@@ -284,14 +284,15 @@ The chrome is a stack of rows across the top of the window: the **tab strip** (m
 8px top padding, tabs bottom-aligned), the **navigation row** (4px top, 8px bottom
 padding) with back, forward, reload/stop and home on the left, the address line filling
 the middle and the Menu (⋮) at the right, an optional **bookmarks bar** (28px items),
-a notice row, and the 2px **loading bar**. The page view starts below `--chrome-height`
-(120px).
+a notice row, and the 2px **loading bar** (carrying a 1px bottom hairline while idle so
+the toolbar cleanly separates from full panels and light webpages). The page view starts
+below `--chrome-height` (120px).
 
 The same trusted document is also used for two side views, chosen by `data-role`: the
 **vertical tab column** (one tab per row, 4px gaps, hairline on its right edge) and the
-**library column** at the right of the page (260–640px wide, hairline on its left edge,
-an 8px drag handle). Full panels (library, Privacy & security, new tab) are padded
-24px × 32px with content capped at 1040px and explanatory prose capped at 68ch; panel headers and the Settings section bar stick to the top with an active-section signal underline so section navigation and Back to page (F7) stay reachable while scrolling; the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
+**library column** at the right of a live page or the new-tab page (260-640px wide,
+hairline on its left edge, an 8px drag handle). Full panels (Settings, new tab) are padded
+24px × 32px with content capped at 1040px and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline and 1px section hairlines so section navigation and Back to page (F7) stay reachable while scrolling; the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
 tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
@@ -323,7 +324,7 @@ search) are fully rounded at half their height (`pill-28` to `pill-34`, `locatio
 `search`), which sets them apart from the boxy controls. A new pill uses half its own
 height; add it to the scale rather than rounding to the nearest step. Tabs are cards rounded only at the top so they join the toolbar below.
 Icons are drawn for this project on a 24px grid: 1.8px round-capped strokes, no fills
-except the menu dots and the pin.
+except the menu dots, the pin and a saved bookmark's star.
 
 ## Components
 
@@ -348,9 +349,11 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 The one bold element on the panel. A 36px pill in Graphite Field containing, left to
 right: the **security badge** (28px pill, text-colour wash, a lock or info icon and a
 12px/600 word; coral on *Not encrypted* or failure, Dial Grey and regular weight on
-browser pages), the **address** (an origin-emphasised view that hides on focus to show
-the editable field), the **star** (30px round) and the **shield** (32px pill, Dial Grey
-at rest, signal when an extension is on, with its blocked-request count in 12px/600).
+browser pages), the **address** (an origin-emphasised view whose subdomains collapse
+before the registrable domain tail on narrow bars, hiding on focus to show the editable
+field), the **star** (30px round, Dial Grey at rest, filled in the theme signal when the
+current page is bookmarked) and the **shield** (32px pill, Dial Grey at rest, signal when
+an extension is on, with its blocked-request count in 12px/600).
 
 ### Tabs
 - **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
@@ -361,18 +364,18 @@ at rest, signal when an extension is on, with its blocked-request count in 12px/
 ### Dropdowns
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over a still of the page.
 - **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.
-- **Permission request:** takes over the site-information dropdown when a website asks (hiding the static connection details until answered so a misclick never dismisses the request). A 2px signal border, 8px radius, 12px padding; a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
+- **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers
-- **Favourite card:** Graphite Surface, Hairline border, 10px radius, 12px padding, no shadow; a 32px tile (8px radius, Graphite Card) holds the site's icon or its first letter.
-- **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
+- **Favourite card:** Graphite Surface, Hairline border, 10px radius, 10px × 12px padding, no shadow; a single horizontal row with a 32px tile (8px radius, Graphite Card, holding the site's icon or its first letter) and bold title on the left, and a quiet 28px `×` remove button on the right.
+- **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under `h2.day` 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
 - **Info rows** (downloads, extensions, remembered permissions): 12px × 8px padding, the same title and second line, actions at the right.
 
 ### Confirmation dialog
 The browser's own modal `<dialog>` for anything destructive, never the system confirm box. Graphite Panel, 1px Hairline, 10px radius, 20px padding, the Float shadow, over a scrim; at most 440px wide. A 15px/600 question as the heading, one sentence on what happens, a list of what will be removed when there is a choice, a muted line on what is kept, then Cancel (focused) and a destructive button that names the action ("Clear data", "Revoke and close tabs"). Escape cancels. It closes, as a cancel, if its panel changes.
 
-### Notices
-The line under the toolbar and the Settings status. Information (a completed action, progress) is set in the text colour with an info icon; a problem in the error colour with a warning icon, so the kind never depends on colour. Anything not marked as information is a problem. 12px on an 18px line, up to two lines with the full text in the tooltip, and a drawn 28px dismiss button.
+### Notices & Inline Validation
+The line under the toolbar, the Settings status, and inline form validation lines (`.form-status`). Information (a completed action, progress) is set in the text colour with an info icon; a problem in the error colour with a warning icon, so the kind never depends on colour. Inline form validation keeps user input intact and marks the offending field with `aria-invalid="true"`. Anything not marked as information is a problem. 12px on an 18px line, up to two lines with the full text in the tooltip, and a drawn 28px dismiss button.
 
 ### Windows high contrast
 Under `forced-colors`, every colour yields to system colours: icons stroke in ButtonText, focus becomes a 3px Highlight outline, and the active tab gains a Highlight outline and an underlined title so selection never depends on colour.

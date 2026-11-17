@@ -36,10 +36,11 @@ panel, the new-tab page or an open dropdown fills the window:
 | Normal | none | full width, top | below the toolbar | none |
 | Vertical tabs | left, 240 wide, full height | right of the column, top | right of the column, below the toolbar | none |
 | Library open | as above | as above | narrower by the library width | right, below the toolbar |
-| Full panel, new tab, dropdown | as above | its column, full height | hidden | hidden |
+| New tab + library | as above | narrower by the library width, full height | hidden | right, full height |
+| Full panel, dropdown | as above | its column, full height | hidden | hidden |
 | Page fullscreen | hidden | full width, top | full width, below the toolbar | hidden |
 
-The library keeps at least 320 pixels for the page. A unit test checks 720
+The library keeps at least 320 pixels for the page (or new-tab column). A unit test checks 1,080
 combinations for overlap, and native tests measure the real windows.
 
 **Why the side views never overlap the page.** Each WebView2 view is a separate window

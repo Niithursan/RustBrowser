@@ -362,7 +362,7 @@ The project aims to evolve through incremental releases:
 - v0.18: Multiple normal windows (done)
 - v0.19: Saved passwords, form autofill and bookmark import (done)
 - v0.20: Ad blocking and a new layout (done; the release prepared for it was not published)
-- v0.21: Reliability and chrome polish pass (toolbar polish, shield counts, vertical tabs, library sidebar, new-tab tiles, bookmarks bar, dropdown menus, permission prompt overlay, unified Settings panel, menu groups, notice levels, library/confirmations PR #45, chrome polish PR #46, cross-agent rules PR #49, and Windows x64 installer workflow PR #37 merged on `main`; `/impeccable polish` chrome refinement PR open against `main`)
+- v0.21: Reliability and chrome polish pass (toolbar polish, shield counts, vertical tabs, library sidebar, new-tab tiles, bookmarks bar, dropdown menus, permission prompt overlay, unified Settings panel, menu groups, notice levels, library/confirmations PR #45, chrome polish PR #46, cross-agent rules PR #49, Windows x64 installer workflow PR #37, and `/impeccable polish` chrome refinement PR #50 merged on `main`; `.impeccable/design.json` sidecar refresh PR #51 and combined `/impeccable` harden/audit/layout/clarify/polish chrome pass PR open against `main`)
 - Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
