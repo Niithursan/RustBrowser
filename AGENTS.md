@@ -298,6 +298,14 @@ Do not ask for approval for ordinary, reversible implementation decisions alread
 
 Request approval for destructive operations, major architectural changes, and changes to established project requirements.
 
+### Cross-Agent Continuity (Antigravity and Claude Code)
+
+Development alternates between Antigravity and Claude Code on the same working tree:
+
+- **Single instruction source:** Antigravity loads `AGENTS.md` directly; Claude Code loads `CLAUDE.md`, which imports `@AGENTS.md`. Put all repository rules and state updates in `AGENTS.md` so both agents stay synchronized.
+- **Session handoff check:** At the start of a session after switching agents, inspect `git status`, `git branch -vv`, `gh pr list`, `AGENTS.md`, and `DEVELOPMENT_CHECKPOINT.md` (fetching `origin` when needed) rather than assuming local branches match remote PR heads.
+- **Shared skills and artifacts:** UI design and audit skills (`impeccable` with its five `impeccable-*` subagents, and `hallmark`) are installed in `~/.claude/` for Claude Code and in `~/.gemini/config/plugins/rust-browser-skills/` for Antigravity. Both read and update the same repository files (`PRODUCT.md`, `DESIGN.md`, `.impeccable/`, and `docs/hallmark/`) and share `%USERPROFILE%\.impeccable`. Keep agent-local state (`.claude/`, `.impeccable/config.local.json`, `.impeccable/hook.*.json`) untracked.
+
 ## 12. Definition of Done
 
 A feature is complete only when:
