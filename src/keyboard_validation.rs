@@ -656,11 +656,17 @@ impl ApplicationHandler<Event> for Probe {
     }
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.app.about_to_wait(el);
+        if self.step == Step::Done || self.failure.is_some() {
+            el.exit();
+            el.set_control_flow(ControlFlow::Poll);
+            return;
+        }
         if let Err(error) = self.poll() {
-            self.failure = Some(error);
+            self.failure.get_or_insert(error);
         }
         if self.step == Step::Done || self.failure.is_some() {
             el.exit();
+            el.set_control_flow(ControlFlow::Poll);
             return;
         }
         el.set_control_flow(ControlFlow::WaitUntil(

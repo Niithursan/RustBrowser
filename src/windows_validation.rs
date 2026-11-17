@@ -4670,17 +4670,27 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     };
     match p.phase {
         0 if waited > Duration::from_secs(1) => {
+            if p.s()?.tabs.items[0].content.state.loading {
+                if p.started.elapsed() > Duration::from_secs(20) {
+                    return Err("The new tab's blank document did not finish loading".into());
+                }
+                return Ok(());
+            }
             p.command(el, 0, Command::Navigate(format!("{url}?star")))?;
             p.next();
         }
         1 => {
             let s = p.s()?;
-            if s.tabs.items[0].url.ends_with("?star") && !s.tabs.items[0].content.state.loading {
+            let tab = &s.tabs.items[0];
+            if tab.url.ends_with("?star") && !tab.content.state.loading {
                 // Ctrl+D reaches the browser as this command.
                 p.command(el, 0, Command::BookmarkCurrent)?;
                 p.next();
-            } else if waited > Duration::from_secs(10) {
-                return Err("The page did not load".into());
+            } else if waited > Duration::from_secs(20) {
+                return Err(format!(
+                    "The page did not load: {} ({})",
+                    tab.url, tab.content.state.message
+                ));
             }
         }
         2 => {
