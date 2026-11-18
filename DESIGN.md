@@ -276,7 +276,7 @@ no web font is ever loaded (the toolbar's security policy forbids it).
 - **Label** (400, 12px): secondary text, form labels, the connection word (600), the shield count (600), shortcut lists.
 
 ### Named Rules
-**The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title is bold (700) but stays at 13px, so it marks selection without competing with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
+**The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title keeps regular weight at 13px; selection is marked by colour, surface and the top signal rule, so it never competes with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
 
 **The Plain Word Rule.** State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, "Private"), so it survives high contrast, colour blindness and Narrator.
 
@@ -363,7 +363,7 @@ an extension is on, with its blocked-request count in 12px/600).
 
 ### Tabs
 - **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
-- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a bold (700) 13px title in Instrument White.
+- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a regular-weight 13px title in Instrument White.
 - **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
 - **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
