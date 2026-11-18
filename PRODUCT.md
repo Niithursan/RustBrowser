@@ -8,8 +8,10 @@ web
 
 The browser chrome (tab strip, toolbar, dropdowns, library column, new-tab page,
 Settings) is one HTML document, `src/ui/toolbar.html`, rendered in its own
-WebView2 view inside a native Windows window (winit). Its design language is web;
-its behaviour must respect Windows (see Capabilities and Constraints).
+WebView2 view inside a native Windows window (winit). The "Who's browsing?" profile
+picker is a second, small HTML document, `src/ui/picker.html`, in its own window.
+Their design language is web; their behaviour must respect Windows (see Capabilities
+and Constraints).
 
 ## Users
 
@@ -45,25 +47,36 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 
 ## Operating Context
 
-- Everyday browsing in normal and private windows; up to 8 normal windows on one
+- Everyday browsing in normal and private windows; up to 8 normal windows per
   profile; it can be set as the Windows default browser.
+- Profiles keep the owner's own roles apart (for example personal, work, school),
+  each with its own sign-ins, cookies, history, bookmarks, passwords, extensions,
+  tabs and settings. Switching between them is a frequent, quick action, not a
+  shared-computer login: the profile button left of Menu (⋮) opens another profile in
+  its own window, and a plain launch with more than one profile shows the "Who's
+  browsing?" picker. Links from other apps skip the picker and open in the profile
+  used last.
 - Every action is reachable by keyboard shortcut as well as by pointer; shortcuts are
   listed in Menu (⋮) → Keyboard shortcuts.
-- Dropdowns (Menu, site information, star, shield, bookmark folders) show a dimmed
-  still image of the page behind them while open, because a live page cannot be drawn
-  under a dropdown reliably.
+- Dropdowns (Menu, site information, star, shield, bookmark folders, profile button,
+  permission prompts) open over the live page: the page keeps playing and updating
+  undimmed, and pressing the page closes the dropdown.
 - Distributed as an unsigned per-user Windows installer and portable ZIP; requires
   the WebView2 Runtime and the VC++ redistributable.
 
 ## Capabilities and Constraints
 
 - Windows 10/11 only (Windows 11 x64 is the priority target). Rendering is WebView2.
-- The native title bar stays separate from the tabs to keep Snap layouts, title-bar
-  dragging, double-click to maximise and Narrator working. The title bar and border
-  follow the selected theme on Windows 11 build 22000+.
+- The tab strip is merged with the window frame: there is no separate title bar, and
+  Minimize, Maximize/Restore and Close sit flush in the top-right corner. Snap layouts,
+  dragging, top-edge resize, double-click to maximise, the native system menu and
+  Narrator must keep working. The window border follows the selected theme on
+  Windows 11 build 22000+.
 - Look: the browser has **its own look**, not Fluent/Edge imitation, but it must always
-  respect Windows behaviour: Snap, the native title bar, Narrator, Windows high contrast,
-  reduced motion and display scaling (checked at 100% and 150%).
+  respect Windows behaviour: Snap, window dragging and caption controls, Narrator,
+  Windows high contrast, reduced motion and display scaling (checked at 100% and 150%).
+- Each profile runs as its own process with its own folder; the existing data is the
+  Default profile, which cannot be deleted. At most 16 profiles.
 - All icons are drawn for this project; tab icons are WebView2-supplied image data
   checked by the browser.
 - Web content is untrusted and stays isolated from privileged native functionality;
@@ -71,8 +84,9 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 - Ad blocking comes only from user-added extensions (e.g. uBlock Origin Lite); Rust
   Browser has no ad blocker of its own.
 - Terminology in use: Menu (⋮), site-information badge, star, shield, library column,
-  Settings (with its Privacy & security section), tabs down the side, bookmarks bar,
-  new tab, Don't allow / Allow.
+  Settings (with its Privacy & security and Profiles sections), tabs down the side,
+  bookmarks bar, new tab, Don't allow / Allow, profile button, Default profile,
+  "Who's browsing?".
 
 ## Brand Commitments
 
@@ -85,7 +99,8 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 
 ## Evidence on Hand
 
-- Interface source: `src/ui/toolbar.html` (includes the new-tab page).
+- Interface source: `src/ui/toolbar.html` (includes the new-tab page) and
+  `src/ui/picker.html` (the profile picker).
 - Design screenshots and audits: `docs/hallmark/v0.21/` (before/after captures in light
   and dark at 100%/150%), `docs/hallmark/v0.21b/README.md`, `docs/screenshots/`.
 - Accessibility evidence and gaps: `validation/ACCESSIBILITY.md`.
