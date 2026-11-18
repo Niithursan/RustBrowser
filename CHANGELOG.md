@@ -2,6 +2,14 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Profiles: separate profiles for different people or roles, each with its own
+  sign-ins, cookies, history, bookmarks, passwords, extensions, tabs and settings,
+  running in its own process and folder (`profiles\<id>` inside the existing profile
+  folder, which stays the Default profile). A profile button left of the menu
+  switches to or adds profiles; Settings > Profiles renames, recolours and deletes
+  them (deleting asks first and refuses open profiles and Default). A "Who's
+  browsing?" picker opens at launch when there is more than one profile; links from
+  other apps open in the profile used last. New `--profile=<id>` launch option.
 - Live page behind dropdowns: the menu, star, shield, site information, permission
   prompt and bookmarks-bar folders no longer freeze the page behind a still image.
   The page keeps playing and updating while a dropdown is open; the toolbar view is

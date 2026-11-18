@@ -585,6 +585,12 @@ struct Session {
     /// download ends as "aborted" shortly before its download request arrives.
     unrecorded_failures: Vec<(Instant, TabId)>,
     profile: PathBuf,
+    /// This process's profile (`profiles::DEFAULT_ID` or `p<n>`).
+    profile_id: String,
+    /// The Default profile's folder, which holds the list of profiles.
+    profiles_root: PathBuf,
+    /// The list of profiles as last read (other profiles may change it).
+    profiles: rust_browser::profiles::Registry,
     private: bool,
     ready: bool,
     clearing: Option<Clearing>,
@@ -1284,7 +1290,84 @@ impl Drop for Session {
     }
 }
 
+/// Start profile `id` in a process of its own (or hand over to the one already
+/// running it, which then opens a new window). `private` opens a private window
+/// of that profile.
+pub fn open_profile(id: &str, private: bool) -> std::io::Result<()> {
+    if !rust_browser::profiles::valid_id(id) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Unknown profile.",
+        ));
+    }
+    #[cfg(test)]
+    {
+        OPENED_PROFILES.with(|opened| opened.borrow_mut().push((id.to_string(), private)));
+        Ok(())
+    }
+    #[cfg(not(test))]
+    {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command.arg(format!("--profile={id}"));
+        if private {
+            command.arg("--private");
+        }
+        command.spawn().map(|_| ())
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Profiles fixtures asked to open (tests never start processes).
+    pub static OPENED_PROFILES: RefCell<Vec<(String, bool)>> = const { RefCell::new(Vec::new()) };
+}
+
 impl Session {
+    /// Read the list of profiles again (another profile may have changed it).
+    fn refresh_profiles(&mut self) {
+        if let Ok(registry) = rust_browser::profiles::load(&self.profiles_root) {
+            self.profiles = registry;
+        }
+    }
+
+    /// Every profile for the toolbar, this window's first.
+    fn profile_rows(&self) -> Vec<ui::ProfileRow<'_>> {
+        let mut rows: Vec<_> = self
+            .profiles
+            .profiles
+            .iter()
+            .map(|p| ui::ProfileRow {
+                id: &p.id,
+                name: &p.name,
+                color: &p.color,
+                current: p.id == self.profile_id,
+            })
+            .collect();
+        rows.sort_by_key(|row| !row.current);
+        rows
+    }
+
+    /// This profile's name, when there is more than one profile to tell apart.
+    fn profile_name(&self) -> Option<&str> {
+        (self.profiles.profiles.len() > 1)
+            .then(|| self.profiles.get(&self.profile_id))
+            .flatten()
+            .map(|p| p.name.as_str())
+    }
+
+    /// Run a change to the list of profiles and keep the result.
+    fn change_profiles<T>(
+        &mut self,
+        change: impl FnOnce(&mut rust_browser::profiles::Registry) -> std::io::Result<T>,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        if self.private {
+            return Err("Manage profiles from a normal window.".into());
+        }
+        let result = rust_browser::profiles::update(&self.profiles_root, change);
+        self.refresh_profiles();
+        Ok(result?)
+    }
+
     /// The first window of a process, from the parsed command line.
     fn create(
         event_loop: &ActiveEventLoop,
@@ -1300,6 +1383,19 @@ impl Session {
             start.links,
             start.lock,
         )?;
+        session.profile_id = start.profile_id;
+        session.profiles_root = start.profiles_root;
+        session.refresh_profiles();
+        if !private {
+            let root = session.profiles_root.clone();
+            let id = session.profile_id.clone();
+            let _ = std::thread::Builder::new()
+                .name("profiles".into())
+                .spawn(move || {
+                    let _ = rust_browser::profiles::mark_used(&root, &id);
+                    rust_browser::profiles::sweep_deleted(&root);
+                });
+        }
         if !private {
             session.start_handoff();
             session.clear_toolbar_autofill_once();
@@ -1573,7 +1669,10 @@ impl Session {
             diagnostics,
             diagnostic_warning_shown: false,
             store,
+            profiles_root: profile.clone(),
             profile,
+            profile_id: rust_browser::profiles::DEFAULT_ID.into(),
+            profiles: rust_browser::profiles::Registry::default(),
             private,
             permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
             popups: Rc::new(RefCell::new(native_popup::Manager::default())),
@@ -2348,6 +2447,10 @@ impl Session {
             library_folder: self.filter.folder,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
+            profiles: self.profile_rows(),
+            profile_colors: &rust_browser::profiles::COLORS,
+            can_add_profile: !self.private
+                && self.profiles.profiles.len() < rust_browser::profiles::MAX_PROFILES,
             menu_open: self.windows[self.current].menu_open,
             library_panel: self.windows[self.current].library_panel,
             vertical_tabs: layout.tabs.is_some(),
@@ -2422,10 +2525,15 @@ impl Session {
             ""
         };
         let page_title = active.title.trim();
+        // With more than one profile, the title (taskbar, Alt+Tab) names it.
+        let app = match self.profile_name() {
+            Some(name) => format!("Rust Browser - {name}"),
+            None => "Rust Browser".into(),
+        };
         let title = if page_title.is_empty() || page_title == "New tab" {
-            format!("{prefix}Rust Browser")
+            format!("{prefix}{app}")
         } else {
-            format!("{prefix}{page_title} - Rust Browser")
+            format!("{prefix}{page_title} - {app}")
         };
         if self.last_title.borrow().as_str() != title {
             self.window.set_title(&title);
@@ -2714,10 +2822,48 @@ impl Session {
             }
             // Need the event loop; handled by App before commands reach here.
             Command::NewWindow | Command::ReopenClosedWindow | Command::ExitBrowser => {}
-            Command::NewPrivateWindow => {
-                std::process::Command::new(std::env::current_exe()?)
-                    .arg("--private")
-                    .spawn()?;
+            Command::NewPrivateWindow => open_profile(&self.profile_id, true)?,
+            Command::RefreshProfiles => self.refresh_profiles(),
+            Command::OpenProfile(id) => {
+                self.refresh_profiles();
+                if self.profiles.get(&id).is_none() {
+                    return Err("That profile no longer exists.".into());
+                }
+                open_profile(&id, false)?;
+            }
+            Command::AddProfile { name, color } => {
+                let profile = self.change_profiles(|r| {
+                    let name = name.unwrap_or_else(|| r.suggested_name());
+                    let color = color.unwrap_or_else(|| r.suggested_color().into());
+                    r.create(&name, &color)
+                })?;
+                open_profile(&profile.id, false)?;
+                self.inform(format!("Opening the new profile {}.", profile.name));
+            }
+            Command::EditProfile { id, name, color } => {
+                self.change_profiles(|r| r.edit(&id, &name, &color))?;
+            }
+            Command::DeleteProfile(id) => {
+                if id == self.profile_id {
+                    return Err("Switch to another profile to delete this one.".into());
+                }
+                if self.private {
+                    return Err("Manage profiles from a normal window.".into());
+                }
+                let name = self
+                    .profiles
+                    .get(&id)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                let trash = rust_browser::profiles::delete(&self.profiles_root, &id);
+                self.refresh_profiles();
+                if let Some(trash) = trash? {
+                    // Its WebView2 data can be large; remove it off the UI thread.
+                    let _ = std::thread::Builder::new()
+                        .name("profile-delete".into())
+                        .spawn(move || std::fs::remove_dir_all(trash));
+                }
+                self.inform(format!("Deleted the profile {name} and its data."));
             }
             Command::SetMenuOpen(open) => {
                 if !open {
@@ -3991,6 +4137,9 @@ fn start_failure(error: &(dyn std::error::Error + 'static)) -> StartFailure {
 /// What the first window of this process starts with.
 struct Start {
     profile: PathBuf,
+    /// The profile's id and the Default profile's folder (see `profiles`).
+    profile_id: String,
+    profiles_root: PathBuf,
     private: bool,
     links: Vec<String>,
     /// The normal profile's lock, taken before the event loop existed.
@@ -4511,8 +4660,13 @@ impl ApplicationHandler<Event> for App {
 /// Run the browser. A normal launch takes the profile lock before any window or
 /// event loop exists: when another normal window holds it this returns
 /// `ProfileInUse` at once, so the caller can hand its links over instead.
-pub fn run(private: bool, links: Vec<String>) -> Result<(), StartFailure> {
-    let profile = storage::profile_dir().map_err(|_| StartFailure::Other)?;
+pub fn run(
+    root: &std::path::Path,
+    profile_id: &str,
+    private: bool,
+    links: Vec<String>,
+) -> Result<(), StartFailure> {
+    let profile = rust_browser::profiles::dir(root, profile_id).map_err(|_| StartFailure::Other)?;
     let lock = if private {
         None
     } else {
@@ -4525,6 +4679,8 @@ pub fn run(private: bool, links: Vec<String>) -> Result<(), StartFailure> {
         session: None,
         start: Some(Start {
             profile,
+            profile_id: profile_id.to_string(),
+            profiles_root: root.to_path_buf(),
             private,
             links,
             lock,

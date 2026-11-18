@@ -88,6 +88,26 @@ pub enum Command {
     /// Close every window and keep them all for the next start.
     ExitBrowser,
     SetRestoreSession(bool),
+    /// Read the list of profiles again (the profile menu or Settings opened).
+    RefreshProfiles,
+    /// Open profile `id` in its own process, or a new window of it if it is open.
+    OpenProfile(String),
+    /// Create a profile and open it.
+    /// Without a name or colour, the next free ones are used.
+    AddProfile {
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        color: Option<String>,
+    },
+    /// Rename a profile or change its colour.
+    EditProfile {
+        id: String,
+        name: String,
+        color: String,
+    },
+    /// Delete another profile and its data (the toolbar asked first).
+    DeleteProfile(String),
     /// A dropdown (the menu, the star, the shield, site information or a
     /// bookmarks-bar folder) opened or closed.
     SetMenuOpen(bool),
@@ -191,6 +211,16 @@ pub struct TabState<'a> {
     pub favicon: &'a str,
 }
 
+/// One profile in the profile menu and Settings > Profiles.
+#[derive(Serialize)]
+pub struct ProfileRow<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub color: &'a str,
+    /// This window's profile.
+    pub current: bool,
+}
+
 /// One extension in Privacy & security > Extensions.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ExtensionRow {
@@ -251,6 +281,11 @@ pub struct ToolbarState<'a> {
     pub library_folder: Option<i64>,
     pub history_enabled: bool,
     pub downloads: Vec<crate::native_downloads::Record>,
+    /// Every profile, this window's first.
+    pub profiles: Vec<ProfileRow<'a>>,
+    pub profile_colors: &'static [&'static str],
+    /// Whether another profile can be added.
+    pub can_add_profile: bool,
 }
 
 /// One shortcut map for WebView2 controllers and the parent window's focus fallback.

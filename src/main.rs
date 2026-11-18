@@ -24,6 +24,8 @@ mod native_handoff;
 #[cfg(windows)]
 mod native_installation;
 #[cfg(windows)]
+mod native_picker;
+#[cfg(windows)]
 mod native_popup;
 #[cfg(windows)]
 mod native_security;
@@ -94,12 +96,17 @@ fn main() -> std::process::ExitCode {
         );
     }));
     #[cfg(windows)]
-    let (private, links) = match rust_browser::launch::parse(&raw_command_line()) {
+    let (private, profile, links) = match rust_browser::launch::parse(&raw_command_line()) {
         Ok(rust_browser::launch::Launch::Version) => {
             println!("Rust Browser {}", env!("CARGO_PKG_VERSION"));
             return std::process::ExitCode::SUCCESS;
         }
-        Ok(rust_browser::launch::Launch::Open { private, links, .. }) => (private, links),
+        Ok(rust_browser::launch::Launch::Open {
+            private,
+            profile,
+            links,
+            ..
+        }) => (private, profile, links),
         Err(error) => {
             tell(
                 "Rust Browser",
@@ -117,7 +124,16 @@ fn main() -> std::process::ExitCode {
         if running.is_err() {
             return startup_failed();
         }
-        return start_or_hand_off(private, links);
+        let root = match rust_browser::storage::profile_dir() {
+            Ok(root) => root,
+            Err(_) => return startup_failed(),
+        };
+        let profile = match choose_profile(&root, profile, private, links.is_empty()) {
+            Ok(Some(profile)) => profile,
+            Ok(None) => return std::process::ExitCode::SUCCESS,
+            Err(code) => return code,
+        };
+        return start_or_hand_off(&root, &profile, private, links);
     }
     #[cfg(not(windows))]
     eprintln!("Rust Browser currently supports Windows x64 only.");
@@ -134,12 +150,67 @@ fn startup_failed() -> std::process::ExitCode {
     std::process::ExitCode::FAILURE
 }
 
+/// Which profile this launch opens. A named profile must exist. Without one, a
+/// launch with links (another app opening a page) or a private window uses the
+/// last used profile, and a plain launch shows the picker when there is more than
+/// one profile. `Ok(None)`: the picker was closed or started another process.
+#[cfg(windows)]
+fn choose_profile(
+    root: &std::path::Path,
+    named: Option<String>,
+    private: bool,
+    plain: bool,
+) -> Result<Option<String>, std::process::ExitCode> {
+    use rust_browser::profiles::{self, DEFAULT_ID};
+    let registry = profiles::load(root);
+    let refuse = |message: &str| {
+        tell(
+            "Rust Browser",
+            &format!(
+                "{message}
+
+Nothing was opened or changed."
+            ),
+            true,
+        );
+        Err(std::process::ExitCode::from(2))
+    };
+    match (named, registry) {
+        (Some(id), Ok(registry)) if registry.get(&id).is_some() => Ok(Some(id)),
+        (Some(id), Err(_)) if id == DEFAULT_ID => Ok(Some(id)),
+        (Some(_), Ok(_)) => {
+            refuse("That profile no longer exists. Open Rust Browser and choose a profile.")
+        }
+        (Some(_), Err(_)) => refuse(
+            "Rust Browser could not read its list of profiles. The Default profile can still be opened.",
+        ),
+        (None, Ok(registry)) if plain && !private && registry.profiles.len() > 1 => {
+            match native_picker::choose(root, &registry) {
+                Ok(Some(id)) => match app::open_profile(&id, false) {
+                    Ok(()) => Ok(None),
+                    Err(_) => Err(startup_failed()),
+                },
+                Ok(None) => Ok(None),
+                Err(()) => Err(startup_failed()),
+            }
+        }
+        (None, Ok(registry)) => Ok(Some(registry.last_used().to_string())),
+        // A damaged list never blocks the Default profile.
+        (None, Err(_)) => Ok(Some(DEFAULT_ID.to_string())),
+    }
+}
+
 /// Start the browser, or hand the links to the normal window that already holds
 /// this profile. While that window is starting or closing nothing answers: keep
 /// trying for a few seconds, taking over the profile if it becomes free. Never
 /// open a second window on the same profile, and always say what happened.
 #[cfg(windows)]
-fn start_or_hand_off(private: bool, links: Vec<String>) -> std::process::ExitCode {
+fn start_or_hand_off(
+    root: &std::path::Path,
+    profile: &str,
+    private: bool,
+    links: Vec<String>,
+) -> std::process::ExitCode {
     use native_handoff::Outcome;
     use rust_browser::handoff::{Request, Status};
     const PATIENCE: std::time::Duration = std::time::Duration::from_secs(6);
@@ -149,11 +220,12 @@ fn start_or_hand_off(private: bool, links: Vec<String>) -> std::process::ExitCod
     } else {
         Request::Open(links.clone())
     };
-    let endpoint = rust_browser::storage::profile_dir()
-        .ok()
-        .and_then(|profile| native_handoff::endpoint(&profile));
+    let Ok(folder) = rust_browser::profiles::dir(root, profile) else {
+        return startup_failed();
+    };
+    let endpoint = native_handoff::endpoint(&folder);
     loop {
-        match app::run(private, links.clone()) {
+        match app::run(root, profile, private, links.clone()) {
             Ok(()) => return std::process::ExitCode::SUCCESS,
             Err(app::StartFailure::ProfileInUse) => {}
             Err(app::StartFailure::Other) => return startup_failed(),

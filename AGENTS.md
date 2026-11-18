@@ -363,6 +363,7 @@ The project aims to evolve through incremental releases:
 - v0.19: Saved passwords, form autofill and bookmark import (done)
 - v0.20: Ad blocking and a new layout (done; the release prepared for it was not published)
 - v0.21: Reliability and chrome polish pass (toolbar polish, shield counts, vertical tabs, library sidebar, new-tab tiles, bookmarks bar, dropdown menus, permission prompt overlay, unified Settings panel, menu groups, notice levels, library/confirmations PR #45, chrome polish PR #46, cross-agent rules PR #49, Windows x64 installer workflow PR #37, `/impeccable polish` chrome refinement PR #50, and combined `/impeccable` harden/audit/layout/clarify/polish pass PR #52, and persistent bookmark site icons with merged tab strip and flush window caption controls PR #53 merged on `main`; unbolded selected tab title and live page behind dropdowns PR #54 open against `main`)
+- v0.21 profiles: separate profiles (process per profile, `--profile=<id>`, profile button, Settings > Profiles, launch picker) on `feat/profiles`
 - Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate

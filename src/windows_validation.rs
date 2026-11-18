@@ -145,6 +145,8 @@ impl ApplicationHandler<Event> for Probe {
         }
         let start = Start {
             profile: self.root.clone(),
+            profile_id: rust_browser::profiles::DEFAULT_ID.into(),
+            profiles_root: self.root.clone(),
             private: self.private,
             links: Vec::new(),
             lock: None,
@@ -5150,5 +5152,164 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
 #[ignore = "Requires Windows/WebView2; opens a real window"]
 fn native_star_and_site_information_open_as_dropdowns() {
     let (root, _) = run("star-site", star_site_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The profile button, its dropdown and Settings > Profiles as JSON.
+const PROFILE_REPORT: &str = "(()=>{const b=id=>document.getElementById(id),btn=b('profile-button'),r=btn.getBoundingClientRect(),m=b('more').getBoundingClientRect(),a=btn.querySelector('.profile-avatar'),panel=b('profile-panel');return JSON.stringify({shown:!btn.hidden&&r.width>0,beforeMenu:r.right<=m.left+1,initial:a?a.textContent:'',color:a?getComputedStyle(a).backgroundColor:'',label:btn.getAttribute('aria-label'),open:!panel.hidden,expanded:btn.getAttribute('aria-expanded'),title:b('profile-title').textContent,others:[...b('profile-others').querySelectorAll('button')].map(x=>x.textContent),rows:[...b('profile-list').querySelectorAll('.row .title')].map(x=>x.textContent)})})()";
+
+/// Profiles from a normal window: the avatar button shows this profile's initial
+/// and colour left of the menu; its dropdown lists the other profiles and opens
+/// one in its own process; adding, renaming and deleting change the shared list;
+/// this window's profile and Default cannot be deleted, and the window title names
+/// the profile once there is more than one.
+fn profile_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use rust_browser::profiles::{self, COLORS};
+    let waited = p.at.elapsed();
+    let root = p.root.clone();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let s = p.s()?;
+            let title = s.last_title.borrow().clone();
+            if !title.ends_with("Rust Browser - Default") {
+                return Err(format!("The title does not name the profile: {title}"));
+            }
+            eval_toolbar(p, PROFILE_REPORT)?;
+            p.next();
+        }
+        1 => {
+            if let Some(r) = polish_report(p)? {
+                if r["shown"] != true
+                    || r["beforeMenu"] != true
+                    || r["initial"] != "D"
+                    || r["color"] != "rgb(36, 70, 184)"
+                    || r["label"] != "Profile: Default"
+                {
+                    return Err(format!("Wrong profile button: {r}"));
+                }
+                eval_toolbar(p, "document.getElementById('profile-button').click()")?;
+                p.next();
+            }
+        }
+        2 => {
+            if p.s()?.windows[0].menu_open {
+                eval_toolbar(p, PROFILE_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The profile dropdown did not open".into());
+            }
+        }
+        3 => {
+            if let Some(r) = polish_report(p)? {
+                if r["open"] != true
+                    || r["expanded"] != "true"
+                    || r["title"] != "Default"
+                    || r["others"] != serde_json::json!(["WWork"])
+                {
+                    return Err(format!("Wrong profile dropdown: {r}"));
+                }
+                eval_toolbar(
+                    p,
+                    "document.querySelector('#profile-others button').click()",
+                )?;
+                p.next();
+            }
+        }
+        4 => {
+            let opened = super::OPENED_PROFILES.with(|o| o.borrow().clone());
+            if opened.is_empty() || p.s()?.windows[0].menu_open {
+                if waited > Duration::from_secs(10) {
+                    return Err(format!("Choosing Work did not open it: {opened:?}"));
+                }
+                return Ok(());
+            }
+            if opened != [("p2".to_string(), false)] {
+                return Err(format!("Choosing Work opened something else: {opened:?}"));
+            }
+            p.command(
+                el,
+                0,
+                Command::AddProfile {
+                    name: Some("  Home ".into()),
+                    color: Some(COLORS[2].into()),
+                },
+            )?;
+            p.command(
+                el,
+                0,
+                Command::EditProfile {
+                    id: "p2".into(),
+                    name: "Office".into(),
+                    color: COLORS[5].into(),
+                },
+            )?;
+            // A duplicate name, this window's profile and Default are refused.
+            p.command(
+                el,
+                0,
+                Command::AddProfile {
+                    name: Some("office".into()),
+                    color: None,
+                },
+            )?;
+            let duplicate = p.s()?.notice.clone();
+            p.command(el, 0, Command::DeleteProfile("default".into()))?;
+            let own = p.s()?.notice.clone();
+            if !duplicate.contains("already has that name")
+                || !own.contains("Switch to another profile")
+            {
+                return Err(format!("Refusals were not reported: {duplicate} | {own}"));
+            }
+            let registry = profiles::load(&root).map_err(|e| e.to_string())?;
+            let names: Vec<_> = registry.profiles.iter().map(|p| p.name.as_str()).collect();
+            let opened = super::OPENED_PROFILES.with(|o| o.borrow().clone());
+            if names != ["Default", "Office", "Home"]
+                || registry.get("p3").map(|p| p.color.as_str()) != Some(COLORS[2])
+                || opened.last() != Some(&("p3".to_string(), false))
+            {
+                return Err(format!("Add or edit went wrong: {names:?} {opened:?}"));
+            }
+            std::fs::create_dir_all(root.join("profiles").join("p2").join("content"))
+                .map_err(|e| e.to_string())?;
+            p.command(el, 0, Command::DeleteProfile("p2".into()))?;
+            p.command(el, 0, Command::ShowPanel(Panel::Settings))?;
+            p.next();
+        }
+        5 => {
+            let registry = profiles::load(&root).map_err(|e| e.to_string())?;
+            let gone = registry.get("p2").is_none() && !root.join("profiles").join("p2").exists();
+            if gone && p.s()?.effective_panel() == Some(Panel::Settings) {
+                eval_toolbar(p, PROFILE_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err("Deleting Office kept its profile or folder".into());
+            }
+        }
+        6 => {
+            if let Some(r) = polish_report(p)? {
+                if r["rows"] != serde_json::json!(["Default", "Home"]) {
+                    return Err(format!("Settings > Profiles is out of date: {r}"));
+                }
+                p.log.push(
+                    "profiles: button, dropdown, open, add, edit, delete and refusals".into(),
+                );
+                p.done = true;
+                el.exit();
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_profiles_switch_add_edit_and_delete() {
+    let (root, _) = run("profiles", profile_steps, |root, _| {
+        rust_browser::profiles::update(root, |r| {
+            r.create("Work", rust_browser::profiles::COLORS[1])
+        })
+        .unwrap();
+    });
     let _ = std::fs::remove_dir_all(root);
 }

@@ -36,6 +36,22 @@
   fetched by the toolbar. New-tab backgrounds are CSS drawn from the theme tokens; no
   image is stored or downloaded.
 
+## v0.21 profiles
+
+- Each profile is a separate process with its own folder, session lock, WebView2
+  environments and hand-off endpoint; no cookies, storage, passwords, extensions or
+  library data are shared. Private windows of a profile stay InPrivate and temporary.
+- Profile ids name folders, so only `default` and `p<n>` (1 to 6 digits, no leading
+  zero) are accepted, from the command line (`--profile=<id>`, one token, never from
+  a link), from the toolbar and from the list file. Names are bounded text and are
+  only ever set as text in the toolbar and picker; the picker's data is JSON with
+  `<` escaped.
+- `profiles.json` is size-limited and validated on read; a damaged list is never
+  replaced, and the Default profile still opens. Changes are atomic under a lock.
+- Deleting a profile needs a confirmation in the toolbar, is refused for Default,
+  for the window's own profile and while the profile is open (its session lock),
+  and only ever removes `profiles/<id>` for a validated id.
+
 ## v0.21 dropdowns over the page
 
 - Dropdowns no longer capture the page. While one is open over a webpage, the trusted
