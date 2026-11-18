@@ -50,9 +50,8 @@ pub enum Event {
         success: bool,
     },
     PermissionPrompt,
-    /// The page still for behind the menu sidebar of window `0` (`None` if the
-    /// capture failed).
-    MenuSnapshot(WindowId, Option<String>),
+    /// A page took keyboard focus (it was clicked, for example).
+    PageFocused(TabId),
     /// An extension operation finished.
     Extension(native_extensions::Reply),
     /// The count of requests extensions stopped changed for a tab.
@@ -255,8 +254,11 @@ enum Full {
     None,
     /// The new-tab page fills the toolbar's column; the library may still sit beside it.
     NewTab,
-    /// A full panel (Settings) or an open dropdown covers everything except the tab column.
+    /// A full panel (Settings), or a dropdown over one, covers everything except the tab column.
     Cover,
+    /// A dropdown over a webpage: the page and library stay where they are, and the
+    /// toolbar spans its column above them, clipped to the chrome and the dropdown.
+    Dropdown,
 }
 
 /// The layout table (see ARCHITECTURE.md). In `Full::Cover` (Settings or an open
@@ -288,11 +290,11 @@ fn layout(
     let (toolbar_w, toolbar_h) = match full {
         Full::None => (rest, chrome),
         Full::NewTab => ((rest - lib.unwrap_or(0.0)).max(1.0), height),
-        Full::Cover => (rest, height),
+        Full::Cover | Full::Dropdown => (rest, height),
     };
     Layout {
         toolbar: (left, 0.0, toolbar_w, toolbar_h),
-        page: (full == Full::None).then_some((
+        page: matches!(full, Full::None | Full::Dropdown).then_some((
             left,
             chrome,
             (rest - lib.unwrap_or(0.0)).max(1.0),
@@ -517,11 +519,13 @@ struct WindowState {
     panel: Option<Panel>,
     fullscreen: Option<TabId>,
     focus_pending: bool,
-    /// The menu is open as a sidebar: the toolbar fills the window over a still
-    /// of the page, and the live page is hidden until it closes.
+    /// A dropdown is open. Over a webpage the toolbar covers its column but is
+    /// clipped to the chrome and the dropdown, so the live page keeps running
+    /// and stays usable around it.
     menu_open: bool,
-    /// The menu was asked to open and waits for the page still.
-    menu_wanted: bool,
+    /// Where the open dropdown is drawn (logical pixels in the toolbar view),
+    /// once the toolbar has placed it.
+    menu_area: Option<engine::ClipArea>,
     /// The vertical tab column, once vertical tabs were used in this window.
     tabs_view: Option<SideView>,
     /// The library column, once it was opened in this window.
@@ -664,21 +668,6 @@ impl Session {
         if native_security::clear_toolbar_autofill(toolbar, self.proxy.clone()).is_err() {
             self.diagnostics.record(DiagnosticCode::CommandFailed);
         }
-    }
-
-    /// Open the menu sidebar over `snapshot` (or a plain backdrop), if it is still
-    /// wanted.
-    fn show_menu(&mut self, snapshot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.menu_wanted {
-            return Ok(());
-        }
-        self.menu_open = true;
-        self.activate()?;
-        let url = serde_json::to_string(&snapshot.unwrap_or_default())?;
-        self.toolbar.evaluate_script(&format!(
-            "window.showMenuSnapshot&&window.showMenuSnapshot({url})"
-        ))?;
-        Ok(())
     }
 
     /// Open the library column beside the page, showing `panel`, and move keyboard
@@ -1084,7 +1073,7 @@ impl Session {
             fullscreen: None,
             focus_pending: false,
             menu_open: false,
-            menu_wanted: false,
+            menu_area: None,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -1231,6 +1220,7 @@ impl Session {
             // Keyboard accelerators act on the window that has focus.
             Event::Command(_) => self.select_focused(),
             Event::Page(tab, _)
+            | Event::PageFocused(tab)
             | Event::NavigationBlocked(tab)
             | Event::PageClose(tab)
             | Event::Fullscreen(tab, _)
@@ -1244,9 +1234,6 @@ impl Session {
             }
             Event::ToolbarProcess(source, _) | Event::ToolbarResponsive(source, _) => {
                 self.select_toolbar(*source);
-            }
-            Event::MenuSnapshot(id, _) => {
-                self.select_window(*id);
             }
             Event::PermissionPrompt => {
                 let tab = self.permissions.borrow().prompt().map(|p| p.tab);
@@ -1550,7 +1537,7 @@ impl Session {
             fullscreen: None,
             focus_pending: false,
             menu_open: false,
-            menu_wanted: false,
+            menu_area: None,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -2056,9 +2043,12 @@ impl Session {
         // A fullscreen page keeps the toolbar (its address and origin) but takes
         // the room of the tab column and the library.
         let fullscreen = window.fullscreen.is_some();
-        let full = if self.panel.is_some() || self.menu_open {
+        let panel = self.effective_panel();
+        let full = if self.panel.is_some() || (self.menu_open && panel.is_some()) {
             Full::Cover
-        } else if self.effective_panel() == Some(Panel::NewTab) {
+        } else if self.menu_open {
+            Full::Dropdown
+        } else if panel == Some(Panel::NewTab) {
             Full::NewTab
         } else {
             Full::None
@@ -2083,6 +2073,7 @@ impl Session {
         };
         let plan = self.current_layout();
         self.toolbar.set_bounds(at(plan.toolbar))?;
+        self.clip_toolbar(&plan);
         if let Some(tab) = self.tabs.active()
             && let Some(page) = plan.page
         {
@@ -2101,6 +2092,41 @@ impl Session {
             }
         }
         Ok(())
+    }
+
+    /// Over a webpage, an open dropdown's toolbar shows only the chrome and the
+    /// dropdown (in its rounded shape); anywhere else it is unclipped.
+    fn clip_toolbar(&self, plan: &Layout) {
+        let window = &self.windows[self.current];
+        let clip = window.menu_open && plan.page.is_some() && plan.toolbar.3 > self.chrome_height;
+        let areas = clip.then(|| {
+            let chrome = engine::ClipArea {
+                x: 0.0,
+                y: 0.0,
+                width: plan.toolbar.2,
+                height: self.chrome_height,
+                radius: 0.0,
+            };
+            [Some(chrome), window.menu_area]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+        });
+        let mut siblings: Vec<&WebView> = Vec::new();
+        if let Some(tab) = window.tabs.active() {
+            siblings.push(&tab.content.engine.view);
+        }
+        siblings.extend(window.library_view.iter().map(|side| &side.view));
+        if engine::clip_view(
+            &self.toolbar,
+            &siblings,
+            areas.as_deref(),
+            self.window.scale_factor(),
+        )
+        .is_err()
+        {
+            self.diagnostics.record(DiagnosticCode::CommandFailed);
+        }
     }
 
     /// Only the active tab of the focused window may ask for a permission; a
@@ -2131,7 +2157,6 @@ impl Session {
         self.claim_permissions();
         let active = self.tabs.active_index();
         let panel = self.effective_panel();
-        let menu_open = self.windows[self.current].menu_open;
         let now = self.started.elapsed();
         let window = &mut self.windows[self.current];
         for (index, tab) in window.tabs.items.iter_mut().enumerate() {
@@ -2150,7 +2175,7 @@ impl Session {
             }
             tab.content
                 .engine
-                .set_visible(index == active && panel.is_none() && !menu_open)?;
+                .set_visible(index == active && panel.is_none())?;
         }
         self.resize()?;
         self.focus_active()
@@ -2164,8 +2189,8 @@ impl Session {
         if self.focus_pending || !self.is_focused() {
             return Ok(());
         }
-        // An open dropdown hides the page, so keys (Escape, arrows) must reach the
-        // toolbar that shows it, also when it opened without a click.
+        // Keys (Escape, arrows) must reach the toolbar that shows an open dropdown,
+        // also when it opened without a click.
         if self.effective_panel().is_some() || self.menu_open {
             self.toolbar.focus()?;
         } else if let Some(tab) = self.tabs.active() {
@@ -2695,33 +2720,39 @@ impl Session {
                     .spawn()?;
             }
             Command::SetMenuOpen(open) => {
-                self.menu_wanted = open;
                 if !open {
                     self.menu_folder = None;
+                    self.menu_area = None;
                 }
-                if !open {
-                    if self.menu_open {
-                        self.menu_open = false;
-                        self.activate()?;
-                    }
-                } else if !self.menu_open {
-                    let window = self.window.id();
-                    let proxy = self.proxy.clone();
-                    let page = self
-                        .tabs
-                        .active()
-                        .filter(|_| self.effective_panel().is_none())
-                        .map(|tab| &tab.content.engine.view);
-                    // A still of the page first, so the sidebar never shows a gap.
-                    let captured = page.is_some_and(|view| {
-                        engine::capture_snapshot(view, move |data| {
-                            let _ = proxy.send_event(Event::MenuSnapshot(window, data));
-                        })
-                        .is_ok()
-                    });
-                    if !captured {
-                        self.show_menu(None)?;
-                    }
+                if open != self.menu_open {
+                    self.menu_open = open;
+                    self.activate()?;
+                }
+            }
+            Command::SetMenuArea {
+                x,
+                y,
+                width,
+                height,
+                radius,
+            } => {
+                let area = engine::ClipArea {
+                    x,
+                    y,
+                    width,
+                    height,
+                    radius: radius.clamp(0.0, 32.0),
+                };
+                if !self.menu_open
+                    || ![x, y, width, height, radius].iter().all(|v| v.is_finite())
+                    || width <= 0.0
+                    || height <= 0.0
+                {
+                    return Ok(());
+                }
+                if self.menu_area != Some(area) {
+                    self.menu_area = Some(area);
+                    self.resize()?;
                 }
             }
             Command::AddExtension => {
@@ -3767,6 +3798,25 @@ mod tests {
         assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 3);
     }
 
+    /// A dropdown over a webpage moves nothing: the page and library keep their
+    /// places (and keep running), and only the toolbar grows down its column to
+    /// hold the dropdown. The toolbar is then clipped (see `clip_toolbar`).
+    #[test]
+    fn a_dropdown_keeps_the_page_in_place() {
+        for vertical in [false, true] {
+            for library in [None, Some(360.0)] {
+                let page = layout(1200.0, 820.0, 119.0, vertical, library, Full::None);
+                let menu = layout(1200.0, 820.0, 119.0, vertical, library, Full::Dropdown);
+                assert_eq!(menu.page, page.page);
+                assert_eq!(menu.library, page.library);
+                assert_eq!(menu.tabs, page.tabs);
+                assert_eq!(menu.toolbar.0, page.toolbar.0);
+                assert_eq!(menu.toolbar.2, page.toolbar.2);
+                assert_eq!(menu.toolbar.3, 820.0);
+            }
+        }
+    }
+
     #[test]
     fn the_library_keeps_room_for_the_page() {
         let plan = layout(1200.0, 820.0, 119.0, true, Some(LIBRARY_MAX), Full::None);
@@ -4328,11 +4378,6 @@ impl ApplicationHandler<Event> for App {
             Event::Extension(reply) => session.extension_reply(reply),
             // Shown by the render that follows every event.
             Event::Blocked(_) => {}
-            Event::MenuSnapshot(_, data) => {
-                if let Err(error) = session.show_menu(data) {
-                    session.notice = format!("Error: {error}");
-                }
-            }
             Event::ToolbarAutofillCleared(success) => {
                 if success && !session.private {
                     session.settings.toolbar_autofill_cleared = true;
@@ -4355,6 +4400,19 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::Page(id, event) => session.page_event(id, event),
+            // The page was pressed while a dropdown was open over it: close it, as
+            // a press anywhere else in the toolbar would.
+            Event::PageFocused(id) => {
+                if session.menu_open
+                    && session.tabs.active().is_some_and(|tab| tab.id == id)
+                    && session
+                        .toolbar
+                        .evaluate_script("typeof closeDropdown==='function'&&closeDropdown(false)")
+                        .is_err()
+                {
+                    session.diagnostics.record(DiagnosticCode::CommandFailed);
+                }
+            }
             Event::StorageError => {
                 session.diagnostics.record(DiagnosticCode::SessionSaveFailed);
                 *session.last_snapshot.borrow_mut()=None;

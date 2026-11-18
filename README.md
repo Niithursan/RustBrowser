@@ -634,7 +634,7 @@ the old extension in Rust Browser and add the new folder.
 
 Camera, microphone, geolocation and notifications can prompt on the active tab after
 a user-initiated request. The request opens as a dropdown under the site-information
-badge, over a dimmed still of the page that asked, and names the requesting site and
+badge, over the page that asked (which keeps running), and names the requesting site and
 what it wants ("meet.example.com wants to use your camera"). Keyboard focus starts on
 **Don't allow**, and Allow does nothing for the first half second so the second click
 of a double-click on the page cannot allow by accident. Choose Allow or Don't allow, with optional remembering for that exact

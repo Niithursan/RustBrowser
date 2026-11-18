@@ -89,8 +89,17 @@ pub enum Command {
     ExitBrowser,
     SetRestoreSession(bool),
     /// A dropdown (the menu, the star, the shield, site information or a
-    /// bookmarks-bar folder) opened or closed over a still of the page.
+    /// bookmarks-bar folder) opened or closed.
     SetMenuOpen(bool),
+    /// Where the open dropdown is drawn, in the toolbar view's CSS pixels.
+    SetMenuArea {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        /// Corner radius of the dropdown, so the clip follows its rounded shape.
+        radius: f64,
+    },
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,
     /// Privacy & security > Extensions > Add from folder (native folder dialog).

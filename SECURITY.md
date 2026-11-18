@@ -36,14 +36,14 @@
   fetched by the toolbar. New-tab backgrounds are CSS drawn from the theme tokens; no
   image is stored or downloaded.
 
-## v0.21 menu sidebar
+## v0.21 dropdowns over the page
 
-- While the menu sidebar is open, the browser captures one JPEG still of the visible
-  page with WebView2's `CapturePreview` into memory, checks it is a JPEG of at most
-  6 MiB, and shows it in the toolbar as a `data:` image behind the sidebar. It is never
-  written to disk and is discarded when the sidebar closes. The toolbar's content
-  security policy is unchanged (`img-src data:` already allowed tab icons). The live
-  page is hidden, not unloaded, while the sidebar is open.
+- Dropdowns no longer capture the page. While one is open over a webpage, the trusted
+  toolbar view is raised above the page and clipped to the chrome and the dropdown;
+  the page stays a separate, unprivileged view and only receives input outside that
+  clip. The dropdown's position comes from the toolbar document, and the browser
+  ignores it unless a dropdown is open and every value is finite and positive.
+  (Earlier v0.21 builds showed an in-memory JPEG still of the page instead.)
 
 ## v0.20 extensions, layout and the first release
 

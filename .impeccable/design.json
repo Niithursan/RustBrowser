@@ -592,8 +592,8 @@
         "section": "elevation"
       },
       {
-        "name": "The Still-Page Rule",
-        "body": "While a dropdown is open, the page behind it is a still image under a scrim, never live content. Floating chrome must not depend on drawing over a live page.",
+        "name": "The Live-Page Rule",
+        "body": "While a dropdown is open, the page behind it stays live and undimmed: video keeps playing and a press on the page closes the dropdown. Over a webpage the toolbar is clipped to the chrome and the dropdown's rounded shape, so the dropdown's own shadow is not drawn there; its Hairline border marks its edge. Over a full panel (the new-tab page, Settings) the panel is dimmed by the menu backdrop scrim.",
         "section": "elevation"
       }
     ],
@@ -613,7 +613,7 @@
       "**Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns, menus and the confirmation dialog get the Float shadow.",
       "**Don't** use the error colour for anything that is not a problem or a destructive action.",
       "**Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.",
-      "**Don't** draw floating chrome over a live page; use the still-page backdrop.",
+      "**Don't** freeze or dim the page behind a dropdown; clip the toolbar to the dropdown so the page keeps running.",
       "**Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.",
       "**Don't** set anything else in the toolbar larger than the address origin, or at 600 weight and 15px or more."
     ]

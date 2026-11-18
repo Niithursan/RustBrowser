@@ -120,7 +120,6 @@ html[data-maximized=true] .icon-restore{display:inline}
 #folder-panel .muted{padding:4px 8px}
 /* Transparent: a full panel (the new-tab page, Settings) stays visible, dimmed, behind a dropdown; a page still covers it. */
 #menu-backdrop{position:fixed;z-index:19;top:var(--chrome-height);left:0;right:0;bottom:0;background:transparent}
-#menu-backdrop img{display:block;width:100%;height:100%;object-fit:cover;object-position:left top}
 #menu-backdrop::after{content:'';position:absolute;inset:0;background:var(--scrim)}
 #settings-index{position:sticky;top:var(--head-height,56px);z-index:2;display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px;padding:8px 0;background:var(--panel);border-bottom:1px solid var(--line)}
 #settings-index button{height:28px;padding:0 8px;border-color:transparent;background:transparent;font-size:12px;color:var(--secondary)}
@@ -688,8 +687,9 @@ function splitOrigin(host,hostname){
 }
 function updateAddressView(){const view=byId('address-view'),originEl=view.firstChild,restEl=view.lastChild;let sub='',root='',rest='';try{const u=new URL(input.value);if(u.protocol==='http:'||u.protocol==='https:'){[sub,root]=splitOrigin(u.host,u.hostname);rest=(u.pathname==='/'&&!u.search&&!u.hash?'':u.pathname)+u.search+u.hash}}catch{}view.hidden=!root;originEl.firstChild.textContent=sub;originEl.lastChild.textContent=root;restEl.textContent=rest}
 // Dropdowns: the menu, the star, the shield, site information and bookmarks-bar folders.
-// One is open at a time. While one is open the toolbar fills the window over a still of
-// the page (the live page is hidden), so nothing is ever drawn over another view.
+// One is open at a time. While one is open the toolbar spans the window, but over a webpage
+// the browser clips it to the chrome and the dropdown it is told about, so the live page
+// keeps running and stays clickable around it.
 let dropdown=null;
 function openDropdown(anchor,panel,focus){
     if(dropdown){if(dropdown.panel===panel&&dropdown.anchor===anchor)return;hideDropdown()}else send('set_menu_open',true);
@@ -697,11 +697,17 @@ function openDropdown(anchor,panel,focus){
     (focus||panel.querySelector('button:not(:disabled),input,select'))?.focus({preventScroll:true});
 }
 function hideDropdown(){const {anchor,panel}=dropdown;dropdown=null;if(anchor.isConnected)anchor.setAttribute('aria-expanded','false');panel.hidden=true;byId('shortcut-list').hidden=true;byId('show-shortcuts').setAttribute('aria-expanded','false');if(panel===byId('site-panel'))answerPermission('deny',false)}
-function closeDropdown(returnFocus){if(!dropdown)return;const anchor=dropdown.anchor;hideDropdown();const backdrop=byId('menu-backdrop');backdrop.hidden=true;backdrop.replaceChildren();send('set_menu_open',false);if(returnFocus&&anchor.isConnected)anchor.focus()}
+function closeDropdown(returnFocus){if(!dropdown)return;const anchor=dropdown.anchor;hideDropdown();byId('menu-backdrop').hidden=true;menuArea='';send('set_menu_open',false);if(returnFocus&&anchor.isConnected)anchor.focus()}
 function toggleDropdown(anchor,panel){if(dropdown&&dropdown.anchor===anchor)closeDropdown(false);else openDropdown(anchor,panel)}
 // Under the button, left-aligned, or right-aligned when it would leave the window.
-function placeDropdown(){if(!dropdown)return;const {anchor,panel}=dropdown,r=anchor.getBoundingClientRect();panel.style.top=Math.round(r.bottom+4)+'px';panel.style.maxHeight=Math.max(120,Math.floor(innerHeight-r.bottom-16))+'px';const width=panel.offsetWidth;let left=r.left;if(left+width>innerWidth-8)left=r.right-width;panel.style.left=Math.max(8,Math.round(left))+'px'}
+function placeDropdown(){if(!dropdown)return;const {anchor,panel}=dropdown,r=anchor.getBoundingClientRect();panel.style.top=Math.round(r.bottom+4)+'px';panel.style.maxHeight=Math.max(120,Math.floor(innerHeight-r.bottom-16))+'px';const width=panel.offsetWidth;let left=r.left;if(left+width>innerWidth-8)left=r.right-width;panel.style.left=Math.max(8,Math.round(left))+'px';sendMenuArea()}
+// Tell the browser where the dropdown is, so only it (and the chrome) covers the page.
+let menuArea='';
+function sendMenuArea(){if(!dropdown)return;const b=dropdown.panel.getBoundingClientRect(),area={x:b.left,y:b.top,width:b.width,height:b.height,radius:parseFloat(getComputedStyle(dropdown.panel).borderTopLeftRadius)||0},key=JSON.stringify(area);if(key!==menuArea&&b.width>0&&b.height>0){menuArea=key;send('set_menu_area',area)}}
 addEventListener('resize',placeDropdown);
+// A dropdown's content can grow or shrink while open (folders, the shortcuts list).
+const dropdownSize=new ResizeObserver(()=>sendMenuArea());
+for(const panel of document.querySelectorAll('.dropdown'))dropdownSize.observe(panel);
 byId('more').onclick=()=>toggleDropdown(byId('more'),byId('tab-actions'));
 // Up and Down move through a menu's items, Home and End jump to the ends; Tab still works.
 function bindMenuKeys(menu){menu.addEventListener('keydown',e=>{const items=[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')];if(!items.length)return;const at=items.indexOf(document.activeElement);const to=e.key==='ArrowDown'?items[(at+1)%items.length]:e.key==='ArrowUp'?items[(at+items.length-1)%items.length]:e.key==='Home'?items[0]:e.key==='End'?items.at(-1):null;if(to){e.preventDefault();to.focus()}})}
@@ -712,8 +718,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dropdown){e.prevent
 document.addEventListener('pointerdown',e=>{if(dropdown&&!dropdown.panel.contains(e.target)&&!e.target.closest('[aria-haspopup],#menu-backdrop'))closeDropdown(false)},true);
 // Items that take you somewhere close the menu; zoom, pin, move, keep awake and the shortcuts list keep it open.
 byId('tab-actions').addEventListener('click',e=>{const b=e.target.closest('button');if(b&&!['show-shortcuts','zoom-in','zoom-out','reset-zoom','pin-active','move-left','move-right','keep-awake'].includes(b.id))closeDropdown(false)});
-// The still of the page exists only while a dropdown is open; without one the backdrop stays plain.
-window.showMenuSnapshot=url=>{const backdrop=byId('menu-backdrop');if(typeof url==='string'&&/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(url)){const img=document.createElement('img');img.id='menu-snapshot';img.alt='';img.src=url;backdrop.replaceChildren(img)}else backdrop.replaceChildren()};
 window.focusAddress=()=>{input.focus();input.select();editing=true};
 
 byId('pin-active').onclick=()=>send('pin_active');byId('move-left').onclick=()=>send('move_active',true);byId('move-right').onclick=()=>send('move_active',false);byId('keep-awake').onclick=()=>send('keep_awake');byId('wake-tab').onclick=()=>send('wake_tab');
