@@ -242,7 +242,7 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 - **Disabled Grey**: disabled control text.
 - **Warning Coral**: *Not encrypted* / failed connection, notices, settings errors.
 - **Warning Coral** also marks destructive buttons; a notice in it is always a problem.
-- Hover and pressed states are translucent washes of the text colour (7% and 14% on dark, 6% and 12% on light), not separate hues. The menu backdrop is a 45% black scrim (28% ink on Light).
+- Hover and pressed states are translucent washes of the text colour (7% and 14% on dark, 6% and 12% on light), not separate hues. The menu backdrop over a full panel is a 45% black scrim (28% ink on Light).
 
 ### Neutral (Light)
 - **Paper Strip / Paper Surface / Paper Panel / Paper Card / Paper Field**: the same five layers, from greyest to white.
@@ -276,7 +276,7 @@ no web font is ever loaded (the toolbar's security policy forbids it).
 - **Label** (400, 12px): secondary text, form labels, the connection word (600), the shield count (600), shortcut lists.
 
 ### Named Rules
-**The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title is bold (700) but stays at 13px, so it marks selection without competing with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
+**The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title keeps regular weight at 13px; selection is marked by colour, surface and the top signal rule, so it never competes with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
 
 **The Plain Word Rule.** State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, "Private"), so it survives high contrast, colour blindness and Narrator.
 
@@ -318,7 +318,7 @@ as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlin
 ### Named Rules
 **The Float-Only Rule.** Only a surface that floats over the page gets a shadow. Cards, buttons, tabs and panels never do.
 
-**The Still-Page Rule.** While a dropdown is open, the page behind it is a still image under a scrim, never live content. Floating chrome must not depend on drawing over a live page.
+**The Live-Page Rule.** While a dropdown is open, the page behind it stays live and undimmed: video keeps playing and a press on the page closes the dropdown. Over a webpage the toolbar is clipped to the chrome and the dropdown's rounded shape, so the dropdown's own shadow is not drawn there; its Hairline border marks its edge. Over a full panel (the new-tab page, Settings) the panel is dimmed by the menu backdrop scrim.
 
 ## Shapes
 
@@ -363,12 +363,12 @@ an extension is on, with its blocked-request count in 12px/600).
 
 ### Tabs
 - **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
-- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a bold (700) 13px title in Instrument White.
+- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a regular-weight 13px title in Instrument White.
 - **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
 - **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
 ### Dropdowns
-- Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over a still of the page.
+- Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over the live page.
 - **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.
 - **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 

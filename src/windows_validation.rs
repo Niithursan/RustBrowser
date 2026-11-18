@@ -2242,8 +2242,9 @@ fn view_visible(view: &wry::WebView) -> bool {
     unsafe { view.controller().IsVisible(&mut visible) }.is_ok() && visible.as_bool()
 }
 
-/// The menu opens as a dropdown under its button: the toolbar fills the window over
-/// a still of the page, the live page is hidden, and Escape restores the page.
+/// The menu opens as a dropdown under its button. The toolbar spans the window but is
+/// clipped to the chrome and the dropdown, so the live page stays shown around it;
+/// focusing the page closes the dropdown and removes the clip.
 fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
@@ -2280,12 +2281,13 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                         "The toolbar does not fill the window: {bounds:?} in {size:?}"
                     ));
                 }
-                if view_visible(&s.tabs.items[0].content.engine.view) {
-                    return Err("The live page stayed visible under the sidebar".into());
+                if !view_visible(&s.tabs.items[0].content.engine.view) {
+                    return Err("The live page was hidden under the dropdown".into());
                 }
+                check_live_under_dropdown(s)?;
                 eval_toolbar(
                     p,
-                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),b=document.getElementById('more').getBoundingClientRect(),i=document.getElementById('menu-snapshot');return JSON.stringify({under:m.top>=b.bottom&&m.top-b.bottom<12,aligned:Math.abs(m.right-b.right)<=1,inside:m.bottom<=innerHeight&&m.left>=0,full:m.top<=0||m.bottom>=innerHeight-1&&m.height>innerHeight*0.95,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,expanded:document.getElementById('more').getAttribute('aria-expanded'),still:!!i&&i.src.startsWith('data:image/jpeg;base64,')})})()",
+                    "(()=>{const m=document.getElementById('tab-actions').getBoundingClientRect(),b=document.getElementById('more').getBoundingClientRect(),a=JSON.parse(menuArea||'null');return JSON.stringify({under:m.top>=b.bottom&&m.top-b.bottom<12,aligned:Math.abs(m.right-b.right)<=1,inside:m.bottom<=innerHeight&&m.left>=0,full:m.top<=0||m.bottom>=innerHeight-1&&m.height>innerHeight*0.95,narrow:m.width<innerWidth/2,shown:!document.getElementById('tab-actions').hidden,expanded:document.getElementById('more').getAttribute('aria-expanded'),area:!!a&&Math.abs(a.x-m.left)<1&&Math.abs(a.y-m.top)<1&&Math.abs(a.height-m.height)<1})})()",
                 )?;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(10) {
@@ -2304,19 +2306,23 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err(format!("The menu is not a dropdown under its button: {r}"));
                 }
-                if r["still"] != true {
-                    return Err(format!("No page still behind the menu: {r}"));
+                if r["area"] != true {
+                    return Err(format!("The browser was not told where the menu is: {r}"));
                 }
                 let s = p.app.session.as_mut().ok_or("No session")?;
-                if s.windows[0]
-                    .toolbar
-                    .evaluate_script(
-                        "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))",
-                    )
-                    .is_err()
-                {
-                    return Err("Escape script failed".into());
+                let menu = s.windows[0].menu_area.ok_or("No menu area")?;
+                let clip = toolbar_clip(s, 0).ok_or("The toolbar is not clipped")?;
+                let scale = s.window.scale_factor();
+                if (clip.bottom as f64) < (menu.y + menu.height) * scale - 1.0 {
+                    return Err(format!("The clip cuts off the menu: {clip:?} {menu:?}"));
                 }
+                // A press on the page moves focus there, which closes the dropdown.
+                s.tabs.items[0]
+                    .content
+                    .engine
+                    .view
+                    .focus()
+                    .map_err(|e| e.to_string())?;
                 p.next();
             }
         }
@@ -2332,14 +2338,17 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err(format!("The toolbar did not shrink back: {bounds:?}"));
                 }
+                if toolbar_clip(s, 0).is_some() {
+                    return Err("The toolbar kept its clip after the menu closed".into());
+                }
                 p.log.push(
-                    "menu: a dropdown under its button over a page still; Escape restores the page"
+                    "menu: a dropdown under its button over the live page; focusing the page closes it"
                         .into(),
                 );
                 p.done = true;
                 el.exit();
             } else if p.at.elapsed() > Duration::from_secs(10) {
-                return Err("Escape did not close the sidebar and restore the page".into());
+                return Err("Focusing the page did not close the dropdown".into());
             }
         }
         _ => {}
@@ -2659,13 +2668,74 @@ fn check_no_overlap(s: &Session, step: &str) -> Result<(), String> {
 
 fn check_no_overlap_in(s: &Session, index: usize, step: &str) -> Result<(), String> {
     let views = shown_views_in(s, index);
+    // An open dropdown's toolbar spans the page on purpose, clipped to the chrome and
+    // the dropdown and raised above the page; only its clip must stay off the page.
+    let clipped = toolbar_clip(s, index);
+    if s.windows[index].menu_open && s.effective_panel().is_none() && clipped.is_none() {
+        return Err(format!("{step}: the dropdown's toolbar is not clipped"));
+    }
     for (i, (a, ra)) in views.iter().enumerate() {
         for (b, rb) in &views[i + 1..] {
+            if clipped.is_some() && (*a == "toolbar" || *b == "toolbar") {
+                continue;
+            }
             let x = ra.right.min(rb.right) - ra.left.max(rb.left);
             let y = ra.bottom.min(rb.bottom) - ra.top.max(rb.top);
             if x > 1 && y > 1 {
                 return Err(format!("{step}: {a} {ra:?} overlaps {b} {rb:?}"));
             }
+        }
+    }
+    Ok(())
+}
+
+/// The bounding box of the toolbar host's window region (relative to the host), or
+/// `None` when the toolbar is not clipped.
+fn toolbar_clip(s: &Session, index: usize) -> Option<windows::Win32::Foundation::RECT> {
+    use windows::Win32::Graphics::Gdi::{GDI_REGION_TYPE, GetWindowRgnBox};
+    let mut host = windows::Win32::Foundation::HWND::default();
+    let mut r = windows::Win32::Foundation::RECT::default();
+    // SAFETY: read-only queries on this fixture's own controller and its host.
+    let kind = unsafe {
+        s.windows[index]
+            .toolbar
+            .controller()
+            .ParentWindow(&mut host)
+            .ok()?;
+        GetWindowRgnBox(host, &mut r)
+    };
+    (kind != GDI_REGION_TYPE(0)).then_some(r)
+}
+
+/// While a dropdown is open over a webpage, the page is still shown and running, and
+/// the clipped toolbar leaves a point of the page far from the menu (its lower left
+/// corner; menus open under the toolbar) uncovered.
+fn check_live_under_dropdown(s: &Session) -> Result<(), String> {
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, GetWindowRgn, PtInRegion};
+    let w = &s.windows[0];
+    if !w.menu_open || !view_visible(&w.tabs.items[0].content.engine.view) {
+        return Err("The live page was hidden under the dropdown".into());
+    }
+    let mut host = windows::Win32::Foundation::HWND::default();
+    let mut r = windows::Win32::Foundation::RECT::default();
+    // SAFETY: read-only queries on this fixture's own windows; the copied region
+    // is created and deleted here.
+    unsafe {
+        w.toolbar
+            .controller()
+            .ParentWindow(&mut host)
+            .map_err(|e| e.to_string())?;
+        windows::Win32::UI::WindowsAndMessaging::GetClientRect(host, &mut r)
+            .map_err(|e| e.to_string())?;
+        let region = CreateRectRgn(0, 0, 0, 0);
+        let kind = GetWindowRgn(host, region);
+        let covered = PtInRegion(region, 8, r.bottom - 8).as_bool();
+        let _ = DeleteObject(region.into());
+        if kind.0 == 0 {
+            return Err("The dropdown's toolbar is not clipped".into());
+        }
+        if covered {
+            return Err(format!("The toolbar clip covers the page: {r:?}"));
         }
     }
     Ok(())
@@ -2865,8 +2935,8 @@ fn shield_report(p: &Probe) -> Result<Option<serde_json::Value>, String> {
 }
 
 /// The shield counts exactly the requests the test blocker stops on a page, shows
-/// that count at the end of the address line and in its dropdown (over a still of
-/// the page), says what it cannot do, closes with Escape, and starts again at zero
+/// that count at the end of the address line and in its dropdown (over the live
+/// page), says what it cannot do, closes with Escape, and starts again at zero
 /// on the next page.
 fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
@@ -2932,8 +3002,8 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         3 if p.at.elapsed() > Duration::from_millis(800) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             check_no_overlap(s, "shield dropdown open")?;
-            if !s.windows[0].menu_open || view_visible(&s.tabs.items[0].content.engine.view) {
-                return Err("The shield dropdown should show over a still of the page".into());
+            if !s.windows[0].menu_open || !view_visible(&s.tabs.items[0].content.engine.view) {
+                return Err("The shield dropdown should show over the live page".into());
             }
             eval_toolbar(p, SHIELD_REPORT)?;
             p.next();
@@ -3060,7 +3130,7 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 return Err(format!("The shield should say no blocker is on: {r}"));
             }
             p.log
-                .push("shield: dropdown over a page still, Escape, reset, off".into());
+                .push("shield: dropdown over the live page, Escape, reset, off".into());
             // The switch in Privacy & security: off removes the listener.
             p.command(el, 0, Command::SetCountBlocked(false))?;
             p.phase = 19;
@@ -4827,9 +4897,7 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err(format!("Wrong folder dropdown: {r}"));
                 }
-                if view_visible(&p.s()?.tabs.items[0].content.engine.view) {
-                    return Err("The live page stayed visible under the dropdown".into());
-                }
+                check_live_under_dropdown(p.s()?)?;
                 eval_toolbar(p, "document.querySelector('#folder-panel button').click()")?;
                 p.next();
             }
@@ -4920,7 +4988,7 @@ const STAR_REPORT: &str = "(()=>{const b=id=>document.getElementById(id),p=b('st
 
 /// Ctrl+D bookmarks the page and opens the star's dropdown to rename it, move it or
 /// remove it; the site badge opens connection information under itself. Both show
-/// over a still of the page and close with Escape.
+/// over the live page and close with Escape.
 fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     let waited = p.at.elapsed();
@@ -4983,9 +5051,7 @@ fn star_site_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 {
                     return Err(format!("Wrong star dropdown: {r}"));
                 }
-                if view_visible(&p.s()?.tabs.items[0].content.engine.view) {
-                    return Err("The live page stayed visible under the dropdown".into());
-                }
+                check_live_under_dropdown(p.s()?)?;
                 eval_toolbar(
                     p,
                     "document.getElementById('star-name').value='Renamed star';document.getElementById('star-done').click()",

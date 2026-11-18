@@ -66,11 +66,16 @@ slides over the page, and why the library is a column rather than a drawer.
 
 **Dropdowns.** The menu, the site-information badge, the star, the shield and the
 bookmarks-bar folders open dropdowns under their buttons. A dropdown is part of the
-toolbar document, so while one is open the toolbar view fills its column and the page
-view is hidden; the toolbar shows a JPEG still of the page (WebView2
-`CapturePreview`, kept in memory only) dimmed behind the dropdown. Over a full panel
-such as the new-tab page there is no still and the panel stays visible behind it. Only
-one dropdown is open; switching between dropdowns does not reload the still. A folder
+toolbar document, so while one is open over a webpage the toolbar view grows down its
+column above the page, which stays where it is and keeps running. The toolbar reports
+where the dropdown is drawn (`set_menu_area`), and the browser clips the toolbar's host
+window to the chrome strip plus the dropdown's rounded shape (`SetWindowRgn`) and
+raises it above the page. Outside that clip the page is visible and takes input; every
+view host has `WS_CLIPSIBLINGS` so the page never paints over the raised toolbar.
+Pressing the page gives it focus (`GotFocus`), which closes the dropdown. Over a full
+panel such as the new-tab page there is no page, so the toolbar covers its column
+unclipped and the panel stays visible, dimmed, behind the dropdown. Only one dropdown
+is open at a time. A folder
 dropdown asks the library worker for that folder's contents (`Filter::menu_folder`,
 set by the browser only) and the star's dropdown reads the current page's bookmark
 (`Filter::page`). A borderless popup window above the browser window was considered

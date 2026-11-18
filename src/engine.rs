@@ -257,81 +257,89 @@ fn favicon_data(stream: &windows::Win32::System::Com::IStream) -> Option<String>
     favicon_url(&bytes)
 }
 
-/// Largest page still passed to the toolbar while the menu sidebar is open.
-const MAX_SNAPSHOT: usize = 6 * 1024 * 1024;
+/// A rectangle with rounded corners, in logical pixels relative to a view.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClipArea {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub radius: f64,
+}
 
-/// Capture what the page shows now as a JPEG and send it as a data URL (or `None`
-/// when capturing failed), for the menu sidebar to show behind itself while the
-/// live page is hidden. Nothing is written to disk.
-pub fn capture_snapshot(
+/// Clip `view` to `areas` (scaled by `scale`) and raise it above its sibling
+/// views, or remove the clip when `areas` is `None`.
+///
+/// An open dropdown lets the toolbar view cover the live page so the menu can
+/// overlap it. Outside the clip the toolbar's window neither draws nor takes
+/// input, so the page below keeps playing and stays clickable. Every view host
+/// clips its siblings, so the page never paints over the raised toolbar.
+pub fn clip_view(
     view: &WebView,
-    reply: impl FnOnce(Option<String>) + 'static,
+    siblings: &[&WebView],
+    areas: Option<&[ClipArea]>,
+    scale: f64,
 ) -> windows::core::Result<()> {
-    // SAFETY: an in-memory stream and a capture on a live view, on its UI thread;
-    // the completion handler only reads the stream it was given.
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongPtrW, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SetWindowLongPtrW, SetWindowPos, WS_CLIPSIBLINGS,
+    };
+    let host = |view: &WebView| -> windows::core::Result<HWND> {
+        let mut hwnd = HWND::default();
+        // SAFETY: reads the host window of a live controller on its UI thread.
+        unsafe { view.controller().ParentWindow(&mut hwnd)? };
+        Ok(hwnd)
+    };
+    let hwnd = host(view)?;
+    // SAFETY: style, region and stacking changes on this process's own child
+    // windows, on their UI thread. A region given to SetWindowRgn is owned by the
+    // system afterwards; one that was not handed over is deleted here.
     unsafe {
-        let stream = windows::Win32::UI::Shell::SHCreateMemStream(None).ok_or_else(|| {
-            windows::core::Error::from_hresult(windows::core::HRESULT(0x8007000Eu32 as i32))
-        })?;
-        let read = stream.clone();
-        let mut reply = Some(reply);
-        view.webview().CapturePreview(
-            COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
-            &stream,
-            &webview2_com::CapturePreviewCompletedHandler::create(Box::new(move |result| {
-                let data = result.ok().and_then(|()| snapshot_data(&read));
-                if let Some(reply) = reply.take() {
-                    reply(data);
-                }
-                Ok(())
-            })),
+        for other in siblings.iter().map(|v| host(v)).chain([Ok(hwnd)]) {
+            let other = other?;
+            let style = GetWindowLongPtrW(other, GWL_STYLE);
+            if style & WS_CLIPSIBLINGS.0 as isize == 0 {
+                SetWindowLongPtrW(other, GWL_STYLE, style | WS_CLIPSIBLINGS.0 as isize);
+            }
+        }
+        let Some(areas) = areas else {
+            SetWindowRgn(hwnd, None, true);
+            return Ok(());
+        };
+        let region = CreateRectRgn(0, 0, 0, 0);
+        for area in areas {
+            let left = (area.x * scale).floor() as i32;
+            let top = (area.y * scale).floor() as i32;
+            let right = ((area.x + area.width) * scale).ceil() as i32;
+            let bottom = ((area.y + area.height) * scale).ceil() as i32;
+            let part = if area.radius > 0.0 {
+                // A rounded region leaves out its right and bottom edges; one more
+                // pixel keeps the dropdown's border.
+                let corner = (2.0 * area.radius * scale).round() as i32;
+                CreateRoundRectRgn(left, top, right + 1, bottom + 1, corner, corner)
+            } else {
+                CreateRectRgn(left, top, right, bottom)
+            };
+            CombineRgn(Some(region), Some(region), Some(part), RGN_OR);
+            let _ = DeleteObject(part.into());
+        }
+        if SetWindowRgn(hwnd, Some(region), true) == 0 {
+            let _ = DeleteObject(region.into());
+        }
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         )
     }
-}
-
-fn snapshot_data(stream: &windows::Win32::System::Com::IStream) -> Option<String> {
-    // SAFETY: rewinds and reads a stream this process created.
-    unsafe {
-        stream
-            .Seek(0, windows::Win32::System::Com::STREAM_SEEK_SET, None)
-            .ok()?;
-    }
-    let mut bytes = Vec::new();
-    let mut chunk = [0u8; 65536];
-    loop {
-        let mut read = 0u32;
-        // SAFETY: reads into a local buffer.
-        let result = unsafe {
-            stream.Read(
-                chunk.as_mut_ptr().cast(),
-                chunk.len() as u32,
-                Some(&mut read),
-            )
-        };
-        if result.is_err() {
-            return None;
-        }
-        if read == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&chunk[..read as usize]);
-        if bytes.len() > MAX_SNAPSHOT {
-            return None;
-        }
-    }
-    snapshot_url(&bytes)
-}
-
-/// A data URL for JPEG `bytes`, or `None` when they are empty, too large or not JPEG.
-pub fn snapshot_url(bytes: &[u8]) -> Option<String> {
-    use base64::Engine as _;
-    (!bytes.is_empty() && bytes.len() <= MAX_SNAPSHOT && bytes.starts_with(&[0xFF, 0xD8, 0xFF]))
-        .then(|| {
-            format!(
-                "data:image/jpeg;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(bytes)
-            )
-        })
 }
 
 /// A data URL for PNG `bytes`, or `None` when they are empty, too large or not PNG.
@@ -584,6 +592,15 @@ impl Engine {
             view.controller().add_ZoomFactorChanged(
                 &webview2_com::ZoomFactorChangedEventHandler::create(Box::new(move |_, _| {
                     let _ = zoom_proxy.send_event(Event::ZoomChanged(id));
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+            // A press on the page takes focus there, which closes an open dropdown.
+            let focus_proxy = proxy.clone();
+            view.controller().add_GotFocus(
+                &webview2_com::FocusChangedEventHandler::create(Box::new(move |_, _| {
+                    let _ = focus_proxy.send_event(Event::PageFocused(id));
                     Ok(())
                 })),
                 &mut token,
@@ -1028,21 +1045,5 @@ mod favicon_tests {
         let mut big = png.clone();
         big.resize(MAX_FAVICON + 1, 0);
         assert!(favicon_url(&big).is_none());
-    }
-
-    #[test]
-    fn only_bounded_jpeg_snapshots_reach_the_toolbar() {
-        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
-        assert!(
-            snapshot_url(&jpeg)
-                .unwrap()
-                .starts_with("data:image/jpeg;base64,")
-        );
-        assert!(snapshot_url(b"").is_none());
-        assert!(snapshot_url(b"\x89PNG\r\n\x1a\n").is_none());
-        assert!(snapshot_url(b"<script>").is_none());
-        let mut big = jpeg.to_vec();
-        big.resize(MAX_SNAPSHOT + 1, 0);
-        assert!(snapshot_url(&big).is_none());
     }
 }

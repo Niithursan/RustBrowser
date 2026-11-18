@@ -2,6 +2,11 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Live page behind dropdowns: the menu, star, shield, site information, permission
+  prompt and bookmarks-bar folders no longer freeze the page behind a still image.
+  The page keeps playing and updating while a dropdown is open; the toolbar view is
+  clipped to the chrome and the dropdown and raised above the page, and pressing the
+  page closes the dropdown. The selected tab's title is no longer bold.
 - Bookmark icons and flush window controls: bookmarks now persist validated raster
   `data:image/...` site icons in SQLite (schema 5), importing `ICON` data URLs from
   Firefox, Chrome and Edge HTML exports (and backfilling missing icons on existing

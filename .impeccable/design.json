@@ -527,7 +527,7 @@
       "refersTo": "tab",
       "description": "Card tabs merged into the window top edge with flush 46x36 caption controls; the active tab joins the toolbar and carries a 2px signal rule.",
       "html": "<div class=\"ds-strip\"><div class=\"ds-tab ds-active\"><span class=\"ds-title\">New tab</span><button class=\"ds-x\" type=\"button\" aria-label=\"Close tab\">×</button></div><div class=\"ds-tab\"><span class=\"ds-title\">The Rust Programming Language</span><button class=\"ds-x\" type=\"button\" aria-label=\"Close tab\">×</button></div><div class=\"ds-wc\"><button type=\"button\" aria-label=\"Minimize\">−</button><button type=\"button\" aria-label=\"Maximize\">□</button><button class=\"ds-wc-close\" type=\"button\" aria-label=\"Close\">×</button></div></div><div class=\"ds-bar\"></div>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-strip{display:flex;align-items:flex-end;gap:2px;padding:6px 0 0 8px;background:var(--strip);font:13px/1.4 var(--ui)}.ds-tab{position:relative;display:flex;align-items:center;gap:4px;height:36px;max-width:240px;padding:0 4px 0 12px;border-radius:10px 10px 0 0;color:var(--secondary);cursor:grab}.ds-tab:not(.ds-active):hover{background:var(--hover);color:var(--text)}.ds-tab:not(.ds-active)+.ds-tab:not(.ds-active)::before{content:'';position:absolute;left:-2px;top:10px;bottom:10px;width:1px;background:var(--line)}.ds-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}.ds-active{background:var(--surface);box-shadow:inset 0 2px 0 var(--accent);color:var(--text)}.ds-active .ds-title{font-weight:700}.ds-x{width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;opacity:.55;cursor:pointer}.ds-tab:hover .ds-x,.ds-active .ds-x{opacity:1}.ds-x:hover{background:var(--hover)}.ds-wc{display:inline-flex;align-self:flex-start;margin:-6px 0 0 auto}.ds-wc button{width:46px;height:36px;border:0;background:transparent;color:var(--secondary);cursor:pointer}.ds-wc button:hover{background:var(--hover);color:var(--text)}.ds-wc .ds-wc-close:hover{background:#C42B1C;color:#fff}.ds-bar{height:12px;background:var(--surface)}"
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-strip{display:flex;align-items:flex-end;gap:2px;padding:6px 0 0 8px;background:var(--strip);font:13px/1.4 var(--ui)}.ds-tab{position:relative;display:flex;align-items:center;gap:4px;height:36px;max-width:240px;padding:0 4px 0 12px;border-radius:10px 10px 0 0;color:var(--secondary);cursor:grab}.ds-tab:not(.ds-active):hover{background:var(--hover);color:var(--text)}.ds-tab:not(.ds-active)+.ds-tab:not(.ds-active)::before{content:'';position:absolute;left:-2px;top:10px;bottom:10px;width:1px;background:var(--line)}.ds-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}.ds-active{background:var(--surface);box-shadow:inset 0 2px 0 var(--accent);color:var(--text)}.ds-x{width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:inherit;opacity:.55;cursor:pointer}.ds-tab:hover .ds-x,.ds-active .ds-x{opacity:1}.ds-x:hover{background:var(--hover)}.ds-wc{display:inline-flex;align-self:flex-start;margin:-6px 0 0 auto}.ds-wc button{width:46px;height:36px;border:0;background:transparent;color:var(--secondary);cursor:pointer}.ds-wc button:hover{background:var(--hover);color:var(--text)}.ds-wc .ds-wc-close:hover{background:#C42B1C;color:#fff}.ds-bar{height:12px;background:var(--surface)}"
     },
     {
       "name": "Dropdown Menu",
@@ -578,7 +578,7 @@
       },
       {
         "name": "The Origin-First Rule",
-        "body": "The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title is bold (700) but stays at 13px, so it marks selection without competing with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.",
+        "body": "The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title keeps regular weight at 13px; selection is marked by colour, surface and the top signal rule, so it never competes with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.",
         "section": "typography"
       },
       {
@@ -592,8 +592,8 @@
         "section": "elevation"
       },
       {
-        "name": "The Still-Page Rule",
-        "body": "While a dropdown is open, the page behind it is a still image under a scrim, never live content. Floating chrome must not depend on drawing over a live page.",
+        "name": "The Live-Page Rule",
+        "body": "While a dropdown is open, the page behind it stays live and undimmed: video keeps playing and a press on the page closes the dropdown. Over a webpage the toolbar is clipped to the chrome and the dropdown's rounded shape, so the dropdown's own shadow is not drawn there; its Hairline border marks its edge. Over a full panel (the new-tab page, Settings) the panel is dimmed by the menu backdrop scrim.",
         "section": "elevation"
       }
     ],
@@ -613,7 +613,7 @@
       "**Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns, menus and the confirmation dialog get the Float shadow.",
       "**Don't** use the error colour for anything that is not a problem or a destructive action.",
       "**Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.",
-      "**Don't** draw floating chrome over a live page; use the still-page backdrop.",
+      "**Don't** freeze or dim the page behind a dropdown; clip the toolbar to the dropdown so the page keeps running.",
       "**Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.",
       "**Don't** set anything else in the toolbar larger than the address origin, or at 600 weight and 15px or more."
     ]
