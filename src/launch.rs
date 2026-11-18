@@ -5,7 +5,7 @@
 //! - `rust-browser.exe --single-argument <link>`: the registered form. Everything
 //!   after the marker is one link, taken verbatim from the raw command line, so
 //!   quotes or spaces inside it cannot create further arguments.
-//! - `rust-browser.exe [--private] [--new-window] [--] [<link> ...]`.
+//! - `rust-browser.exe [--private] [--new-window] [--profile=<id>] [--] [<link> ...]`.
 //! - `rust-browser.exe --version`.
 //!
 //! Links must be explicit http:// or https:// addresses (`navigation::external`).
@@ -24,6 +24,9 @@ pub enum Launch {
     Open {
         private: bool,
         new_window: bool,
+        /// The profile to open (`crate::profiles::valid_id`); `None` lets the
+        /// browser choose (the picker, or the last used profile for links).
+        profile: Option<String>,
         links: Vec<String>,
     },
 }
@@ -35,6 +38,7 @@ pub enum LaunchError {
     UnknownOption(String),
     TooManyLinks,
     Link(String),
+    Profile,
 }
 
 impl std::fmt::Display for LaunchError {
@@ -47,6 +51,7 @@ impl std::fmt::Display for LaunchError {
             }
             Self::TooManyLinks => write!(f, "At most {MAX_LINKS} links can be opened at once."),
             Self::Link(reason) => write!(f, "The link was not opened. {reason}"),
+            Self::Profile => write!(f, "The command line names a profile that is not valid."),
         }
     }
 }
@@ -143,6 +148,7 @@ pub fn parse(raw: &[u16]) -> Result<Launch, LaunchError> {
         return Ok(Launch::Open {
             private: false,
             new_window: false,
+            profile: None,
             links: Vec::new(),
         });
     };
@@ -158,11 +164,13 @@ pub fn parse(raw: &[u16]) -> Result<Launch, LaunchError> {
         return Ok(Launch::Open {
             private: false,
             new_window: false,
+            profile: None,
             links: vec![link(value)?],
         });
     }
     let mut private = false;
     let mut new_window = false;
+    let mut profile = None;
     let mut links = Vec::new();
     let mut options = true;
     for token in tokens.iter().skip(1) {
@@ -173,6 +181,13 @@ pub fn parse(raw: &[u16]) -> Result<Launch, LaunchError> {
                 "--private" => private = true,
                 "--new-window" => new_window = true,
                 "--" => options = false,
+                _ if value.starts_with("--profile=") && profile.is_none() => {
+                    let id = &value["--profile=".len()..];
+                    if !crate::profiles::valid_id(id) {
+                        return Err(LaunchError::Profile);
+                    }
+                    profile = Some(id.to_string());
+                }
                 // The marker only counts as the first argument.
                 _ => {
                     let shown: String = value.chars().take(40).collect();
@@ -189,6 +204,7 @@ pub fn parse(raw: &[u16]) -> Result<Launch, LaunchError> {
     Ok(Launch::Open {
         private,
         new_window,
+        profile,
         links,
     })
 }
@@ -209,6 +225,7 @@ mod tests {
         Ok(Launch::Open {
             private: false,
             new_window: false,
+            profile: None,
             links: links.iter().map(|l| l.to_string()).collect(),
         })
     }
@@ -275,9 +292,56 @@ mod tests {
             Ok(Launch::Open {
                 private: true,
                 new_window: true,
+                profile: None,
                 links: vec!["https://example.com/".into()]
             })
         );
+    }
+
+    #[test]
+    fn a_profile_is_one_strict_option() {
+        assert_eq!(
+            run("--profile=p2 --private https://example.com/"),
+            Ok(Launch::Open {
+                private: true,
+                new_window: false,
+                profile: Some("p2".into()),
+                links: vec!["https://example.com/".into()]
+            })
+        );
+        assert_eq!(
+            run("--profile=default"),
+            Ok(Launch::Open {
+                private: false,
+                new_window: false,
+                profile: Some("default".into()),
+                links: vec![]
+            })
+        );
+        for bad in [
+            "--profile=",
+            "--profile=..\\x",
+            "--profile=p0",
+            "--profile=Work",
+            "\"--profile=p2 x\"",
+        ] {
+            assert_eq!(run(bad), Err(LaunchError::Profile), "{bad}");
+        }
+        // Only once, never from a link, and never in the registered form.
+        assert!(matches!(
+            run("--profile=p2 --profile=p3"),
+            Err(LaunchError::UnknownOption(_))
+        ));
+        assert!(matches!(run("-- --profile=p2"), Err(LaunchError::Link(_))));
+        assert!(matches!(
+            run("--single-argument --profile=p2"),
+            Err(LaunchError::Link(_))
+        ));
+        // A bare "--profile p2" is not the option.
+        assert!(matches!(
+            run("--profile p2"),
+            Err(LaunchError::UnknownOption(_))
+        ));
     }
 
     #[test]

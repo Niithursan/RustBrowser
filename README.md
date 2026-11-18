@@ -315,12 +315,12 @@ The toolbar has its own `toolbar` profile folder. The existing v0.1 folder is re
 to preserve normal cookies and data on upgrade. Saved passwords and form data, when
 you turn them on, are kept by WebView2 in the same `content` folder (see
 [Passwords and autofill](#passwords-and-autofill)); there is no separate password
-manager or general profile manager. Private windows use separate temporary storage.
-Close every instance before manually removing a profile folder.
+manager. Each [profile](#profiles) has its own folder; private windows use separate
+temporary storage. Close every instance before manually removing a profile folder.
 
 ### Windows
 
-Every normal window shares the profile: cookies, site data, bookmarks, history,
+Every normal window of a profile shares that profile: cookies, site data, bookmarks, history,
 downloads and settings are the same in all of them. Each window has its own tabs,
 toolbar, closed-tab list (Ctrl+Shift+T reopens only that window's tabs), notices
 and panels, and its own taskbar and Alt+Tab entry. At most 8 normal windows can
@@ -352,8 +352,8 @@ local `.htm` or `.html` files. Links from other apps open in a normal window. A
 command line with an unknown option or text that is not valid is refused with a
 message before anything opens.
 
-If a normal window is already running, a second launch hands its links to the
-window used last, which opens them as tabs and comes to the front; started with
+If a normal window of the chosen profile is already running, a second launch
+hands its links to that profile's window used last, which opens them as tabs and comes to the front; started with
 no link, it asks the browser for a new window (or shows the 8-window notice).
 Nothing else can be requested, and no second process is started on the same
 profile. If the running window is starting, closing, busy or
@@ -546,6 +546,39 @@ window loses foreground. Its synthetic Windows input and UIA names are distinct
 from spoken screen-reader, physical keyboard/IME and real display-scale checks.
 These procedures are not background CI workloads; native controlled regressions
 remain in CI. Do not use real profiles or the production installer identity for tests.
+
+## Profiles
+
+Profiles keep different people or roles apart on one computer. Each profile has its
+own sign-ins, cookies and site data, history, bookmarks, saved passwords and form
+data, extensions, open tabs and settings, and runs in its own windows. Nothing is
+shared between profiles.
+
+- **The profile button** is the round avatar (the profile's initial on its colour)
+  left of the menu button (⋮). It names this window's profile and lists the others:
+  choose one to open it in its own window, or choose **Add profile** to create one
+  and open it. **Manage profiles** opens Settings → Profiles.
+- **Settings → Profiles** lists every profile. **Edit** changes a name (up to 40
+  characters, each name used once) or colour, **Open** opens another profile, and
+  **Delete** removes another profile and all of its data after you confirm. The
+  profile of the window you are in and the Default profile cannot be deleted, and a
+  profile that is open in another window is refused until its windows are closed.
+- **Who's browsing?** When there is more than one profile, starting Rust Browser
+  shows a picker: choose a profile, add one, or close the picker to open nothing.
+  Links from other apps skip the picker and open in the profile used last, and a
+  private window from the command line also uses the profile used last.
+- With more than one profile, window titles (taskbar, Alt+Tab) end with the
+  profile's name.
+- **Private windows** belong to the profile they were opened from (Ctrl+Shift+N in
+  a Work window opens a Work private window) but still share nothing with it; they
+  have no profile button and cannot manage profiles.
+
+Your existing data is the **Default** profile and stays where it was. Other profiles
+are stored in `profiles\<id>` inside it (for example
+`%LOCALAPPDATA%\RustBrowser\v0.1\profiles\p2`), and the list of profiles is
+`profiles\profiles.json`. `rust-browser.exe --profile=<id>` opens a profile
+directly; ids are `default` or `p` followed by a number, as shown in that file. At
+most 16 profiles can exist.
 
 ## Private browsing
 

@@ -64,6 +64,20 @@ over another; anything beside the page takes its own space and the page shrinks 
 moves. That is why vertical tabs are a column of their own rather than a panel that
 slides over the page, and why the library is a column rather than a drawer.
 
+**Profiles.** A profile is a folder: the original profile folder is the Default
+profile (the `root`) and others are `root/profiles/p<n>`. Each profile runs in its own
+process, started with `--profile=<id>`, so it has its own session lock, `Store`,
+library database, WebView2 environments and link hand-off endpoint (keyed by the
+folder), and nothing in `Session` is shared between profiles. `rust_browser::profiles`
+owns the list (`root/profiles/profiles.json`): every change runs under a short
+exclusive file lock and is written atomically, because several profile processes
+edit it. Ids are `default` or `p<n>` and are never reused. Deleting renames the folder
+to `<id>.deleted` under the list lock (refused while the profile's session lock is
+held) and removes it off the UI thread; leftovers are swept on a later start. A plain
+launch with more than one profile runs `native_picker` first: a small window with its
+own event loop that only chooses, then starts the chosen profile as a new process,
+because a process can run one winit event loop.
+
 **Dropdowns.** The menu, the site-information badge, the star, the shield and the
 bookmarks-bar folders open dropdowns under their buttons. A dropdown is part of the
 toolbar document, so while one is open over a webpage the toolbar view grows down its

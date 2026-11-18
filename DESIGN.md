@@ -367,6 +367,12 @@ an extension is on, with its blocked-request count in 12px/600).
 - **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
 - **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
+### Profile button and picker
+- **Profile button:** a 32px round button left of the menu button holding a 24px avatar: the profile's initial in white, 600 weight, on the profile's colour. Hidden in private windows.
+- **Profile colours:** eight fixed swatches dark enough for a white initial: Blue `#2446B8`, Green `#1F7A4D`, Red `#A3192A`, Purple `#7A3FB0`, Orange `#9A4A00`, Teal `#0E6F7C`, Slate `#56606C`, Pink `#A62A63`.
+- **Profile dropdown:** a 300px dropdown with the current profile (40px avatar, name, "This window's profile") over a hairline, then the other profiles as quiet 36px rows (avatar and name), then Manage profiles and Add profile.
+- **Who's browsing?:** a 640 × 460 window on Graphite Surface with a 26px/600 display heading and 124px tiles (Graphite Panel, Hairline border, 10px radius) holding a 56px avatar and the name; Add profile is the last tile with a dashed outline. The Default profile's theme applies.
+
 ### Dropdowns
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over the live page.
 - **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.

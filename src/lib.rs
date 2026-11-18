@@ -9,6 +9,7 @@ pub mod launch;
 pub mod library;
 pub mod navigation;
 pub mod privacy;
+pub mod profiles;
 pub mod security;
 pub mod settings;
 pub mod storage;
