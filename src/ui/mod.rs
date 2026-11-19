@@ -219,6 +219,8 @@ pub struct ProfileRow<'a> {
     pub color: &'a str,
     /// This window's profile.
     pub current: bool,
+    /// Another profile with a window open (it cannot be deleted until closed).
+    pub open: bool,
 }
 
 /// One extension in Privacy & security > Extensions.
@@ -417,6 +419,65 @@ mod tests {
         let (x, y) = (luminance(a), luminance(b));
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
+    /// Hue (degrees), saturation and lightness of an opaque `#rrggbb` colour.
+    fn hsl(hex: &str) -> (f64, f64, f64) {
+        let c = |i: usize| f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap()) / 255.0;
+        let (r, g, b) = (c(1), c(3), c(5));
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        let l = (max + min) / 2.0;
+        let d = max - min;
+        if d == 0.0 {
+            return (0.0, 0.0, l);
+        }
+        let s = d / (1.0 - (2.0 * l - 1.0).abs());
+        let h = if max == r {
+            60.0 * (((g - b) / d).rem_euclid(6.0))
+        } else if max == g {
+            60.0 * ((b - r) / d + 2.0)
+        } else {
+            60.0 * ((r - g) / d + 4.0)
+        };
+        (h, s, l)
+    }
+
+    /// A profile avatar never looks like a theme's signal or error colour: each
+    /// profile colour differs from every theme's `--accent` and `--error` by at least
+    /// 20 degrees of hue or 0.3 of lightness (hue only counts between saturated
+    /// colours), and a white initial on it meets 4.5:1.
+    #[test]
+    fn profile_colors_stay_clear_of_signal_and_error_colors() {
+        let dark = tokens(":root");
+        let mut meaning = Vec::new();
+        for theme in ["dark", "slate", "plum", "light"] {
+            let mut palette = dark.clone();
+            palette.extend(tokens(&format!("body[data-theme={theme}]")));
+            for name in ["--accent", "--error"] {
+                meaning.push((theme, name, palette[name].clone()));
+            }
+        }
+        for color in rust_browser::profiles::COLORS {
+            assert!(
+                contrast(color, "#FFFFFF") >= 4.5,
+                "a white initial on {color} is too faint"
+            );
+            let (h, s, l) = hsl(color);
+            for (theme, name, token) in &meaning {
+                assert!(
+                    !color.eq_ignore_ascii_case(token),
+                    "{color} is {theme} {name}"
+                );
+                let (th, ts, tl) = hsl(token);
+                let hue = (h - th).abs().min(360.0 - (h - th).abs());
+                let distinct = s < 0.25 || ts < 0.25 || hue >= 20.0 || (l - tl).abs() >= 0.3;
+                assert!(
+                    distinct,
+                    "{color} reads like {theme} {name} {token} (hue {hue:.0}, lightness {:.2})",
+                    (l - tl).abs()
+                );
+            }
+        }
+    }
+
     #[test]
     fn every_theme_meets_wcag_contrast_for_text_and_focus_indicators() {
         assert!(HTML.contains("input::placeholder{color:var(--secondary);opacity:1}"));

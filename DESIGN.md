@@ -298,7 +298,7 @@ The same trusted document is also used for two side views, chosen by `data-role`
 **library column** at the right of a live page or the new-tab page (260-640px wide,
 hairline on its left edge, an 8px drag handle, and a fixed 36px top caption strip holding
 the flush window controls whenever `New tab` sits beside it). Full panels (Settings, new tab) are padded
-24px × 32px with content capped at 1040px and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline and 1px section hairlines so section navigation and Back to page (F7) stay reachable while scrolling; the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
+24px × 32px with content capped at 1040px (Settings: one centred 760px column) and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline so section navigation and Back to page (F7) stay reachable while scrolling. Settings sections are separated by 40px of space, not a rule (a rule doubled the section bar's hairline whenever a section was scrolled to); each explanation is one sentence, with any detail in a quiet disclosure. Its sections are Appearance, Profiles, Search, Background tabs, Privacy & security, Extensions, Clear browsing data and System (Default browser and Diagnostics); the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
 tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
@@ -359,7 +359,9 @@ browser pages), the **address** (an origin-emphasised view whose subdomains coll
 before the registrable domain tail on narrow bars, hiding on focus to show the editable
 field), the **star** (30px round, Dial Grey at rest, filled in the theme signal when the
 current page is bookmarked) and the **shield** (32px pill, Dial Grey at rest, signal when
-an extension is on, with its blocked-request count in 12px/600).
+an extension is on, with its blocked-request count in 12px/600). The shield's check mark
+is drawn only while an extension can block requests; otherwise it is an empty outline, so
+the icon never claims protection that is not there (GrayText in high contrast).
 
 ### Tabs
 - **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
@@ -369,13 +371,15 @@ an extension is on, with its blocked-request count in 12px/600).
 
 ### Profile button and picker
 - **Profile button:** a 32px round button left of the menu button holding a 24px avatar: the profile's initial in white, 600 weight, on the profile's colour. Hidden in private windows.
-- **Profile colours:** eight fixed swatches dark enough for a white initial: Blue `#2446B8`, Green `#1F7A4D`, Red `#A3192A`, Purple `#7A3FB0`, Orange `#9A4A00`, Teal `#0E6F7C`, Slate `#56606C`, Pink `#A62A63`.
-- **Profile dropdown:** a 300px dropdown with the current profile (40px avatar, name, "This window's profile") over a hairline, then the other profiles as quiet 36px rows (avatar and name), then Manage profiles and Add profile.
+- **Profile colours:** eight fixed swatches, each at least 4.5:1 under a white initial and kept clear of every theme's signal and error colours (at least 20° of hue or 0.3 of lightness apart, checked by `ui::tests`), so an avatar never reads as "active" or as a problem: Teal `#0E6F7C`, Green `#1F7A4D`, Purple `#6B3FA0`, Brown `#8A4B1F`, Magenta `#9C2C6E`, Olive `#5E6A1E`, Taupe `#6E5F52`, Slate `#56606C`. Lists saved with the first palette (which reused Light's cobalt and crimson) load with the nearest new colour. Swatches are 24px circles; the chosen one carries a 2px text-colour ring outside a 2px gap, and focus adds the signal outline beyond it, so both show at once. In high contrast, avatars and swatches keep their colour with a 1px ButtonText border.
+- **Profile identity stays the avatar.** Nothing else in the chrome takes the profile's colour; the window title names the profile when there is more than one.
+- **Profile dropdown:** a 300px dropdown with the current profile (40px avatar, name, "This window's profile") over a hairline, then the other profiles as quiet 36px rows (avatar and name), then Manage profiles and Add profile. It opens with focus on its heading, so a stray Enter never opens another profile. Add profile always goes through the editor in Settings → Profiles (name and color first).
+- **Settings → Profiles rows** say why a profile cannot be deleted ("This window", "The Default profile can't be deleted", "Open in another window. Close it to delete this profile.") and disable Delete while that profile is open.
 - **Who's browsing?:** a 640 × 460 window on Graphite Surface with a 26px/600 display heading and 124px tiles (Graphite Panel, Hairline border, 10px radius) holding a 56px avatar and the name; Add profile is the last tile with a dashed outline. The Default profile's theme applies.
 
 ### Dropdowns
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over the live page.
-- **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +.
+- **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings, Keyboard shortcuts, Exit), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +. Keep tab awake and Exit show their state in that place instead of a shortcut (Exit: "Tabs return", "Tabs not kept" or, in a private window, "Nothing kept").
 - **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers

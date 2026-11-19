@@ -2,6 +2,12 @@
 
 ## 0.21.0 (not released; the first release stays postponed)
 
+- Chrome critique follow-up (critique 27/40):
+  - **Shield:** the shield no longer draws its check mark when no extension can block requests; off is an empty outline.
+  - **Profile colours:** swatches are true 24px circles with a chosen ring that coexists with focus, and avatars and swatches keep their colour in Windows high contrast. The eight colours were retuned so none matches a theme's signal or error colour (Light's cobalt and crimson were reused before), with a test; profile lists saved with the old colours still load.
+  - **Profile management:** rows explain why a profile cannot be deleted and disable Delete while it is open in another window. The profile dropdown focuses its heading, and its Add profile opens the editor instead of creating a profile at once.
+  - **Settings:** a centred 760px column, sections separated by space (no doubled rule under the section bar), one-sentence explanations with details behind disclosures, plainer wording ("Reopen your tabs next time", "Each rule covers one site and one permission"), and Default browser and Diagnostics grouped under System.
+  - **Copy:** Exit says what happens to tabs in the menu itself. The unclean-exit notice is in plain words. "Settings > Extensions" no longer breaks across lines, and interface spelling is US throughout.
 - Profiles: separate profiles for different people or roles, each with its own
   sign-ins, cookies, history, bookmarks, passwords, extensions, tabs and settings,
   running in its own process and folder (`profiles\<id>` inside the existing profile

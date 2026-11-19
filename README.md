@@ -275,7 +275,7 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Close every window | Menu (⋮) → Exit (all of them return at the next start) |
 | New private window | Menu (⋮) → Private window, or Ctrl+Shift+N |
 | Cut, copy, paste or select all in the address field | Right-click the address field, or the menu key |
-| Choose Rust Browser as the default browser | Menu (⋮) → Settings → Default browser → Make default browser (opens Windows Settings) |
+| Choose Rust Browser as the default browser | Menu (⋮) → Settings → System → Make default browser (opens Windows Settings) |
 | Privacy and security | Site-information badge at the start of the address line, Menu (⋮) → Settings → Privacy & security |
 | Move through toolbar | Tab / Shift+Tab |
 
@@ -872,7 +872,7 @@ simply be substituted into Wry. No Servo dependency is included.
 
 ## Local diagnostics
 
-**Settings → Local application diagnostics** shows fixed application
+**Settings → System → Diagnostics** shows fixed application
 event categories, timestamps and counts. Refresh reads the current bounded
 snapshot; Clear requires confirmation and removes only diagnostic records.
 Bookmarks, history, cookies, sessions and downloaded files remain. New events
