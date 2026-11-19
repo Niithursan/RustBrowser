@@ -1,4 +1,4 @@
-# Owner checklist (about 100 minutes)
+# Owner checklist (about 115 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -427,21 +427,64 @@ normal windows, and the new private window has the strip.
 **Pass:** the visited favourite shows its site's icon, the other a letter; every
 background is readable with its text; nothing is loaded from the internet by the page.
 
-## 35. The menu sidebar from PR #27 (4 minutes)
+## 35. The menu with the keyboard, Narrator and a contrast theme (4 minutes)
 
-1. Without a mouse, Tab to Menu (⋮) and press Enter; move through the sidebar with Tab
-   and Shift+Tab; press Escape.
+1. Without a mouse, Tab to Menu (⋮) and press Enter; move through the menu with the
+   arrow keys, Tab and Shift+Tab; press Escape.
 2. Turn on Narrator and open the menu again.
-3. Turn on a Windows contrast theme and open the menu, the shield and the library.
+3. Turn on a Windows contrast theme and open the menu, the shield, the profile button's
+   dropdown and the library.
 
-**Pass:** the sidebar opens and closes with the keyboard and focus returns to ⋮;
-Narrator reads each item; in the contrast theme the sidebar, shield panel and library
-are fully visible with visible focus.
+**Pass:** the menu opens and closes with the keyboard and focus returns to ⋮;
+Narrator reads each item; in the contrast theme the menu, shield panel, profile
+dropdown (with each profile's colored initial) and library are fully visible with
+visible focus.
+
+## 36. Window frame and caption buttons (3 minutes)
+
+1. Drag the window by an empty part of the tab strip; double-click it; double-click
+   again.
+2. Hover the Maximize button and pick a Snap layout; then press Win+Left and Win+Right.
+3. Right-click an empty part of the tab strip (or press Alt+Space).
+4. Drag the top edge of a restored window.
+
+**Pass:** dragging moves the window, double-click maximizes and restores, Snap layouts
+appear and work, the window menu appears, the top edge resizes, and Minimize,
+Maximize/Restore and Close sit flush in the top-right corner.
+
+## 37. Dropdowns over a playing video (2 minutes)
+
+1. Play a video (any video site) and open the menu (⋮), the site information badge,
+   the shield and the profile button's dropdown in turn.
+2. With a dropdown open, click the page.
+
+**Pass:** the video keeps playing and the page is not dimmed while each dropdown is
+open; clicking the page closes the dropdown.
+
+## 38. Profiles and the launch picker (8 minutes)
+
+Use the bundle's disposable profile throughout (the launcher sets it).
+
+1. Select the round profile button left of ⋮, then **Add profile**. Settings opens at
+   Profiles with an editor; name it "Work", pick a color and choose **Add and open**.
+2. In the Work window, sign in to a site or add a bookmark; in the first window, check
+   it is not there.
+3. In Settings > Profiles of the first window, check Work says "Open in another
+   window" and its Delete is unavailable. Close the Work window and reopen Settings.
+4. Close every window and start the browser again with the launcher. The "Who's
+   browsing?" window appears: choose **Work**, then close it and start again and close
+   the picker without choosing.
+5. Delete Work from Settings > Profiles and confirm.
+
+**Pass:** each profile keeps its own data; the picker appears in front with every
+profile and Add profile, opens the chosen one, and closing it opens nothing; Work can
+be deleted only once its windows are closed, and it disappears after confirming.
 
 ## Reporting
 
-Report items 1 to 11 as pass, fail or not tested, with the exact version/commit
-and executable SHA-256. The historical 2026-11-10 report covered only items 1 to 8
+Report every item as pass, fail or not tested, with the exact version/commit
+and executable SHA-256 from the bundle's `owner.json`. For the v0.21.0 candidate,
+items 1, 2, 3, 4, 12 to 14, 29, 30 and 35 to 38 matter most. The historical 2026-11-10 report covered only items 1 to 8
 on bundle o-d8ee96f5, not the new items or a later candidate.
 For a failure, include one sentence about what happened. Share only screenshots
 without credentials, private messages, meeting links or other sensitive data.

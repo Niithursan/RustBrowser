@@ -75,8 +75,12 @@ asks which browser to use next time you open a link.
 
 Close **all** browser windows and wait for WebView2 processes to exit. Back up
 the closed profile. The default remains `%LOCALAPPDATA%\RustBrowser\v0.1`;
-`RUST_BROWSER_PROFILE` selects an alternative. Keep application/profile folders
-separate. Session format **1** and SQLite schema **3** are unchanged.
+`RUST_BROWSER_PROFILE` selects an alternative. Since v0.21 that folder is the
+Default profile, and other profiles live in its `profiles` folder, so back up the
+whole folder. Keep application/profile folders separate. Session format **1** is
+unchanged. The library database (bookmarks, history, permissions) migrates on the
+first start to SQLite schema **5**; the migration is one-way, so an older version
+cannot open the library afterwards. Keep the backup if you may need to go back.
 
 Bookmarks/folders, history, tabs/pins/active session, settings, permissions,
 cookies and site storage stay in the profile. Downloads stay in their selected

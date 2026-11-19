@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.21.0 (not released; the first release stays postponed)
+## 0.21.0 (release candidate: the first release, not yet tagged or published)
 
 - Chrome critique follow-up (critique 27/40):
   - **Shield:** the shield no longer draws its check mark when no extension can block requests; off is an empty outline.

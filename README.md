@@ -96,8 +96,9 @@ and [the daily-driver acceptance record](https://github.com/Niithursan/RustBrows
 
 ## Install a release
 
-No release has been published yet: the first release is postponed until the owner
-decides the browser is ready. When there is one, download
+No release has been published yet. v0.21.0 is being prepared as the first release;
+the owner tags and publishes it after checking the candidate build. When it is
+published, download
 `rust-browser-v<version>-windows-x64-setup.exe` and its `.sha256` file from the
 [Releases page](https://github.com/Niithursan/RustBrowser/releases), check the
 SHA-256 as the release notes show, and run Setup (per user, no administrator rights).
