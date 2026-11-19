@@ -591,6 +591,8 @@ struct Session {
     profiles_root: PathBuf,
     /// The list of profiles as last read (other profiles may change it).
     profiles: rust_browser::profiles::Registry,
+    /// Other profiles that had a window open when the list was last read.
+    profiles_open: Vec<String>,
     private: bool,
     ready: bool,
     clearing: Option<Clearing>,
@@ -1328,6 +1330,14 @@ impl Session {
         if let Ok(registry) = rust_browser::profiles::load(&self.profiles_root) {
             self.profiles = registry;
         }
+        self.profiles_open = self
+            .profiles
+            .profiles
+            .iter()
+            .filter(|p| p.id != self.profile_id)
+            .filter(|p| rust_browser::profiles::is_open(&self.profiles_root, &p.id))
+            .map(|p| p.id.clone())
+            .collect();
     }
 
     /// Every profile for the toolbar, this window's first.
@@ -1341,6 +1351,7 @@ impl Session {
                 name: &p.name,
                 color: &p.color,
                 current: p.id == self.profile_id,
+                open: self.profiles_open.contains(&p.id),
             })
             .collect();
         rows.sort_by_key(|row| !row.current);
@@ -1673,6 +1684,7 @@ impl Session {
             profile,
             profile_id: rust_browser::profiles::DEFAULT_ID.into(),
             profiles: rust_browser::profiles::Registry::default(),
+            profiles_open: Vec::new(),
             private,
             permissions: Rc::new(RefCell::new(native_security::Permissions::default())),
             popups: Rc::new(RefCell::new(native_popup::Manager::default())),
@@ -4377,7 +4389,7 @@ impl ApplicationHandler<Event> for App {
             Event::DiagnosticsUpdated(report) => {
                 if report.previous_exit_unclean && !session.diagnostic_warning_shown {
                     session.diagnostic_warning_shown = true;
-                    session.notice = "The previous normal window did not finish cleanly. Only committed session data can be restored; unsaved page work may be lost.".into();
+                    session.notice = "Rust Browser did not close properly last time. Your tabs were reopened from the last save; anything typed into pages since then may be lost.".into();
                 }
             }
             Event::EngineProcess(id, failure) => session.process_failed(id, failure),

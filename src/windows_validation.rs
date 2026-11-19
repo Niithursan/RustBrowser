@@ -5182,7 +5182,7 @@ fn profile_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 if r["shown"] != true
                     || r["beforeMenu"] != true
                     || r["initial"] != "D"
-                    || r["color"] != "rgb(36, 70, 184)"
+                    || r["color"] != "rgb(14, 111, 124)"
                     || r["label"] != "Profile: Default"
                 {
                     return Err(format!("Wrong profile button: {r}"));

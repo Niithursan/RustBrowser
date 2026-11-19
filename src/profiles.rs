@@ -19,9 +19,21 @@ use std::{
 pub const DEFAULT_ID: &str = "default";
 pub const MAX_PROFILES: usize = 16;
 pub const MAX_NAME: usize = 40;
-/// Profile colours: dark enough for a white initial to stay readable.
+/// Profile colours: Teal, Green, Purple, Brown, Magenta, Olive, Taupe, Slate. Each
+/// is dark enough for a white initial (4.5:1 or more) and stays clear of every
+/// theme's signal and error colours, so an avatar never reads as "active" or as a
+/// problem (checked by `ui::tests`).
 pub const COLORS: [&str; 8] = [
-    "#2446B8", "#1F7A4D", "#A3192A", "#7A3FB0", "#9A4A00", "#0E6F7C", "#56606C", "#A62A63",
+    "#0E6F7C", "#1F7A4D", "#6B3FA0", "#8A4B1F", "#9C2C6E", "#5E6A1E", "#6E5F52", "#56606C",
+];
+/// Colours of the first profile palette, which matched Light's signal and error
+/// colours, and the colour each one now reads as.
+const RETIRED_COLORS: [(&str, &str); 5] = [
+    ("#2446B8", COLORS[0]),
+    ("#A3192A", COLORS[4]),
+    ("#7A3FB0", COLORS[2]),
+    ("#9A4A00", COLORS[3]),
+    ("#A62A63", COLORS[4]),
 ];
 const VERSION: u32 = 1;
 const MAX_FILE: u64 = 64 * 1024;
@@ -184,7 +196,7 @@ impl Registry {
             return Err(invalid("Another profile already has that name."));
         }
         if !valid_color(color) {
-            return Err(invalid("Choose one of the profile colours."));
+            return Err(invalid("Choose one of the profile colors."));
         }
         let id = format!("p{}", self.next);
         if !valid_id(&id) {
@@ -206,7 +218,7 @@ impl Registry {
             return Err(invalid("Another profile already has that name."));
         }
         if !valid_color(color) {
-            return Err(invalid("Choose one of the profile colours."));
+            return Err(invalid("Choose one of the profile colors."));
         }
         let profile = self
             .profiles
@@ -253,8 +265,15 @@ pub fn load(root: &Path) -> io::Result<Registry> {
             "The profile list is too large.",
         ));
     }
-    let registry: Registry = serde_json::from_reader(io::BufReader::new(file))
+    let mut registry: Registry = serde_json::from_reader(io::BufReader::new(file))
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The profile list is damaged."))?;
+    // A list saved with the first palette keeps working; the next change saves
+    // the new colours.
+    for profile in &mut registry.profiles {
+        if let Some((_, now)) = RETIRED_COLORS.iter().find(|(old, _)| *old == profile.color) {
+            profile.color = (*now).into();
+        }
+    }
     registry.validate()?;
     Ok(registry)
 }
@@ -344,6 +363,22 @@ pub fn sweep_deleted(root: &Path) -> usize {
         .count()
 }
 
+/// Whether a window of profile `id` is open in another process (its session lock
+/// is held). Never creates the profile's folder.
+pub fn is_open(root: &Path, id: &str) -> bool {
+    let Ok(folder) = dir(root, id) else {
+        return false;
+    };
+    let Ok(lock) = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(folder.join("session.lock"))
+    else {
+        return false;
+    };
+    matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+}
+
 /// Record that profile `id` was just opened.
 pub fn mark_used(root: &Path, id: &str) -> io::Result<()> {
     update(root, |registry| {
@@ -416,6 +451,35 @@ mod tests {
         }
         assert!(registry.create("One too many", COLORS[0]).is_err());
         registry.validate().unwrap();
+    }
+
+    #[test]
+    fn lists_with_the_first_palette_still_load() {
+        let root = temp("retired");
+        fs::create_dir_all(root.join("profiles")).unwrap();
+        fs::write(
+            registry_path(&root),
+            r##"{"version":1,"profiles":[{"id":"default","name":"Default","color":"#2446B8"},{"id":"p2","name":"Work","color":"#A3192A"},{"id":"p3","name":"Home","color":"#0E6F7C"}],"last_used":"p2","next":4}"##,
+        )
+        .unwrap();
+        let registry = load(&root).unwrap();
+        let colors: Vec<_> = registry.profiles.iter().map(|p| p.color.as_str()).collect();
+        assert_eq!(colors, [COLORS[0], COLORS[4], COLORS[0]]);
+        assert!(RETIRED_COLORS.iter().all(|(old, _)| !COLORS.contains(old)));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn open_profiles_are_seen_without_creating_folders() {
+        let root = temp("open");
+        assert!(!is_open(&root, "p2"));
+        assert!(!dir(&root, "p2").unwrap().exists());
+        let held = crate::storage::lock(&dir(&root, "p2").unwrap()).unwrap();
+        assert!(is_open(&root, "p2"));
+        drop(held);
+        assert!(!is_open(&root, "p2"));
+        assert!(!is_open(&root, "../x"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

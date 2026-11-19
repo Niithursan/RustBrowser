@@ -160,7 +160,7 @@ created by a person can remain on disk, including from private browsing.
 Use the bundle's validation-only Setup (`Launch.ps1 -Installed` flow). Its links
 open the bundle's own disposable profile, never your daily one.
 
-1. Start it with `.\Launch.ps1 -Installed`, open Menu (⋮) → Settings → Default browser,
+1. Start it with `.\Launch.ps1 -Installed`, open Menu (⋮) → Settings → System,
    and select **Make default browser**.
 2. In the Windows Settings page that opens, choose the entry named
    "Rust Browser validation ..." for HTTP and HTTPS.
