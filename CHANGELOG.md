@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Release metadata states the library database schema the build actually uses (5).
+  The v0.21.0 metadata file (`rust-browser-v0.21.0-windows-x64-release.json`) says
+  `profile_library: 3`, a value hard-coded since v0.15 that the producer and the
+  verifier both still expected; nothing reads it apart from the verifier, and the
+  v0.21.0 notes and INSTALL_WINDOWS.md describe the schema 5 migration correctly. A
+  test now ties both scripts to `library::SCHEMA_VERSION`.
+
 ## 0.21.0 (release candidate: the first release, not yet tagged or published)
 
 - Chrome critique follow-up (critique 27/40):

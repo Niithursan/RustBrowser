@@ -26,6 +26,6 @@ $assets=@($portable.archive,$installer) | ForEach-Object {
     [ordered]@{name=$file.Name;bytes=$file.Length;sha256=(Get-FileHash -LiteralPath $_).Hash.ToLowerInvariant()}
 }
 $metadata=Join-Path $run "rust-browser-v$Version-windows-x64-release.json"
-$record=[ordered]@{schema=1;name='rust-browser';version=$Version;architecture='x64';source_commit=$SourceCommit.ToLowerInvariant();signed=$false;profile_session=1;profile_library=3;installer_compiler='Inno Setup 6.7.4';assets=@($assets)}
+$record=[ordered]@{schema=1;name='rust-browser';version=$Version;architecture='x64';source_commit=$SourceCommit.ToLowerInvariant();signed=$false;profile_session=1;profile_library=5;installer_compiler='Inno Setup 6.7.4';assets=@($assets)}
 [IO.File]::WriteAllText($metadata,(($record | ConvertTo-Json -Depth 5)+"`n"),[Text.UTF8Encoding]::new($false))
 [pscustomobject]@{installer=$installer;installer_checksum=$checksum;archive=$portable.archive;checksum=$portable.checksum;metadata=$metadata;payload=$portable.payload;version=$Version}

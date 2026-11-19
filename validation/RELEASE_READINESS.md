@@ -41,6 +41,19 @@ tag. Declaring the candidate final, creating the tag and running the publish
 workflow are the owner's decisions after the owner checklist (see RELEASING.md).
 Nothing has been tagged or published.
 
+### v0.21.0 release package (tag run 44447568537)
+
+The tag `v0.21.0` points at `c7c9e15`. Its release run 44447568537 passed the package
+job (publish skipped). The downloaded artifact has exactly the five expected files;
+both SHA-256 sidecars match (ZIP
+`db82c5e5172ef78f3e742ddd02ea6f85cd970828bc981722341b7ad922c739cc`, Setup
+`a5fe03444a23f650ac7b718ee4102961f9bbaf677933892f81baee17a6f25b33`);
+`verify-release.ps1` from the tag passes; the metadata records version 0.21.0 and
+source commit `c7c9e15`. Known inaccuracy, accepted by the owner for v0.21.0: the
+metadata says `profile_library: 3` while the build uses library schema 5 (a value
+hard-coded since v0.15 in both the producer and the verifier). Nothing reads it apart
+from the verifier; it is fixed for the next release, with a test.
+
 ## Current milestone and exact prior-build owner results
 
 **Release decision, 2026-11-12: v0.20.0 will not be tagged or released.** The first

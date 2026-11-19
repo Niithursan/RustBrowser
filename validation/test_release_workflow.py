@@ -52,6 +52,16 @@ class PublishTests(unittest.TestCase):
         self.assertIn('--notes-file', RELEASE)
         self.assertIn('release-notes/$env:RELEASE_TAG.md', RELEASE)
 
+    def test_release_metadata_states_the_current_library_schema(self):
+        # v0.21.0 shipped metadata saying schema 3 while the build used schema 5:
+        # the producer and the verifier must both follow library::SCHEMA_VERSION.
+        library = (REPO / 'src' / 'library.rs').read_text(encoding='utf-8')
+        schema = re.search(r'pub const SCHEMA_VERSION: i64 = (\d+);', library).group(1)
+        installer = (REPO / 'packaging' / 'windows' / 'build-installer.ps1').read_text(encoding='utf-8')
+        verifier = (REPO / 'packaging' / 'windows' / 'verify-release.ps1').read_text(encoding='utf-8')
+        self.assertIn(f'profile_library={schema};', installer)
+        self.assertIn(f'$record.profile_library -cne {schema}', verifier)
+
     def test_the_current_version_has_release_notes(self):
         notes = REPO / 'release-notes' / f'v{VERSION}.md'
         self.assertTrue(notes.is_file(), f'missing {notes.name}')
