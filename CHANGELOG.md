@@ -9,7 +9,7 @@
   v0.21.0 notes and INSTALL_WINDOWS.md describe the schema 5 migration correctly. A
   test now ties both scripts to `library::SCHEMA_VERSION`.
 
-## 0.21.0 (release candidate: the first release, not yet tagged or published)
+## 0.21.0 (2026-11-19, the first published release)
 
 - Chrome critique follow-up (critique 27/40):
   - **Shield:** the shield no longer draws its check mark when no extension can block requests; off is an empty outline.
