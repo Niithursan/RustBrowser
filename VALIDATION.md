@@ -51,11 +51,12 @@ contained in the profile. A nine-site burst with 20 filler tabs closed in one tu
 **Owner bundle:** `validation/prepare-owner-build.ps1` built bundle `o-656195c3` from
 the same executable (validation identity, Setup SHA-256
 `0229bf6a2086098f9c9682d074a59495835fdcfc3b3da1c20a0b546a11bd8b17`); `Launch.ps1
--VerifyOnly` passed. The owner checklist (A6) on this bundle is open.
+-VerifyOnly` passed. The owner reported on 2026-11-18 that every owner checklist
+item (A6) passed on this bundle.
 
-**Not established here:** the owner checklist, a clean install in a new Windows user
-account, a machine without the Visual C++ runtime or WebView2, Windows 10, and
-Windows high contrast on the new profile controls (checked in source only).
+**Not established here:** a machine without the Visual C++ runtime or WebView2 and
+Windows 10. The clean install in a new Windows user account and the contrast-theme
+checks are covered by the owner's checklist report, not by automation.
 
 ## v0.21 shield, library sidebar, vertical tabs and new-tab tiles
 
