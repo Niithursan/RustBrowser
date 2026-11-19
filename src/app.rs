@@ -237,6 +237,9 @@ const LIBRARY_MIN: f64 = 260.0;
 const LIBRARY_MAX: f64 = 640.0;
 /// The page keeps at least this much width beside the columns.
 const PAGE_MIN: f64 = 320.0;
+/// After a dropdown opens, page focus events this recent come from the browser
+/// moving focus as the previous dropdown closed, not from a press on the page.
+const MENU_FOCUS_GRACE: Duration = Duration::from_millis(400);
 
 /// Where each view of a window goes. No two shown views ever overlap: the toolbar and
 /// pages are separate windows whose stacking order Windows does not keep.
@@ -526,6 +529,10 @@ struct WindowState {
     /// Where the open dropdown is drawn (logical pixels in the toolbar view),
     /// once the toolbar has placed it.
     menu_area: Option<engine::ClipArea>,
+    /// When the open dropdown opened. Closing the previous one hands focus back to
+    /// the page, and that page's focus event can arrive just after a new dropdown
+    /// opened; it must not close the new one.
+    menu_opened_at: Option<Instant>,
     /// The vertical tab column, once vertical tabs were used in this window.
     tabs_view: Option<SideView>,
     /// The library column, once it was opened in this window.
@@ -1082,6 +1089,7 @@ impl Session {
             focus_pending: false,
             menu_open: false,
             menu_area: None,
+            menu_opened_at: None,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -1645,6 +1653,7 @@ impl Session {
             focus_pending: false,
             menu_open: false,
             menu_area: None,
+            menu_opened_at: None,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -2884,6 +2893,7 @@ impl Session {
                 }
                 if open != self.menu_open {
                     self.menu_open = open;
+                    self.menu_opened_at = open.then(Instant::now);
                     self.activate()?;
                 }
             }
@@ -4564,7 +4574,13 @@ impl ApplicationHandler<Event> for App {
             // The page was pressed while a dropdown was open over it: close it, as
             // a press anywhere else in the toolbar would.
             Event::PageFocused(id) => {
+                // Focus the browser itself moved to the page as the previous dropdown
+                // closed arrives within moments; a press on the page comes later.
+                let settled = session
+                    .menu_opened_at
+                    .is_none_or(|at| at.elapsed() >= MENU_FOCUS_GRACE);
                 if session.menu_open
+                    && settled
                     && session.tabs.active().is_some_and(|tab| tab.id == id)
                     && session
                         .toolbar

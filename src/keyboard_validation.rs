@@ -770,6 +770,8 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
             !e.starts_with("tab-close|")
                 && !e.starts_with("win-")
                 && !e.starts_with("manager-title|h1|")
+                // A dialog-style dropdown's heading, focused by script when it opens.
+                && !(e.contains("-title|h2|"))
         })
         .map(|(e, _)| e)
         .collect();

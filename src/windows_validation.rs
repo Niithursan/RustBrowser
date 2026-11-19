@@ -2296,7 +2296,9 @@ fn sidebar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 return Err("The menu sidebar never opened".into());
             }
         }
-        3 => {
+        // A press comes after the menu has been open a moment; focus within
+        // `MENU_FOCUS_GRACE` of opening is the browser's own hand-back, not a press.
+        3 if p.at.elapsed() > super::MENU_FOCUS_GRACE + Duration::from_millis(200) => {
             if let Some(r) = polish_report(p)? {
                 if r["under"] != true
                     || r["aligned"] != true
@@ -3027,7 +3029,7 @@ fn shield_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 ))
                 || !text("count").starts_with("2 requests blocked on this page")
                 || !text("limits").contains("cannot turn blocking off for one site")
-                || text("focus") != "shield-manage"
+                || text("focus") != "shield-title"
             {
                 return Err(format!("The shield panel is wrong: {r}"));
             }
