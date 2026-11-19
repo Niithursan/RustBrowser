@@ -41,6 +41,21 @@ tag. Declaring the candidate final, creating the tag and running the publish
 workflow are the owner's decisions after the owner checklist (see RELEASING.md).
 Nothing has been tagged or published.
 
+### v0.21.0 published (2026-11-19)
+
+The owner published **Rust Browser v0.21.0**, the first release, with release run
+44452459369 (workflow_dispatch, publish on) at 2026-11-19T03:54:05Z:
+https://github.com/Niithursan/RustBrowser/releases/tag/v0.21.0. Tag `v0.21.0` points
+at `c7c9e15990ea16de3d07e49c013141d294a78893`. Not a draft or pre-release; five assets.
+Checked after publication: the release text is identical to
+`release-notes/v0.21.0.md` at the tag; both downloaded files match their `.sha256`
+sidecars and the metadata (ZIP
+`275b44b7e81e599dc6d7144103cfe9bab03ddc3a3d880f453fe3a1f3c0c91f4e`, Setup
+`c85ef1c990d428dcf8d21aa22d9ab8f4e2742b455088a32e98ac3175861c68ed`); the metadata
+records version 0.21.0, source `c7c9e15`, unsigned; `verify-release.ps1` from the tag
+passes. The publish run rebuilt from the tag, so its hashes differ from the tag run's
+artifact below; each set matches its own metadata.
+
 ### v0.21.0 release package (tag run 44447568537)
 
 The tag `v0.21.0` points at `c7c9e15`. Its release run 44447568537 passed the package

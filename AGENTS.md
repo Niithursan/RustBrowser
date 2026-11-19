@@ -364,7 +364,7 @@ The project aims to evolve through incremental releases:
 - v0.20: Ad blocking and a new layout (done; the release prepared for it was not published)
 - v0.21: Reliability and chrome polish pass (toolbar polish, shield counts, vertical tabs, library sidebar, new-tab tiles, bookmarks bar, dropdown menus, permission prompt overlay, unified Settings panel, menu groups, notice levels, library/confirmations PR #45, chrome polish PR #46, cross-agent rules PR #49, Windows x64 installer workflow PR #37, `/impeccable polish` chrome refinement PR #50, and combined `/impeccable` harden/audit/layout/clarify/polish pass PR #52, persistent bookmark site icons with merged tab strip and flush window caption controls PR #53, and unbolded selected tab title with the live page behind dropdowns PR #54 merged on `main`)
 - v0.21 profiles: separate profiles (process per profile, `--profile=<id>`, profile button, Settings > Profiles, launch picker) PR #55, product record PR #56 and chrome critique follow-up PR #57 merged on `main`
-- v0.21.0: the first release, qualified in PR #58 and tagged by the owner on `c7c9e15`; tag run 44447568537 packaged and verified it. The owner runs the publish workflow. Its metadata states library schema 3 instead of 5 (accepted; fixed for the next release on `fix/release-metadata-schema`)
+- v0.21.0: **published 2026-11-19**, the first release (qualified in PR #58, tag `v0.21.0` on `c7c9e15`, tag run 44447568537, publish run 44452459369). Its metadata states library schema 3 instead of 5 (accepted; fixed for the next release by PR #59)
 - Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
