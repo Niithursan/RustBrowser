@@ -37,7 +37,7 @@ if($ExpectedMetadataSha256){
 }
 $record=Get-Content -LiteralPath $metadata.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-Keys $record @('schema','name','version','architecture','source_commit','signed','profile_session','profile_library','installer_compiler','assets')
-if(-not(Is-Integer $record.schema) -or -not(Is-Integer $record.profile_session) -or -not(Is-Integer $record.profile_library) -or $record.schema -cne 1 -or $record.name -cne 'rust-browser' -or $record.architecture -cne 'x64' -or $record.source_commit -cnotmatch '\A[0-9a-f]{40}\z' -or $record.signed -isnot [bool] -or $record.signed -or $record.profile_session -cne 1 -or $record.profile_library -cne 3 -or $record.installer_compiler -cne 'Inno Setup 6.7.4' -or $record.version -isnot [string]){throw 'Unsupported release metadata or signing claim.'}
+if(-not(Is-Integer $record.schema) -or -not(Is-Integer $record.profile_session) -or -not(Is-Integer $record.profile_library) -or $record.schema -cne 1 -or $record.name -cne 'rust-browser' -or $record.architecture -cne 'x64' -or $record.source_commit -cnotmatch '\A[0-9a-f]{40}\z' -or $record.signed -isnot [bool] -or $record.signed -or $record.profile_session -cne 1 -or $record.profile_library -cne 5 -or $record.installer_compiler -cne 'Inno Setup 6.7.4' -or $record.version -isnot [string]){throw 'Unsupported release metadata or signing claim.'}
 $version=Parse-Version $record.version
 if($version -lt $current -or ($version -eq $current -and -not $AllowSameVersion)){throw 'Refuse downgrade or unrequested same-version reinstall.'}
 $expected=@("rust-browser-v$($record.version)-windows-x64.zip","rust-browser-v$($record.version)-windows-x64-setup.exe")
