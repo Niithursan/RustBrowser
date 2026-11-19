@@ -13,8 +13,11 @@ first published release**. The candidate is `main` at `c41bf6e`. Technical
 qualification is complete locally (see the first section of VALIDATION.md): every
 gate of the release workflow's package job, the installer upgrade from 0.20, a
 30-minute soak and the public-site survey with a burst close all passed, with no
-engine exit, crash report or navigation error. Owner bundle `o-656195c3` is ready
-for the owner checklist.
+engine exit, crash report or navigation error. Owner report, 2026-11-18: the owner
+checklist passed in full ("all passed") on bundle `o-656195c3`, version 0.21.0, source
+`c41bf6e`, executable SHA-256
+`1010a6884773be5d0c60e8ef4f703735e2ffd83c410b48f2a2a4ab4676ca8ad9`. These results
+cover that build only.
 
 Criteria status for this candidate:
 
@@ -25,7 +28,7 @@ Criteria status for this candidate:
 | A3 | Passed: upgrade from 0.20 keeps user data; schema 5 migration is one-way and documented in INSTALL_WINDOWS.md |
 | A4 | Passed: 38 of 41 loaded, 3 intended failures, burst 9 of 9, zero exits and dumps |
 | A5 | Passed: 30-minute churn soak, 178 cycles, no errors, clean shutdown |
-| A6 | **Open**: owner checklist on bundle `o-656195c3` (items 1 to 4, 12 to 14, 29, 30 and 35 to 38 first) |
+| A6 | Passed by owner report (2026-11-18): every checklist item on bundle `o-656195c3`, including the clean install in a new Windows user account (item 30) and the new items 35 to 38 |
 | A7 | Section B dispositions unchanged from RELEASE_CRITERIA.md; unsigned builds and no updater remain accepted risks |
 | A8 | README, CHANGELOG, VALIDATION, INSTALL_WINDOWS and the release notes describe this candidate |
 | A9 | Source commit, toolchain (Rust 1.99.1/MSVC), executable and Setup hashes are recorded in VALIDATION.md and the bundle's `owner.json` |
