@@ -6,6 +6,41 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.21.0 release candidate (2026-11-18)
+
+The owner asked for a release candidate on 2026-11-18 and chose **v0.21.0 as the
+first published release**. The candidate is `main` at `c41bf6e`. Technical
+qualification is complete locally (see the first section of VALIDATION.md): every
+gate of the release workflow's package job, the installer upgrade from 0.20, a
+30-minute soak and the public-site survey with a burst close all passed, with no
+engine exit, crash report or navigation error. Owner report, 2026-11-18: the owner
+checklist passed in full ("all passed") on bundle `o-656195c3`, version 0.21.0, source
+`c41bf6e`, executable SHA-256
+`1010a6884773be5d0c60e8ef4f703735e2ffd83c410b48f2a2a4ab4676ca8ad9`. These results
+cover that build only.
+
+Criteria status for this candidate:
+
+| # | Status |
+| --- | --- |
+| A1 | Passed locally on `c41bf6e`; the release workflow repeats it on the tag |
+| A2 | No known open data-loss, profile-corruption or crash defect |
+| A3 | Passed: upgrade from 0.20 keeps user data; schema 5 migration is one-way and documented in INSTALL_WINDOWS.md |
+| A4 | Passed: 38 of 41 loaded, 3 intended failures, burst 9 of 9, zero exits and dumps |
+| A5 | Passed: 30-minute churn soak, 178 cycles, no errors, clean shutdown |
+| A6 | Passed by owner report (2026-11-18): every checklist item on bundle `o-656195c3`, including the clean install in a new Windows user account (item 30) and the new items 35 to 38 |
+| A7 | Section B dispositions unchanged from RELEASE_CRITERIA.md; unsigned builds and no updater remain accepted risks |
+| A8 | README, CHANGELOG, VALIDATION, INSTALL_WINDOWS and the release notes describe this candidate |
+| A9 | Source commit, toolchain (Rust 1.99.1/MSVC), executable and Setup hashes are recorded in VALIDATION.md and the bundle's `owner.json` |
+
+The `v0.21.0` tag goes on the merge commit of the pull request that adds these
+release notes and records (the publish job reads `release-notes/v0.21.0.md` from the
+tagged commit). That commit changes only documentation after `c41bf6e`, so the
+qualified code is unchanged; the release workflow rebuilds and retests it from the
+tag. Declaring the candidate final, creating the tag and running the publish
+workflow are the owner's decisions after the owner checklist (see RELEASING.md).
+Nothing has been tagged or published.
+
 ## Current milestone and exact prior-build owner results
 
 **Release decision, 2026-11-12: v0.20.0 will not be tagged or released.** The first

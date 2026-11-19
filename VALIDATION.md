@@ -1,5 +1,63 @@
 # Validation
 
+## v0.21.0 release candidate qualification
+
+Candidate: `main` at `c41bf6e73e30e7def9061732234e83a3e24a75b1` (PR #57 squash merge;
+CI 44428287589 and security 44428287580 passed on its pull request head with the
+same code). Version 0.21.0, the first published release once the owner tags and
+publishes it. One Windows 11 Pro x64 machine (AMD Ryzen 5 5600, 12 logical
+processors), WebView2 157, Rust 1.99.1/MSVC, scale 1.0, measured 2026-11-18. Local
+results only; the release workflow repeats the gates when the tag is pushed. The
+qualifying branch changes documentation only, so the code under test is the
+candidate commit.
+
+**Release workflow package job, step for step (all passed):** `cargo fmt --check`;
+strict Clippy; `cargo test --locked --all-targets --all-features`; process-tree and
+Servo tooling scripts; the `experiments/servo` and `validation` Python suites; every
+native suite `release.yml` lists, each in its own process (43, all passing on the
+first run); the single-instance hand-off; three `windows-daily.ps1` runs; `cargo
+audit --deny warnings` (0.22.2); a clean `cargo build --locked --release` in its own
+target folder (the owner's running browser held `target\release`); portable
+packaging; the installer lifecycle (fresh install, upgrade from 0.20 with user data
+kept, default-browser registration, downgrade and invalid-version refusal, running
+and reparse refusal, uninstall, reinstall, optional shortcut); and the release
+metadata verifier (36 malformed, downgrade, tampered and missing inputs refused).
+Candidate executable SHA-256
+`1010a6884773be5d0c60e8ef4f703735e2ffd83c410b48f2a2a4ab4676ca8ad9`.
+
+**30-minute churn soak** (release test probe SHA-256
+`cb546d5f0e97f7d71f0831efc1e211b7270052e1a3bd44a5c1b31e804c74d3e0`, 20 stable tabs
+plus one scratch tab closed, recreated and navigated every 10 seconds, fresh
+disposable profile): completed (`stage: done`) over 1,798.7 s with 1,813 soak
+samples and a largest sampling gap of 1.26 s; 178 churn cycles; no navigation
+errors; journal `starting`, `started`, `clean_shutdown`; no running marker left;
+34 to 35 processes. Private memory averaged 962.2 MiB (910.9 to 993.5; v0.14: 893.8)
+and the working set 1,022.1 MiB (max 1,125.3). Five-minute windows, mean private /
+working set MiB: 944.8 / 1,041.3, 964.6 / 1,028.7, 966.0 / 1,022.7, 966.0 / 1,014.1,
+965.7 / 1,013.3, 966.3 / 1,012.7. Private memory rose 21.5 MiB (2.3%) from the first
+to the last window, almost all of it in the first five minutes, while the working
+set fell; after closing to one tab it was 449.7 MiB (idle before the soak: 892.6).
+The slowest switch callback took 54.3 ms. The CPU counter was not usable in this run
+(process churn reset it), so no CPU figure is claimed. One synthetic run cannot show
+the absence of a leak and is not real-site browsing.
+
+**Public-site survey** (`validation/site-survey.ps1`, disposable profile, no
+credentials, no permission grants): 41 addresses, 38 loaded, 3 failed as intended
+(an `.invalid` host, an expired and a self-signed certificate); zero engine exits,
+renderer exits and crash reports; one download initiation (the httpbin attachment)
+contained in the profile. A nine-site burst with 20 filler tabs closed in one turn:
+9 of 9 loaded, zero exits and crash reports.
+
+**Owner bundle:** `validation/prepare-owner-build.ps1` built bundle `o-656195c3` from
+the same executable (validation identity, Setup SHA-256
+`0229bf6a2086098f9c9682d074a59495835fdcfc3b3da1c20a0b546a11bd8b17`); `Launch.ps1
+-VerifyOnly` passed. The owner reported on 2026-11-18 that every owner checklist
+item (A6) passed on this bundle.
+
+**Not established here:** a machine without the Visual C++ runtime or WebView2 and
+Windows 10. The clean install in a new Windows user account and the contrast-theme
+checks are covered by the owner's checklist report, not by automation.
+
 ## v0.21 shield, library sidebar, vertical tabs and new-tab tiles
 
 Baseline `4ece8ee` (PR #27 squash merge); CI 43298035619 and security 43298035506
