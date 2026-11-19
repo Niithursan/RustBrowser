@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Second chrome critique follow-up (27/40):
+  - **Profile switching:** the profile dropdown marks profiles already open in another window ("Open in another window"; the action switches to that window) and Up and Down move between profiles.
+  - **Settings honesty:** while Settings or another full panel covers the page, the toolbar reads "Browser page" and shows the panel's name, the star and shield are disabled, and Settings no longer reports on whichever tab was active.
+  - **First run:** "Show bookmarks bar" explains that the bar appears once you bookmark a page.
+  - **Plainer Settings:** one-sentence Clear browsing data introduction (and it says this profile's other windows stay open), "Saved tabs for next time", a plain private-window explanation, and the diagnostics record behind "Show recorded events".
+  - **Consistency:** one focus rule for every dropdown (menus their first item, the star its field, the others their heading), `openSettings` scrolls when Settings is already open, the shortcut list includes Ctrl+Shift+B, a lighter address tooltip, Exit set apart in the menu, and disabled Delete buttons in Disabled Grey.
+  - **Fix:** reopening a dropdown right after closing one no longer closes it again (the page focus from the first close was taken as a press on the page).
 - Release metadata states the library database schema the build actually uses (5).
   The v0.21.0 metadata file (`rust-browser-v0.21.0-windows-x64-release.json`) says
   `profile_library: 3`, a value hard-coded since v0.15 that the producer and the
