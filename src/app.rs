@@ -1304,6 +1304,12 @@ impl Drop for Session {
 /// running it, which then opens a new window). `private` opens a private window
 /// of that profile.
 pub fn open_profile(id: &str, private: bool) -> std::io::Result<()> {
+    open_profile_at(id, private, None)
+}
+
+/// Open profile `id` (private or not), showing `link` instead of its usual tabs.
+/// `link` must already be a validated bookmark address.
+pub fn open_profile_at(id: &str, private: bool, link: Option<&str>) -> std::io::Result<()> {
     if !rust_browser::profiles::valid_id(id) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -1313,6 +1319,7 @@ pub fn open_profile(id: &str, private: bool) -> std::io::Result<()> {
     #[cfg(test)]
     {
         OPENED_PROFILES.with(|opened| opened.borrow_mut().push((id.to_string(), private)));
+        OPENED_LINKS.with(|opened| opened.borrow_mut().extend(link.map(str::to_string)));
         Ok(())
     }
     #[cfg(not(test))]
@@ -1322,6 +1329,10 @@ pub fn open_profile(id: &str, private: bool) -> std::io::Result<()> {
         if private {
             command.arg("--private");
         }
+        if let Some(link) = link {
+            // After `--`, so an address can never be read as an option.
+            command.arg("--").arg(link);
+        }
         command.spawn().map(|_| ())
     }
 }
@@ -1330,6 +1341,8 @@ pub fn open_profile(id: &str, private: bool) -> std::io::Result<()> {
 thread_local! {
     /// Profiles fixtures asked to open (tests never start processes).
     pub static OPENED_PROFILES: RefCell<Vec<(String, bool)>> = const { RefCell::new(Vec::new()) };
+    /// Links those profiles were asked to show.
+    pub static OPENED_LINKS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 impl Session {
@@ -2891,7 +2904,10 @@ impl Session {
                 self.settings.favorites.remove(index);
             }
             // Need the event loop; handled by App before commands reach here.
-            Command::NewWindow | Command::ReopenClosedWindow | Command::ExitBrowser => {}
+            Command::NewWindow
+            | Command::OpenSavedWindow(_)
+            | Command::ReopenClosedWindow
+            | Command::ExitBrowser => {}
             Command::NewPrivateWindow => open_profile(&self.profile_id, true)?,
             Command::RefreshProfiles => self.refresh_profiles(),
             Command::OpenProfile(id) => {
@@ -3213,6 +3229,40 @@ impl Session {
                     self.activate()?;
                     self.command(Command::Navigate(url))?;
                 }
+            }
+            Command::OpenSavedTabs(urls) => {
+                if urls.is_empty() || urls.len() > rust_browser::library::MAX_MENU_LINKS {
+                    return Err("There are no bookmarks to open.".into());
+                }
+                let urls = urls
+                    .iter()
+                    .map(|url| rust_browser::library::bookmark_url(url))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?;
+                self.panel = None;
+                let mut first = None;
+                let mut failed = None;
+                for url in urls {
+                    match self.open_tab(url) {
+                        Ok(()) => first = first.or_else(|| self.tabs.active().map(|t| t.id)),
+                        // The tab limit: keep what opened and say why the rest did not.
+                        Err(error) => {
+                            failed = Some(error.to_string());
+                            break;
+                        }
+                    }
+                }
+                if let Some(id) = first {
+                    self.tabs.select(id);
+                }
+                self.activate()?;
+                if let Some(error) = failed {
+                    return Err(error.into());
+                }
+            }
+            Command::OpenSavedPrivate(url) => {
+                let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
+                open_profile_at(&self.profile_id, true, Some(&url))?;
             }
             Command::SetHistoryEnabled(value) => {
                 self.settings.history_enabled = value;
@@ -4402,6 +4452,22 @@ impl ApplicationHandler<Event> for App {
         match &event {
             Event::Command(Command::NewWindow) => {
                 if let Err(message) = session.open_window(event_loop, None, true) {
+                    session.notice = message;
+                    session.render_all();
+                }
+                return;
+            }
+            Event::Command(Command::OpenSavedWindow(url)) => {
+                let result = rust_browser::library::bookmark_url(url)
+                    .map_err(|e| e.to_string())
+                    .and_then(|url| {
+                        let snapshot = storage::WindowSnapshot {
+                            tabs: vec![url],
+                            ..Default::default()
+                        };
+                        session.open_window(event_loop, Some(snapshot), true)
+                    });
+                if let Err(message) = result {
                     session.notice = message;
                     session.render_all();
                 }
