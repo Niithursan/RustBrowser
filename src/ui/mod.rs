@@ -538,7 +538,13 @@ mod tests {
         assert!(HTML.contains("#manager[data-background=dusk]{background:linear-gradient(170deg,var(--strip),var(--surface) 70%)}"));
         assert!(HTML.contains("#manager[data-background=glow]{background:radial-gradient(ellipse at 50% 0,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface) 70%)}"));
         assert!(HTML.contains("#manager[data-background=panels]{background:linear-gradient(135deg,var(--panel),var(--card))}"));
-        assert!(HTML.contains("#shield[data-on=true]{color:var(--accent)}"));
+        // The shield reads in the text colour with a Dial Grey count; the signal stays
+        // free for state that needs the user.
+        assert!(HTML.contains("#shield[data-on=true]{color:var(--text)}"));
+        assert!(
+            HTML.contains("#shield-count{font-size:12px;font-weight:600;color:var(--secondary)")
+        );
+        assert!(HTML.contains("border:1px solid var(--field-line);border-radius:18px"));
         let dark = tokens(":root");
         for theme in ["dark", "slate", "plum", "light"] {
             let mut palette = dark.clone();
@@ -560,9 +566,24 @@ mod tests {
                     );
                 }
             }
-            // The shield, when an extension is on, is an accent icon on the field.
-            let ratio = contrast(&token("--accent"), &token("--field"));
-            assert!(ratio >= 3.0, "{theme}: the shield on --field is {ratio:.2}");
+            // The shield, when an extension is on, is a text-colour icon on the field
+            // with its count in Dial Grey.
+            for (name, minimum) in [("--text", 3.0), ("--secondary", 4.5)] {
+                let ratio = contrast(&token(name), &token("--field"));
+                assert!(
+                    ratio >= minimum,
+                    "{theme}: the shield's {name} on --field is {ratio:.2}"
+                );
+            }
+            // WCAG 1.4.11: the address line's edge is a UI component boundary, so it
+            // keeps 3:1 against the toolbar around it and the field inside it.
+            for background in ["--surface", "--field"] {
+                let ratio = contrast(&token("--field-line"), &token(background));
+                assert!(
+                    ratio >= 3.0,
+                    "{theme}: --field-line on {background} is {ratio:.2}"
+                );
+            }
         }
     }
     #[test]

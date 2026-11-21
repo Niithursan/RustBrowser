@@ -302,6 +302,23 @@ impl Probe {
         let ready = self.ready();
         match self.step {
             Step::Start => {
+                // The shield is shown only once an extension that can block requests
+                // is added, so add the test blocker (a copy: WebView2 writes indexed
+                // rules into the folder) for the walk to reach it.
+                let folder = self.root.join("blocker");
+                std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+                let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/extensions/blocker");
+                for name in ["manifest.json", "rules.json"] {
+                    std::fs::copy(source.join(name), folder.join(name))
+                        .map_err(|e| e.to_string())?;
+                }
+                self.app
+                    .proxy
+                    .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                        Some(folder),
+                    ))))
+                    .map_err(|_| "proxy")?;
                 // Two tabs so the arrow keys have somewhere to go.
                 let s = self.app.session.as_mut().ok_or("No session")?;
                 s.command(Command::NewTab).map_err(|_| "New tab failed")?;
@@ -311,14 +328,16 @@ impl Probe {
             }
             // Every tab done loading too: a tab that is still loading shows Stop in
             // place of Reload, and the controls are listed only once, before the walk.
+            // The blocker must be listed, or the shield is not yet shown.
             Step::Settle
                 if self.at.elapsed() > Duration::from_secs(2)
                     && self.app.session.as_ref().is_some_and(|s| {
-                        s.windows[0]
-                            .tabs
-                            .items
-                            .iter()
-                            .all(|t| !t.content.state.loading)
+                        !s.extension_rows().is_empty()
+                            && s.windows[0]
+                                .tabs
+                                .items
+                                .iter()
+                                .all(|t| !t.content.state.loading)
                     }) =>
             {
                 self.cdp(
