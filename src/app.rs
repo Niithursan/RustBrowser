@@ -397,7 +397,7 @@ fn new_native_window(
     use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
     let icon =
         winit::window::Icon::from_resource(1, Some(winit::dpi::PhysicalSize::new(32, 32))).ok();
-    event_loop.create_window(
+    let window = event_loop.create_window(
         Window::default_attributes()
             .with_decorations(false)
             .with_undecorated_shadow(true)
@@ -407,7 +407,10 @@ fn new_native_window(
             .with_inner_size(LogicalSize::new(1200.0, 820.0))
             .with_min_inner_size(LogicalSize::new(560.0, 320.0))
             .with_active(active),
-    )
+    )?;
+    // Without it only the top edge (the toolbar's strip) resizes the window.
+    crate::native_window::enable_edge_resize(&window);
+    Ok(window)
 }
 
 /// How a window is named in notices: its selected tab's title or address.

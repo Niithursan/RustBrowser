@@ -130,6 +130,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_imported_bookmarks_show_on_the_bookmarks_bar -- --ignored --test-threads=1
       - name: Native bookmark menus
         run: cargo test --locked --bin rust-browser native_bookmark_menus -- --ignored --test-threads=1
+      - name: Native window edges resize
+        run: cargo test --locked --bin rust-browser native_window_edges_resize -- --ignored --test-threads=1
       - name: Native star and site information dropdowns
         run: cargo test --locked --bin rust-browser native_star_and_site_information_open_as_dropdowns -- --ignored --test-threads=1
       - name: Native permission request over the page

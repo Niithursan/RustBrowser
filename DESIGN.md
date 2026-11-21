@@ -208,7 +208,10 @@ The panel has its own look rather than imitating Fluent or Edge, and merges the 
 into the top of a frameless Windows window with flush `46x36` Minimize, Maximize/Restore
 and Close caption buttons at the top-right corner while preserving Windows 11 rounded
 corners, theme-coloured borders, Snap, Narrator, high contrast, reduced motion and display
-scaling (checked at 100% and 150%).
+scaling (checked at 100% and 150%). Every edge resizes a restored window: Windows keeps
+its invisible resize border outside the left, right and bottom edges (the window
+subclasses `WM_NCCALCSIZE` so only the caption is removed), and a 4px strip
+(`#resize-top`) along the top of the chrome resizes the top edge and its corners.
 Density is compact and desktop-first: 32px controls, 13px text, 4px spacing steps.
 
 **Key Characteristics:**

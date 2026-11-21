@@ -446,10 +446,11 @@ visible focus.
    again.
 2. Hover the Maximize button and pick a Snap layout; then press Win+Left and Win+Right.
 3. Right-click an empty part of the tab strip (or press Alt+Space).
-4. Drag the top edge of a restored window.
+4. Drag the top edge of a restored window, then its left, right and bottom edges and
+   a bottom corner (the pointer turns into a resize arrow just outside the window).
 
 **Pass:** dragging moves the window, double-click maximizes and restores, Snap layouts
-appear and work, the window menu appears, the top edge resizes, and Minimize,
+appear and work, the window menu appears, every edge and corner resizes, and Minimize,
 Maximize/Restore and Close sit flush in the top-right corner.
 
 ## 37. Dropdowns over a playing video (2 minutes)
