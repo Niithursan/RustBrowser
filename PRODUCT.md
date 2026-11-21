@@ -52,12 +52,15 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 - Profiles keep the owner's own roles apart (for example personal, work, school),
   each with its own sign-ins, cookies, history, bookmarks, passwords, extensions,
   tabs and settings. Switching between them is a frequent, quick action, not a
-  shared-computer login: the profile button left of Menu (⋮) opens another profile in
-  its own window, and a plain launch with more than one profile shows the "Who's
+  shared-computer login: the profile button left of Menu (⋮), shown once there is more
+  than one profile, opens another profile in its own window, and a plain launch with more than one profile shows the "Who's
   browsing?" picker. Links from other apps skip the picker and open in the profile
   used last.
 - Every action is reachable by keyboard shortcut as well as by pointer; shortcuts are
   listed in Menu (⋮) → Keyboard shortcuts.
+- The shield appears only once an extension that can block requests is added, since
+  there is no built-in blocker; an encrypted page shows a quiet lock, and the
+  connection badge uses words only when the state is worth reading.
 - Dropdowns (Menu, site information, star, shield, bookmark folders, profile button,
   permission prompts) open over the live page: the page keeps playing and updating
   undimmed, and pressing the page closes the dropdown.

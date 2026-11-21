@@ -110,26 +110,34 @@ source instead.
 
 The tab strip runs along the top. Each tab is a card with the page's icon, its title
 and a close button; the selected card is joined to the toolbar below it and marked
-with an accent line along its top edge and a bold title. The + button follows the
-last tab; when tabs overflow, the scroll buttons and the all-tabs button at the right
-of the strip (it opens the list of every tab) stay available. A tab shows small icons
-when it is pinned, loading or asleep; hovering it shows its title, with its state on
-the next line.
+with an accent line along its top edge. Tabs share the strip equally: each is up to
+240 pixels wide and all shrink together before the strip scrolls, so a page changing
+its title never moves the other tabs. A long title fades out at the card's edge. After
+you close a tab with its close button, the other tabs keep their width until the
+pointer leaves the strip, so you can close several in a row without aiming again. The
++ button and the all-tabs button (⌄, the list of every tab) follow the last tab, with
+scroll buttons before them when tabs overflow. A pinned tab is a small card showing
+only the page's icon and has no close button (Ctrl+W or Unpin tab closes it). A tab
+shows small icons when it is loading or asleep; hovering it shows its title, with its
+state on the next line.
 
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
-address line. At its start, the site-information badge shows the connection; at its
-end, the star bookmarks the page and the shield shows ad blocking (below). The Menu (⋮)
-at the far right holds everything else, in labelled groups: This page (find, zoom with
-the current percentage, print), This tab (pin, move, keep awake), Library (bookmarks,
-history, downloads), Windows (new, private, reopen closed) and then Settings, the list
-of keyboard shortcuts and Exit. Each item shows its keyboard shortcut at the right.
+address line. At its start, the site-information badge shows the connection: a small
+lock on an encrypted page, and a word (Not encrypted, Not connected, Browser page)
+when there is something to read. At its end, the star bookmarks the page and, once
+you have added an extension that can block requests, the shield shows ad blocking
+(below). The Menu (⋮) at the far right holds everything else, in labelled groups: New
+(new tab, new window, new private window, reopen closed window), This page (find,
+zoom with the current percentage, print), This tab (pin, keep awake, move), Library
+(bookmarks, history, downloads) and then Settings, the list of keyboard shortcuts and
+Exit. Each item shows its keyboard shortcut at the right.
 Up and Down move through the items, Home and End jump to the first and last.
 
 The menu, the site-information badge, the star, the shield and each folder on the
 bookmarks bar open a **dropdown** under their button. While one is open the page behind
-it is a dimmed still image (a live page cannot be drawn under a dropdown reliably; see
-ARCHITECTURE.md). Press Escape, click outside it or click its button again, or choose
-an item that goes somewhere, and the live page comes back. Another dropdown's button
+it stays live and undimmed (video keeps playing); over the new-tab page or Settings the
+panel is dimmed. Press Escape, click the page or click its button again, or choose an
+item that goes somewhere, and the dropdown closes. Another dropdown's button
 switches straight to that dropdown.
 
 - **Site information** shows whether the connection is encrypted, the site's origin
@@ -139,7 +147,10 @@ switches straight to that dropdown.
   bookmarked; clicking it saves the page or opens its bookmark to rename it, choose
   its folder, remove it, or open All bookmarks.
 
-The **shield**'s dropdown lists the extensions that are on and whether each asks to block
+The **shield** appears at the end of the address line once you add an extension that
+can block requests (Rust Browser has no ad blocker of its own, so there is nothing to
+show before that, and it never appears in private windows). Its dropdown lists the
+extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
 normal windows while you have added an extension and **Count blocked requests**
@@ -555,7 +566,8 @@ data, extensions, open tabs and settings, and runs in its own windows. Nothing i
 shared between profiles.
 
 - **The profile button** is the round avatar (the profile's initial on its colour)
-  left of the menu button (⋮). It names this window's profile and lists the others:
+  left of the menu button (⋮), shown once there is more than one profile (add the
+  first extra profile in Settings → Profiles). It names this window's profile and lists the others:
   choose one to open it in its own window, or choose **Add profile** to create one
   and open it. **Manage profiles** opens Settings → Profiles.
 - **Settings → Profiles** lists every profile. **Edit** changes a name (up to 40
