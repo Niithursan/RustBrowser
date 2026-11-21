@@ -72,15 +72,19 @@ non-US keyboard layouts and native mixed-DPI transitions remain unverified.
   (240 CSS pixels) and the library column (260, 360 and 640), each at 1, 1.25, 1.5
   and 2: no overflow, nothing outside the view, no overlapping controls, and Tab and
   Shift+Tab reach every control. Down selects the next tab in the column. It opens the
-  shield panel with Enter and requires both of its buttons in the Tab order, and checks
+  shield panel with Enter (it adds the test blocker first, since the shield is shown
+  only once an extension that can block requests is added) and requires both of its
+  buttons in the Tab order, and checks
   the toolbar at the narrower widths it has beside the column.
 - The tab column is a `tablist` with `aria-orientation="vertical"`, with the strip's
   names, positions and selected state. The library resizer is a focusable `separator`
   with its range and value. The shield button's name says what it shows ("Ad
   blocking: 2 blocked on this page"); its panel is a labelled region and gets focus on
   its first button.
-- Contrast: text and muted text on every new-tab background stop, and the shield's
-  accent on the address field, are tested in all four themes (the Glow background was
+- Contrast: text and muted text on every new-tab background stop, the shield's icon
+  (text colour) and count (muted) on the address field, and the address field's
+  border against the toolbar and the field (3:1, WCAG 1.4.11) are tested in all four
+  themes (the Glow background was
   reduced to 10% accent to keep muted text at 4.5:1).
 - Turning on vertical tabs leaves focus on the switch.
 

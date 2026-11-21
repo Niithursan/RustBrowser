@@ -10,6 +10,7 @@ colors:
   instrument-white: "#E9ECEF"
   dial-grey: "#9AA5B1"
   hairline: "#3A414B"
+  field-hairline: "#656E79"
   disabled-grey: "#5E6772"
   warning-coral: "#FF9B8F"
   signal-amber: "#F2C94C"
@@ -25,6 +26,7 @@ colors:
   ink: "#1B2430"
   ink-secondary: "#4A5563"
   paper-hairline: "#A7B0BA"
+  paper-field-hairline: "#808A95"
   paper-disabled: "#9BA4AE"
   warning-crimson: "#A3192A"
 typography:
@@ -145,6 +147,11 @@ components:
     rounded: "{rounded.pill-28}"
     padding: "0 12px 0 8px"
     height: "28px"
+  security-lock:
+    backgroundColor: "transparent"
+    textColor: "{colors.dial-grey}"
+    rounded: "{rounded.pill-28}"
+    size: "28px"
   tab:
     backgroundColor: "transparent"
     textColor: "{colors.dial-grey}"
@@ -183,9 +190,11 @@ components:
 
 Rust Browser's chrome is an instrument panel for the web: a row of precise, legible
 controls whose job is to report state honestly and get out of the way. Every reading
-means something. The connection badge says *Encrypted*, *Not encrypted* or *Browser
-page* in plain words; the shield shows a number only when it is counting; the loading
-bar moves only while a page loads. Nothing on the panel is decoration, and nothing
+means something. An encrypted page, the normal case, shows only a quiet lock; the
+connection badge speaks up in plain words when there is something to read (*Not
+encrypted*, *Not connected*, *Browser page*); the shield appears only once an extension
+can block requests and shows a number only when it is counting; the loading bar moves
+only while a page loads. Nothing on the panel is decoration, and nothing
 pretends to know more than it does.
 
 The panel is graphite and restrained: four stacked tonal layers (tab strip, toolbar,
@@ -223,7 +232,7 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 
 ### Primary (the signal, one per theme)
 - **Signal Amber** (Dark): selected-tab top rule, focus rings, loading bar, saved-bookmark
-  star, active shield, checkbox and progress accent, the private-window label, the
+  star, checkbox and progress accent, the private-window label, the
   permission-request border, and the Glow new-tab background tint.
 - **Harbour Blue** (Slate): the same roles in the Slate theme.
 - **Lilac** (Plum): the same roles in the Plum theme.
@@ -239,6 +248,7 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 - **Instrument White**: primary text.
 - **Dial Grey**: secondary text, inactive tab titles, icons at rest, hover borders.
 - **Hairline**: every 1px border and divider.
+- **Field Hairline** (`--field-line`): the address line's border only, a step brighter than Hairline so the field's edge keeps 3:1 against the toolbar and the field (WCAG 1.4.11). Paper Field Hairline is its Light value; Slate and Plum retint it.
 - **Disabled Grey**: disabled control text.
 - **Warning Coral**: *Not encrypted* / failed connection, notices, settings errors.
 - **Warning Coral** also marks destructive buttons; a notice in it is always a problem.
@@ -278,18 +288,24 @@ no web font is ever loaded (the toolbar's security policy forbids it).
 ### Named Rules
 **The Origin-First Rule.** The site's origin is always the largest emphasised text in the toolbar. Nothing else in the tab strip, navigation row or bookmarks bar may be set at 600 weight and 15px or larger. The selected tab's title keeps regular weight at 13px; selection is marked by colour, surface and the top signal rule, so it never competes with the origin. Headings on full panels such as the library and new tab are below the toolbar and exempt.
 
-**The Plain Word Rule.** State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, "Private"), so it survives high contrast, colour blindness and Narrator.
+**The Plain Word Rule.** State is written as a word as well as shown by an icon or colour (*Not encrypted*, a blocked-request count, "Private"), so it survives high contrast, colour blindness and Narrator. The one exception is the normal case, an encrypted connection: it is a quiet lock with no word on screen (its button is still named "Encrypted" for Narrator), so the word appears only when the state is worth reading and a change of state is a change of shape.
 
 ## Layout
 
 The chrome is a stack of rows across the top of the window: the **tab strip** (min 42px
-restored with 6px top padding, 36px maximized, tabs bottom-aligned, and `46x36` Minimize,
-Maximize/Restore and Close caption buttons flush with the top-right window edge), the
+restored with 6px top padding, 36px maximized, tabs bottom-aligned, a 1px hairline along
+its bottom that the selected tab covers, then the scroll arrows when tabs overflow, New
+tab (+) and the all-tabs list (a down chevron) right after the tabs, an open drag area,
+and `46x36` Minimize, Maximize/Restore and Close caption buttons flush with the
+top-right window edge), the
 **navigation row** (4px top, 8px bottom padding; hosting the flush caption buttons at its
 right end when vertical tabs are on) with back, forward, reload/stop and home on the left,
-the address line filling the middle and the Menu (⋮) at the right, an optional
-**bookmarks bar** (28px items with `16x16` site icons or `4px`-rounded letter monogram
-chips), a notice row, and the 2px **loading bar** (carrying a 1px bottom hairline while
+the address line filling the middle and the profile button (with more than one profile)
+and Menu (⋮) at the right, an optional **bookmarks bar** (28px items with `16x16` site
+icons, borderless `4px`-rounded letter monogram chips in Graphite Card at 600, or 16px
+folder icons in the text colour; All bookmarks sits at the right end behind a hairline
+with its own library glyph, because it opens the library column rather than a folder),
+a notice row, and the 2px **loading bar** (carrying a 1px bottom hairline while
 idle so the toolbar cleanly separates from full panels and light webpages). The page view
 starts below `--chrome-height` (120px).
 
@@ -302,7 +318,8 @@ the flush window controls whenever `New tab` sits beside it). Full panels (Setti
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
 tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
-the address line takes its own full-width line; full panels drop to 16px padding.
+the address line takes its own full-width line, while the profile button and Menu stay
+at the right edge; full panels drop to 16px padding.
 
 ## Elevation & Depth
 
@@ -312,7 +329,7 @@ as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlin
 
 ### Shadow Vocabulary
 - **Float** (`box-shadow: 0 6px 18px rgba(0,0,0,.35)`; Light: `rgba(27,36,48,.18)`): dropdowns, the address context menu and the confirmation dialog, the only floating surfaces.
-- **Signal rule** (`box-shadow: inset 0 2px 0 <signal>`): the selected tab's top edge. An inset rule, not an elevation. In the vertical column the selection is a short 3px rounded bar instead (see Tabs).
+- **Signal rule** (a 2px bar along the selected tab's top edge, inset 10px from each side so it never bends around the rounded corners): an inset rule, not an elevation. In the vertical column the selection is a short 3px rounded bar instead (see Tabs).
 - **Focus ring** (`outline: 2px solid <signal>; outline-offset: 2px`): every focusable control. The address line instead shifts its border to the signal and adds a 1px signal ring.
 
 ### Named Rules
@@ -352,25 +369,30 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 - **Checkboxes and progress:** native controls tinted with the signal via `accent-color`.
 
 ### The location line (signature component)
-The one bold element on the panel. A 36px pill in Graphite Field containing, left to
-right: the **security badge** (28px pill, text-colour wash, a lock or info icon and a
-12px/600 word; coral on *Not encrypted* or failure, Dial Grey and regular weight on
-browser pages), the **address** (an origin-emphasised view whose subdomains collapse
+The one bold element on the panel. A 36px pill in Graphite Field with a Field Hairline
+border containing, left to right: the **security badge** (on an encrypted page a 28px
+round button holding only a Dial Grey lock, with the wash on hover; otherwise a 28px pill
+with the text-colour wash, an icon and a 12px/600 word, coral on *Not encrypted* or
+failure, Dial Grey and regular weight on browser pages), the **address** (an origin-emphasised view whose subdomains collapse
 before the registrable domain tail on narrow bars, hiding on focus to show the editable
 field), the **star** (30px round, Dial Grey at rest, filled in the theme signal when the
-current page is bookmarked) and the **shield** (32px pill, Dial Grey at rest, signal when
-an extension is on, with its blocked-request count in 12px/600). The shield's check mark
+current page is bookmarked) and the **shield** (32px pill, shown only once an extension
+that can or may block requests is added and never in a private window, because Rust
+Browser has no ad blocker of its own; Dial Grey at rest, the text colour while an
+extension can block, with its blocked-request count in Dial Grey 12px/600 tabular
+figures: a tally, not a warning). The shield's check mark
 is drawn only while an extension can block requests; otherwise it is an empty outline, so
 the icon never claims protection that is not there (GrayText in high contrast).
 
 ### Tabs
-- **Inactive:** transparent cards, 36px tall, up to 240px wide; title in Dial Grey; a 1px hairline separates neighbouring inactive tabs; the close button sits at 55% opacity until hovered.
-- **Active:** takes Graphite Surface to join the toolbar, a 2px signal rule along its top edge and a regular-weight 13px title in Instrument White.
-- **States:** pinned tabs show only a pin icon and a short title; sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
+- **Width:** every tab is 240px until the strip is full; then all shrink together to 64px before the strip scrolls, so a title change never moves another tab. After a close with the close button, every tab keeps its width while the pointer stays in the strip, so the next close button slides under the pointer; widths are released when the pointer leaves or a tab opens.
+- **Inactive:** transparent cards, 36px tall; title in Dial Grey, fading out over its last 20px when it is too long (no ellipsis); a 1px hairline separates neighbouring inactive tabs; the drawn close button sits at 55% opacity until hovered, and on a tab narrower than 96px it appears only on hover.
+- **Active:** takes Graphite Surface to join the toolbar, the signal rule along its top edge and a regular-weight 13px title in Instrument White.
+- **States:** a tab with no site icon shows the drawn globe; pinned tabs in the strip are a 44px card holding only the site icon, with no close button (Ctrl+W or Unpin still close them; their name stays on the tab for Narrator); sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
 - **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
 ### Profile button and picker
-- **Profile button:** a 32px round button left of the menu button holding a 24px avatar: the profile's initial in white, 600 weight, on the profile's colour. Hidden in private windows.
+- **Profile button:** a 32px round button left of the menu button holding a 24px avatar: the profile's initial in white, 600 weight, on the profile's colour. Shown only when there is more than one profile (Settings → Profiles adds one), and hidden in private windows.
 - **Profile colours:** eight fixed swatches, each at least 4.5:1 under a white initial and kept clear of every theme's signal and error colours (at least 20° of hue or 0.3 of lightness apart, checked by `ui::tests`), so an avatar never reads as "active" or as a problem: Teal `#0E6F7C`, Green `#1F7A4D`, Purple `#6B3FA0`, Brown `#8A4B1F`, Magenta `#9C2C6E`, Olive `#5E6A1E`, Taupe `#6E5F52`, Slate `#56606C`. Lists saved with the first palette (which reused Light's cobalt and crimson) load with the nearest new colour. Swatches are 24px circles; the chosen one carries a 2px text-colour ring outside a 2px gap, and focus adds the signal outline beyond it, so both show at once. In high contrast, avatars and swatches keep their colour with a 1px ButtonText border.
 - **Profile identity stays the avatar.** Nothing else in the chrome takes the profile's colour; the window title names the profile when there is more than one.
 - **Profile dropdown:** a 300px dropdown with the current profile (40px avatar, name, "This window's profile") over a hairline, then the other profiles as quiet rows (avatar and name, 36px; 44px with a second Dial Grey line, "Open in another window", when that profile is already open, whose action switches to it rather than opening another window; Up and Down move between rows), then Manage profiles and Add profile. It opens with focus on its heading, so a stray Enter never opens another profile. Add profile always goes through the editor in Settings → Profiles (name and color first).
@@ -381,7 +403,7 @@ the icon never claims protection that is not there (GrayText in high contrast).
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over the live page.
 - **Focus on opening:** menus (⋮, bookmark folders) focus their first item; a form (the star) its first field; every other dropdown (site information, shield, profile) its heading, which shows the signal focus ring to keyboard users only. A pending permission prompt focuses **Don't allow**.
 - **A page covered by a full panel is not described.** While Settings or another full panel covers the page, the badge reads "Browser page", the address line shows the panel's name ("Settings"), and the star and shield are disabled. Settings carries no per-site readout; that lives in the site-information dropdown.
-- **Menu (⋮):** labelled groups (This page, This tab, Library, Windows, then Settings and Keyboard shortcuts, then Exit on its own below a hairline), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +. Keep tab awake and Exit show their state in that place instead of a shortcut (Exit: "Tabs return", "Tabs not kept" or, in a private window, "Nothing kept").
+- **Menu (⋮):** labelled groups (New: New tab, New window, New private window and Reopen closed window; This page; This tab, with Pin and Keep awake before Move left and right; Library; then Settings and Keyboard shortcuts, then Exit on its own below a hairline), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +. Keep tab awake and Exit show their state in that place instead of a shortcut (Exit: "Tabs return", "Tabs not kept" or, in a private window, "Nothing kept").
 - **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers
@@ -402,7 +424,7 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 
 ### Do:
 - **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.
-- **Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.
+- **Do** keep the signal colour for state: selected, focused, loading, private, a saved bookmark, a pending permission decision.
 - **Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.
 - **Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.
 - **Do** give every icon-only control an accessible name and put its keyboard shortcut in the tooltip.
@@ -416,6 +438,6 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 - **Don't** put shadows on cards, buttons, tabs or panels; only floating dropdowns, menus and the confirmation dialog get the Float shadow.
 - **Don't** use the error colour for anything that is not a problem or a destructive action.
 - **Don't** load fonts, images or anything else from a website or a CDN into the chrome; icons are inline SVG and favicons arrive as checked data URLs.
-- **Don't** draw floating chrome over a live page; use the still-page backdrop.
+- **Don't** dim, freeze or replace the page behind a dropdown; it stays live (see the Live-Page Rule).
 - **Don't** imitate Fluent or Edge controls outright, and don't break Windows behaviour (title bar, Snap, Narrator, scaling) for the sake of the look.
 - **Don't** set anything else in the toolbar larger than the address origin, or at 600 weight and 15px or more.

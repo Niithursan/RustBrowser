@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Third chrome critique follow-up (27/40):
+  - **Tab strip:** tabs share the strip equally (up to 240px, shrinking together to 64px before it scrolls), so a page changing its title no longer moves the other tabs. After closing a tab with its close button, tabs keep their width until the pointer leaves the strip. Long titles fade out instead of ending in an ellipsis; a narrow inactive tab shows its close button on hover. Pinned tabs are icon-only cards without a close button. The selected tab's accent line stops short of the rounded corners, a hairline separates the strip from the toolbar, and the close button is a drawn icon.
+  - **Tab list:** the all-tabs button is a down chevron next to +, away from the window's Minimize button.
+  - **Address line:** an encrypted page shows a quiet lock without the word or filled pill, which are kept for Not encrypted, failures and browser pages. The field's border meets 3:1 contrast in every theme.
+  - **Shield:** shown only once an extension that can block requests is added, and never in private windows. It reads in the text colour with a grey count instead of the accent colour, and its panel no longer says "WebView2".
+  - **Bookmarks bar:** folder icons match site icons in size and colour, letter monograms are borderless, and All bookmarks has its own library icon behind a divider.
+  - **Menu:** a New group comes first (New tab, New window, New private window, Reopen closed window); Move tab left and right follow Pin and Keep awake.
+  - **Profiles:** the profile button appears once there is more than one profile. In a narrow window it and Menu stay at the right edge.
+  - **Fix:** a tab whose page has no icon now shows the default globe from the start.
 - Second chrome critique follow-up (27/40):
   - **Profile switching:** the profile dropdown marks profiles already open in another window ("Open in another window"; the action switches to that window) and Up and Down move between profiles.
   - **Settings honesty:** while Settings or another full panel covers the page, the toolbar reads "Browser page" and shows the panel's name, the star and shield are disabled, and Settings no longer reports on whichever tab was active.
