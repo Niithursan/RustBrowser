@@ -746,7 +746,24 @@ Show bookmarks bar, on by default) shows, in the order they were added:
 Click a bookmark to open it in the current tab, or Ctrl+click or middle-click it for a
 new tab. A folder opens a dropdown listing its subfolders and bookmarks (up to 200;
 the library shows the rest); a subfolder opens in the same dropdown, with its name at
-the top to go back. Buttons that do not fit in one row are hidden, and **All bookmarks** at
+the top to go back.
+
+Right-click a bookmark or folder on the bar or in a folder's dropdown (or press
+Shift+F10 on it) for its menu:
+
+- **A bookmark:** Open in new tab, Open in new window, Open in new private window, Edit
+  bookmark… (name, address and folder), Delete bookmark, Copy link, Add bookmark… and
+  Add folder… (beside it, in the same folder) and Manage bookmarks.
+- **A folder:** Open all in tabs (its own bookmarks, not its subfolders'), Rename
+  folder…, Delete folder… (asks first; its bookmarks move to Unfiled and its subfolders
+  up one level, so no bookmark is deleted), Add bookmark… and Add folder… (inside it)
+  and Manage bookmarks.
+
+Add bookmark… starts from the current page's address and title. There is no cut,
+paste, separator or sort-by-name, because the bar keeps the order bookmarks were added
+in.
+
+Buttons that do not fit in one row are hidden, and **All bookmarks** at
 the right shows a `(+N)` count of hidden items and opens the library. The bar is hidden while there is nothing to show, and in
 private windows. Bookmarks cannot be dragged onto it or reordered on it.
 

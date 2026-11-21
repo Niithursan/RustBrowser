@@ -167,6 +167,9 @@ pub enum BarItem {
         id: i64,
         title: String,
         url: String,
+        /// The folder the bookmark is in (`None`: Unfiled), so its menu can edit it
+        /// and add beside it.
+        folder: Option<i64>,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         icon: String,
     },
@@ -216,6 +219,7 @@ fn bar_items(folders: &[Folder], links: Vec<Bookmark>) -> Vec<BarItem> {
             id: b.id,
             title: b.title,
             url: b.url,
+            folder: b.folder,
             icon: b.icon,
         })
         .chain(
@@ -909,6 +913,7 @@ impl Database {
                     id: r.get(0)?,
                     title: r.get(1)?,
                     url: r.get(2)?,
+                    folder: Some(id),
                     icon: r.get(3)?,
                 })
             })?

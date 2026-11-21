@@ -186,6 +186,13 @@ pub enum Command {
         url: String,
         new_tab: bool,
     },
+    /// A bookmarks-bar folder's menu: open these bookmarks in new tabs, the first
+    /// one selected.
+    OpenSavedTabs(Vec<String>),
+    /// A bookmark's menu: open it in a new window of this profile.
+    OpenSavedWindow(String),
+    /// A bookmark's menu: open it in a new private window.
+    OpenSavedPrivate(String),
     SetHistoryEnabled(bool),
     CancelDownload(u64),
     OpenDownloadFolder(u64),
@@ -675,6 +682,18 @@ mod tests {
             parse(r#"{"action":"reopen_closed_tab"}"#),
             Command::ReopenClosedTab
         ));
+        assert!(matches!(
+            parse(r#"{"action":"open_saved_tabs","value":["https://a.example/","https://b.example/"]}"#),
+            Command::OpenSavedTabs(urls) if urls.len() == 2
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"open_saved_window","value":"https://a.example/"}"#),
+            Command::OpenSavedWindow(url) if url == "https://a.example/"
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"open_saved_private","value":"https://a.example/"}"#),
+            Command::OpenSavedPrivate(url) if url == "https://a.example/"
+        ));
         // A tab menu message without its tab is refused rather than guessed.
         assert!(serde_json::from_str::<Command>(r#"{"action":"close_other_tabs"}"#).is_err());
         // The toolbar sends exactly these names.
@@ -684,6 +703,9 @@ mod tests {
             "close_tab",
             "close_other_tabs",
             "reopen_closed_tab",
+            "open_saved_tabs",
+            "open_saved_window",
+            "open_saved_private",
         ] {
             assert!(
                 HTML.contains(&format!("'{name}'")),

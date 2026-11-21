@@ -4884,6 +4884,241 @@ fn native_tab_menu_and_middle_click() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Right-click a bookmarks-bar button (by its label): its menu opens at the pointer
+/// with focus on its first row. Reports the menu's shown rows as JSON.
+fn bookmark_menu_open(label: &str) -> String {
+    format!(
+        "(()=>{{const b=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.textContent==='{label}');if(!b)return JSON.stringify({{missing:true}});const r=b.getBoundingClientRect();b.dispatchEvent(new MouseEvent('contextmenu',{{bubbles:true,cancelable:true,clientX:r.left+4,clientY:r.bottom}}));const m=document.getElementById('bm-menu'),q=m.getBoundingClientRect();return JSON.stringify({{open:!m.hidden,focus:document.activeElement.id,atPointer:Math.abs(q.left-(r.left+4))<=1&&Math.abs(q.top-r.bottom)<=1,items:[...m.querySelectorAll('button')].filter(x=>!x.hidden).map(x=>x.textContent)}})}})()"
+    )
+}
+/// Click a row of the open bookmark menu.
+fn bookmark_menu_click(id: &str) -> String {
+    format!(
+        "(()=>{{document.getElementById('{id}').click();return JSON.stringify({{menu:!document.getElementById('bm-menu').hidden,editor:!document.getElementById('bm-editor').hidden,title:document.getElementById('bm-editor-title').textContent,name:document.getElementById('bm-name').value,url:document.getElementById('bm-url').value}})}})()"
+    )
+}
+const BOOKMARK_OPEN_ALL: &str = "JSON.stringify({label:document.getElementById('bm-open-all').textContent,off:document.getElementById('bm-open-all').disabled})";
+fn bookmark_editor_submit(name: &str) -> String {
+    format!(
+        "(()=>{{document.getElementById('bm-name').value='{name}';document.getElementById('bm-editor-form').requestSubmit();return JSON.stringify({{closed:document.getElementById('bm-editor').hidden}})}})()"
+    )
+}
+
+/// The bookmarks bar's right-click menus. A bookmark's menu opens it in a new tab,
+/// window or private window, edits and deletes it; a folder's menu opens all its
+/// bookmarks in tabs and adds a folder inside it.
+fn bookmark_menu_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    let url = p.url.clone();
+    let link_rows = serde_json::json!([
+        "Open in new tab",
+        "Open in new window",
+        "Open in new private window",
+        "Edit bookmark…",
+        "Delete bookmark",
+        "Copy link",
+        "Add bookmark…",
+        "Add folder…",
+        "Manage bookmarks"
+    ]);
+    let bar_labels = |p: &mut Probe| -> Result<Vec<String>, String> {
+        Ok(p.s()?
+            .library_data
+            .bar
+            .iter()
+            .map(|item| match item {
+                rust_browser::library::BarItem::Link { title, .. } => title.clone(),
+                rust_browser::library::BarItem::Folder { name, .. } => format!("[{name}]"),
+            })
+            .collect())
+    };
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let file = format!(
+                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n<DT><H3 PERSONAL_TOOLBAR_FOLDER=\"true\">Bookmarks bar</H3>\n<DL><p><DT><A HREF=\"{url}?bar-link\">Bar link</A>\n<DT><H3>Work</H3><DL><p><DT><A HREF=\"{url}?work-1\">Work one</A><DT><A HREF=\"{url}?work-2\">Work two</A></DL><p></DL><p>\n</DL><p>\n"
+            );
+            p.app
+                .proxy
+                .send_event(Event::BookmarkFile(Ok(Some(file.into_bytes()))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            if s.notice.starts_with("Bookmarks imported") && !s.library_data.bar.is_empty() {
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("The bar did not appear: {:?}", s.notice));
+            }
+        }
+        2 if waited > Duration::from_millis(500) => {
+            eval_toolbar(p, &bookmark_menu_open("Bar link"))?;
+            p.next();
+        }
+        3 => {
+            if let Some(r) = polish_report(p)? {
+                if r["open"] != true
+                    || r["focus"] != "bm-open-tab"
+                    || r["atPointer"] != true
+                    || r["items"] != link_rows
+                {
+                    return Err(format!("The bookmark menu opened wrongly: {r}"));
+                }
+                eval_toolbar(p, &bookmark_menu_click("bm-open-private"))?;
+                p.next();
+            }
+        }
+        4 if waited > Duration::from_millis(500) => {
+            let links = super::OPENED_LINKS.with(|o| o.borrow().clone());
+            let opened = super::OPENED_PROFILES.with(|o| o.borrow().clone());
+            if links != [format!("{url}?bar-link")] || !opened.last().is_some_and(|o| o.1) {
+                return Err(format!(
+                    "Open in new private window went wrong: {links:?} {opened:?}"
+                ));
+            }
+            eval_toolbar(p, &bookmark_menu_open("Work"))?;
+            p.next();
+        }
+        5 => {
+            if let Some(r) = polish_report(p)? {
+                let rows = r["items"].as_array().cloned().unwrap_or_default();
+                if r["open"] != true
+                    || r["focus"] != "bm-edit"
+                    || rows.first() != Some(&serde_json::json!("Open all in tabs"))
+                    || !rows.contains(&serde_json::json!("Rename folder…"))
+                    || !rows.contains(&serde_json::json!("Delete folder…"))
+                    || rows.contains(&serde_json::json!("Copy link"))
+                {
+                    return Err(format!("The folder menu opened wrongly: {r}"));
+                }
+                eval_toolbar(p, BOOKMARK_OPEN_ALL)?;
+                p.next();
+            }
+        }
+        // Open all counts the folder's bookmarks once the browser has read them.
+        6 => {
+            if let Some(r) = polish_report(p)? {
+                if r["label"] == "Open all in tabs (2)" && r["off"] == false {
+                    eval_toolbar(p, &bookmark_menu_click("bm-open-all"))?;
+                    p.next();
+                } else if waited > Duration::from_secs(10) {
+                    return Err(format!("Open all never counted the folder: {r}"));
+                } else {
+                    eval_toolbar(p, BOOKMARK_OPEN_ALL)?;
+                }
+            }
+        }
+        7 if waited > Duration::from_millis(1200) => {
+            let s = p.s()?;
+            let urls: Vec<&str> = s.tabs.items.iter().map(|t| t.url.as_str()).collect();
+            let active = s.tabs.active().map(|t| t.url.as_str()).unwrap_or_default();
+            if urls.len() != 3
+                || !urls[1].ends_with("?work-1")
+                || !urls[2].ends_with("?work-2")
+                || !active.ends_with("?work-1")
+            {
+                return Err(format!("Open all went wrong: {urls:?}, selected {active}"));
+            }
+            eval_toolbar(p, &bookmark_menu_open("Bar link"))?;
+            p.next();
+        }
+        8 => {
+            if polish_report(p)?.is_some() {
+                eval_toolbar(p, &bookmark_menu_click("bm-edit"))?;
+                p.next();
+            }
+        }
+        9 => {
+            if let Some(r) = polish_report(p)? {
+                if r["menu"] != false
+                    || r["editor"] != true
+                    || r["title"] != "Edit bookmark"
+                    || r["name"] != "Bar link"
+                    || r["url"] != format!("{url}?bar-link")
+                {
+                    return Err(format!("The bookmark editor opened wrongly: {r}"));
+                }
+                eval_toolbar(p, &bookmark_editor_submit("Renamed"))?;
+                p.next();
+            }
+        }
+        10 => {
+            let labels = bar_labels(p)?;
+            if labels.first().map(String::as_str) == Some("Renamed") {
+                eval_toolbar(p, &bookmark_menu_open("Renamed"))?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("Edit bookmark did not rename it: {labels:?}"));
+            }
+        }
+        11 => {
+            if polish_report(p)?.is_some() {
+                eval_toolbar(p, &bookmark_menu_click("bm-add-folder"))?;
+                p.next();
+            }
+        }
+        12 => {
+            if let Some(r) = polish_report(p)? {
+                if r["editor"] != true || r["title"] != "Add folder" || r["name"] != "" {
+                    return Err(format!("Add folder opened wrongly: {r}"));
+                }
+                eval_toolbar(p, &bookmark_editor_submit("Reading"))?;
+                p.next();
+            }
+        }
+        // The bookmark is in the bar folder, so the new folder goes there too and
+        // shows on the bar after Work.
+        13 => {
+            let labels = bar_labels(p)?;
+            if labels == ["Renamed", "[Work]", "[Reading]"] {
+                eval_toolbar(p, &bookmark_menu_open("Renamed"))?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!("Add folder went wrong: {labels:?}"));
+            }
+        }
+        14 => {
+            if polish_report(p)?.is_some() {
+                eval_toolbar(p, &bookmark_menu_click("bm-open-window"))?;
+                p.next();
+            }
+        }
+        15 => {
+            let s = p.s()?;
+            if s.windows.len() == 2 {
+                let tab = s
+                    .tabs
+                    .items
+                    .iter()
+                    .map(|t| t.url.clone())
+                    .collect::<Vec<_>>();
+                if tab.len() != 1 || !tab[0].ends_with("?bar-link") {
+                    return Err(format!("The new window opened the wrong page: {tab:?}"));
+                }
+                p.log
+                    .push("bookmark menus: private, open all, edit, add folder, new window".into());
+                p.done = true;
+                el.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "Open in new window did not open one: {}",
+                    s.windows.len()
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_bookmark_menus() {
+    let (root, _) = run("bookmark-menus", bookmark_menu_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// The open folder dropdown: its rows, whether it sits under its button, and
 /// whether its first row is the way back.
 const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel'),rows=[...p.querySelectorAll('button')],a=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.getAttribute('aria-expanded')==='true'),r=p.getBoundingClientRect(),q=a?a.getBoundingClientRect():{bottom:-99,left:-99};return JSON.stringify({rows:rows.map(b=>b.textContent),icons:rows.map(b=>b.querySelector('img')?'img':b.querySelector('.bm-letter')?'letter:'+b.querySelector('.bm-letter').dataset.letter:'svg'),back:!!rows[0]&&rows[0].classList.contains('folder-back'),under:!p.hidden&&r.top>=q.bottom&&r.top-q.bottom<12&&Math.abs(r.left-q.left)<=1,expanded:a?a.getAttribute('aria-expanded'):''})})()";

@@ -538,12 +538,14 @@ fn folder_dropdowns_and_the_current_pages_bookmark() {
                 id: 1,
                 title: "Second".into(),
                 url: "https://example.com/2".into(),
+                folder: Some(work),
                 icon: String::new(),
             },
             BarItem::Link {
                 id: 2,
                 title: "First".into(),
                 url: "https://example.com/1".into(),
+                folder: Some(work),
                 icon: String::new(),
             },
         ]
