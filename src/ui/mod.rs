@@ -52,6 +52,12 @@ pub enum Command {
     },
     MoveActive(bool),
     PinActive,
+    /// A tab's right-click menu: pin or unpin tab `id` without selecting it.
+    PinTab(TabId),
+    /// A tab's right-click menu: open tab `id`'s address in a new tab beside it.
+    DuplicateTab(TabId),
+    /// A tab's right-click menu: close every unpinned tab except `id`.
+    CloseOtherTabs(TabId),
     KeepAwake,
     WakeTab,
     SetAutomaticSuspension(bool),
@@ -638,6 +644,52 @@ mod tests {
         );
         assert_eq!(notice_kind("", ""), "error");
         assert_eq!(notice_kind("Extension removed.", ""), "error");
+    }
+
+    /// The tab right-click menu and Menu's new rows send these messages; each must
+    /// reach the browser as the command it names, carrying the tab it acts on.
+    #[test]
+    fn tab_menu_and_menu_messages_parse_as_their_commands() {
+        let parse = |body: &str| serde_json::from_str::<Command>(body).unwrap();
+        assert!(matches!(
+            parse(r#"{"action":"pin_tab","value":3}"#),
+            Command::PinTab(3)
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"duplicate_tab","value":4}"#),
+            Command::DuplicateTab(4)
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"close_other_tabs","value":5}"#),
+            Command::CloseOtherTabs(5)
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"close_tab","value":6}"#),
+            Command::CloseTab(6)
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"close_active"}"#),
+            Command::CloseActive
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"reopen_closed_tab"}"#),
+            Command::ReopenClosedTab
+        ));
+        // A tab menu message without its tab is refused rather than guessed.
+        assert!(serde_json::from_str::<Command>(r#"{"action":"close_other_tabs"}"#).is_err());
+        // The toolbar sends exactly these names.
+        for name in [
+            "duplicate_tab",
+            "pin_tab",
+            "close_tab",
+            "close_other_tabs",
+            "reopen_closed_tab",
+        ] {
+            assert!(
+                HTML.contains(&format!("'{name}'")),
+                "the toolbar never sends {name}"
+            );
+        }
     }
 
     #[test]
