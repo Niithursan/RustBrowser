@@ -366,6 +366,7 @@ The project aims to evolve through incremental releases:
 - v0.21 profiles: separate profiles (process per profile, `--profile=<id>`, profile button, Settings > Profiles, launch picker) PR #55, product record PR #56 and chrome critique follow-up PR #57 merged on `main`
 - v0.21.0: **published 2026-11-19**, the first release (qualified in PR #58, tag `v0.21.0` on `c7c9e15`, tag run 44447568537, publish run 44452459369). Its metadata states library schema 3 instead of 5 (accepted; fixed for the next release by PR #59)
 - After v0.21.0: second chrome critique follow-up PR #61 merged; third chrome critique follow-up (equal-width tab strip, quiet lock for encrypted pages, shield only once a blocking extension is added, Menu New group, profile button only with more than one profile) on `fix/chrome-critique-3`, PR #63 open
+- Fourth chrome critique follow-up (badge keeps its shape while loading, middle-click and a tab menu with Duplicate, Pin, Move, Close others and Reopen, Menu routes to Profiles and Extensions, plain outline shield) on `fix/chrome-critique-4`, PR #65 open
 - Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
