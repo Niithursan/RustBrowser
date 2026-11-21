@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Bookmark menus:** right-click a bookmark or folder on the bookmarks bar or in a folder's dropdown (or Shift+F10 on it). A bookmark opens in a new tab, window or private window, and can be edited, deleted, copied, or have a bookmark or folder added beside it. A folder opens all its bookmarks in tabs, and can be renamed, deleted (after a confirmation; nothing inside is deleted) or have a bookmark or folder added inside it. New `open_saved_tabs`, `open_saved_window` and `open_saved_private` commands back it, and bar links now carry their folder.
 - Fourth chrome critique follow-up (27/40):
   - **Address line:** while a page loads, the badge keeps its round shape and turns a quiet arc (still with reduced motion) instead of widening into a "Connecting" pill, so the address no longer jumps on every load.
   - **Tab gestures:** middle-click closes any tab, pinned ones included. Right-click a tab (or Shift+F10 / the Menu key on it) for Duplicate, Pin or Unpin, Move left or right, Close tab, Close other tabs and Reopen closed tab; the menu acts on that tab, not the selected one. New `pin_tab`, `duplicate_tab` and `close_other_tabs` commands back it.
