@@ -4775,6 +4775,115 @@ fn native_new_tabs_grow_into_the_tab_strip() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Right-click the first tab: its menu opens with focus on its first row and acts on
+/// that tab, not the selected one. Duplicate opens a copy beside it; Pin pins it;
+/// Close other tabs keeps it (and pinned tabs); middle-click closes a tab, a pinned one
+/// included. Script results come back as JSON through `polish_report`.
+const TAB_MENU_OPEN: &str = "(()=>{const item=document.querySelectorAll('#tabs .tab')[0];item.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:40,clientY:20}));const m=document.getElementById('tab-menu');return JSON.stringify({open:!m.hidden,focus:document.activeElement.id,pin:document.getElementById('tab-menu-pin').textContent,others:!document.getElementById('tab-menu-others').disabled})})()";
+fn tab_menu_click(button: &str) -> String {
+    format!(
+        "(()=>{{const item=document.querySelectorAll('#tabs .tab')[0];item.dispatchEvent(new MouseEvent('contextmenu',{{bubbles:true,cancelable:true,clientX:40,clientY:20}}));document.getElementById('{button}').click();return JSON.stringify({{closed:document.getElementById('tab-menu').hidden}})}})()"
+    )
+}
+fn middle_click(index: usize) -> String {
+    format!(
+        "(()=>{{const item=document.querySelectorAll('#tabs .tab')[{index}];item.dispatchEvent(new MouseEvent('auxclick',{{bubbles:true,cancelable:true,button:1}}));return JSON.stringify({{sent:true}})}})()"
+    )
+}
+
+fn tab_menu_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let waited = p.at.elapsed();
+    let url = p.url.clone();
+    let tabs = |p: &mut Probe| -> Result<Vec<(String, bool, bool)>, String> {
+        let s = p.s()?;
+        let active = s.tabs.active().map(|t| t.id);
+        Ok(s.tabs
+            .items
+            .iter()
+            .map(|t| (t.url.clone(), t.pinned, Some(t.id) == active))
+            .collect())
+    };
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            p.command(el, 0, Command::Navigate(url))?;
+            p.command(el, 0, Command::NewTab)?;
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 if waited > Duration::from_millis(1500) => {
+            eval_toolbar(p, TAB_MENU_OPEN)?;
+            p.next();
+        }
+        2 => {
+            if let Some(r) = polish_report(p)? {
+                if r["open"] != true
+                    || r["focus"] != "tab-menu-duplicate"
+                    || r["pin"] != "Pin tab"
+                    || r["others"] != true
+                {
+                    return Err(format!("The tab menu opened wrongly: {r}"));
+                }
+                eval_toolbar(p, &tab_menu_click("tab-menu-duplicate"))?;
+                p.next();
+            }
+        }
+        3 if waited > Duration::from_millis(1200) => {
+            let t = tabs(p)?;
+            // The copy sits right after its source and is selected.
+            if t.len() != 4 || t[1].0 != t[0].0 || !t[1].2 {
+                return Err(format!("Duplicate went wrong: {t:?}"));
+            }
+            eval_toolbar(p, &middle_click(3))?;
+            p.next();
+        }
+        4 if waited > Duration::from_millis(800) => {
+            let t = tabs(p)?;
+            if t.len() != 3 {
+                return Err(format!("Middle-click did not close the tab: {t:?}"));
+            }
+            eval_toolbar(p, &tab_menu_click("tab-menu-pin"))?;
+            p.next();
+        }
+        5 if waited > Duration::from_millis(800) => {
+            let t = tabs(p)?;
+            // The first tab is pinned; the selected tab stays the copy.
+            if !t[0].1 || !t[1].2 {
+                return Err(format!("Pin from the tab menu went wrong: {t:?}"));
+            }
+            eval_toolbar(p, &tab_menu_click("tab-menu-others"))?;
+            p.next();
+        }
+        6 if waited > Duration::from_millis(1200) => {
+            let t = tabs(p)?;
+            if t.len() != 1 || !t[0].1 || !t[0].2 {
+                return Err(format!("Close other tabs went wrong: {t:?}"));
+            }
+            eval_toolbar(p, &middle_click(0))?;
+            p.next();
+        }
+        7 if waited > Duration::from_millis(1200) => {
+            let t = tabs(p)?;
+            // Closing the last tab leaves a new, unpinned tab behind.
+            if t.len() != 1 || t[0].1 {
+                return Err(format!("Middle-click on the pinned tab went wrong: {t:?}"));
+            }
+            p.log
+                .push("tab menu: duplicate, pin, close others; middle-click closes".into());
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_tab_menu_and_middle_click() {
+    let (root, _) = run("tab-menu", tab_menu_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// The open folder dropdown: its rows, whether it sits under its button, and
 /// whether its first row is the way back.
 const FOLDER_REPORT: &str = "(()=>{const p=document.getElementById('folder-panel'),rows=[...p.querySelectorAll('button')],a=[...document.querySelectorAll('#bar-items .bar-item')].find(b=>b.getAttribute('aria-expanded')==='true'),r=p.getBoundingClientRect(),q=a?a.getBoundingClientRect():{bottom:-99,left:-99};return JSON.stringify({rows:rows.map(b=>b.textContent),icons:rows.map(b=>b.querySelector('img')?'img':b.querySelector('.bm-letter')?'letter:'+b.querySelector('.bm-letter').dataset.letter:'svg'),back:!!rows[0]&&rows[0].classList.contains('folder-back'),under:!p.hidden&&r.top>=q.bottom&&r.top-q.bottom<12&&Math.abs(r.left-q.left)<=1,expanded:a?a.getAttribute('aria-expanded'):''})})()";

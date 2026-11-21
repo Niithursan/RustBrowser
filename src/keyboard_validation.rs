@@ -762,7 +762,8 @@ fn native_toolbar_keyboard_reachability_and_scaled_layout() {
     // Enter on More must have revealed the tab and library actions.
     for id in [
         "pin-active|",
-        "move-left|",
+        "reopen-tab|",
+        "show-profiles|",
         "keep-awake|",
         "show-settings|",
         "new-private|",
