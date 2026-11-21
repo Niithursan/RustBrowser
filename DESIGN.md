@@ -330,7 +330,7 @@ as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlin
 ### Shadow Vocabulary
 - **Float** (`box-shadow: 0 6px 18px rgba(0,0,0,.35)`; Light: `rgba(27,36,48,.18)`): dropdowns, the address context menu and the confirmation dialog, the only floating surfaces.
 - **Signal rule** (a 2px bar along the selected tab's top edge, inset 10px from each side so it never bends around the rounded corners): an inset rule, not an elevation. In the vertical column the selection is a short 3px rounded bar instead (see Tabs).
-- **Focus ring** (`outline: 2px solid <signal>; outline-offset: 2px`): every focusable control. The address line instead shifts its border to the signal and adds a 1px signal ring.
+- **Focus ring** (`outline: 2px solid <signal>; outline-offset: 2px`): every focusable control. The address line instead shifts its border to the signal and adds a 1px signal ring. A tab instead rings its whole card inset 5px (`outline-offset: -5px`), so the ring stays 3px clear of the signal rule along the top and is never clipped by the strip.
 
 ### Named Rules
 **The Float-Only Rule.** Only a surface that floats over the page gets a shadow. Cards, buttons, tabs and panels never do.
@@ -371,7 +371,9 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 ### The location line (signature component)
 The one bold element on the panel. A 36px pill in Graphite Field with a Field Hairline
 border containing, left to right: the **security badge** (on an encrypted page a 28px
-round button holding only a Dial Grey lock, with the wash on hover; otherwise a 28px pill
+round button holding only a Dial Grey lock, with the wash on hover; while a page loads
+the same round button turns a quiet Dial Grey arc (still in reduced motion), named
+"Connecting" for Narrator, so the origin beside it never moves; otherwise a 28px pill
 with the text-colour wash, an icon and a 12px/600 word, coral on *Not encrypted* or
 failure, Dial Grey and regular weight on browser pages), the **address** (an origin-emphasised view whose subdomains collapse
 before the registrable domain tail on narrow bars, hiding on focus to show the editable
@@ -380,15 +382,16 @@ current page is bookmarked) and the **shield** (32px pill, shown only once an ex
 that can or may block requests is added and never in a private window, because Rust
 Browser has no ad blocker of its own; Dial Grey at rest, the text colour while an
 extension can block, with its blocked-request count in Dial Grey 12px/600 tabular
-figures: a tally, not a warning). The shield's check mark
-is drawn only while an extension can block requests; otherwise it is an empty outline, so
-the icon never claims protection that is not there (GrayText in high contrast).
+figures: a tally, not a warning). The shield is always a plain outline with no check
+mark, so it never reads as a verdict on the site next to the lock (GrayText in high
+contrast while no extension can block).
 
 ### Tabs
 - **Width:** every tab is 240px until the strip is full; then all shrink together to 64px before the strip scrolls, so a title change never moves another tab. After a close with the close button, every tab keeps its width while the pointer stays in the strip, so the next close button slides under the pointer; widths are released when the pointer leaves or a tab opens.
 - **Inactive:** transparent cards, 36px tall; title in Dial Grey, fading out over its last 20px when it is too long (no ellipsis); a 1px hairline separates neighbouring inactive tabs; the drawn close button sits at 55% opacity until hovered, and on a tab narrower than 96px it appears only on hover.
-- **Active:** takes Graphite Surface to join the toolbar, the signal rule along its top edge and a regular-weight 13px title in Instrument White.
-- **States:** a tab with no site icon shows the drawn globe; pinned tabs in the strip are a 44px card holding only the site icon, with no close button (Ctrl+W or Unpin still close them; their name stays on the tab for Narrator); sleeping tabs set their title in italic; a drop target shows a 3px signal rule on the insertion side.
+- **Active:** takes Graphite Surface to join the toolbar, the signal rule along its top edge and a regular-weight 13px title in Instrument White. It keeps at least 120px however full the strip is, so the selected tab always shows its title, and it is scrolled back into view when the scroll arrows appear.
+- **States:** a tab with no site icon shows the drawn globe; pinned tabs in the strip are a 44px card holding only the site icon, with no close button (middle-click, the tab menu's Close tab or Ctrl+W close them; their name stays on the tab for Narrator); sleeping tabs set their title in italic, and below 96px they drop the moon so the italic carries the state alone; a drop target shows a 3px signal rule on the insertion side.
+- **Gestures:** middle-click closes any tab. Right-click (or Shift+F10 and the Menu key on a focused tab) opens the **tab menu**, a 220px dropdown under the tab that acts on that tab, not the selected one: Duplicate, Pin tab or Unpin tab, Move left and Move right (disabled at the end of the tab's pinned or unpinned group), then Close tab and Close other tabs (which keeps pinned tabs), then Reopen closed tab, with hairlines between the groups. The tab column has middle-click but no tab menu.
 - **Vertical column:** full-width rows, 8px radius on all corners; the active tab is marked by a 3px signal bar with rounded ends, inset 9px from the row's top and bottom, so it never bends around the corners.
 
 ### Profile button and picker
@@ -403,7 +406,7 @@ the icon never claims protection that is not there (GrayText in high contrast).
 - Graphite Panel, 1px Hairline, 10px radius, 8px padding (12px for the site, star and shield panels), the Float shadow. Only one is open at a time, over the live page.
 - **Focus on opening:** menus (⋮, bookmark folders) focus their first item; a form (the star) its first field; every other dropdown (site information, shield, profile) its heading, which shows the signal focus ring to keyboard users only. A pending permission prompt focuses **Don't allow**.
 - **A page covered by a full panel is not described.** While Settings or another full panel covers the page, the badge reads "Browser page", the address line shows the panel's name ("Settings"), and the star and shield are disabled. Settings carries no per-site readout; that lives in the site-information dropdown.
-- **Menu (⋮):** labelled groups (New: New tab, New window, New private window and Reopen closed window; This page; This tab, with Pin and Keep awake before Move left and right; Library; then Settings and Keyboard shortcuts, then Exit on its own below a hairline), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +. Keep tab awake and Exit show their state in that place instead of a shortcut (Exit: "Tabs return", "Tabs not kept" or, in a private window, "Nothing kept").
+- **Menu (⋮):** labelled groups (New: New tab, New window, New private window and Reopen closed window; This page; This tab: Pin, Keep awake and Reopen closed tab, with moving tabs in the tab menu; Library; then Settings, Profiles… and Extensions…, which open Settings at those sections so the hidden profile button and shield can be found, and Keyboard shortcuts; then Exit on its own below a hairline), each with a 12px Dial Grey label and a hairline above it. Items are quiet full-width 32px buttons with the label at the left and the shortcut at the right in 12px Dial Grey. Zoom is one row: a label, then − / the current percentage / +. Keep tab awake and Exit show their state in that place instead of a shortcut (Exit: "Tabs return", "Tabs not kept" or, in a private window, "Nothing kept").
 - **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers

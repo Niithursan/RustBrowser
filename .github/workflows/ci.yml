@@ -124,6 +124,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_back_to_the_start_of_a_new_tab_shows_the_new_tab_page -- --ignored --test-threads=1
       - name: Native new tabs grow into the tab strip
         run: cargo test --locked --bin rust-browser native_new_tabs_grow_into_the_tab_strip -- --ignored --test-threads=1
+      - name: Native tab menu and middle-click
+        run: cargo test --locked --bin rust-browser native_tab_menu_and_middle_click -- --ignored --test-threads=1
       - name: Native bookmarks bar
         run: cargo test --locked --bin rust-browser native_imported_bookmarks_show_on_the_bookmarks_bar -- --ignored --test-threads=1
       - name: Native star and site information dropdowns

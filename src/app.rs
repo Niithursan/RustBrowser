@@ -2714,6 +2714,55 @@ impl Session {
                     self.activate()?;
                 }
             }
+            Command::PinTab(id) => {
+                let pinned = self
+                    .tabs
+                    .items
+                    .iter()
+                    .find(|t| t.id == id)
+                    .map(|t| !t.pinned);
+                if let Some(pinned) = pinned {
+                    self.tabs.pin(id, pinned);
+                    self.activate()?;
+                }
+            }
+            Command::DuplicateTab(id) => {
+                let Some((index, url)) = self
+                    .tabs
+                    .items
+                    .iter()
+                    .position(|t| t.id == id)
+                    .map(|index| (index, self.tabs.items[index].url.clone()))
+                else {
+                    return Ok(());
+                };
+                self.panel = None;
+                self.open_tab(url)?;
+                // `open_tab` appends and selects the copy; put it right after its source.
+                if let Some(copy) = self.tabs.active().map(|t| t.id) {
+                    self.tabs.move_to(copy, index + 1);
+                }
+                self.activate()?;
+            }
+            Command::CloseOtherTabs(id) => {
+                // An unknown id would otherwise close every unpinned tab.
+                if !self.tabs.items.iter().any(|t| t.id == id) {
+                    return Ok(());
+                }
+                let others: Vec<TabId> = self
+                    .tabs
+                    .items
+                    .iter()
+                    .filter(|t| t.id != id && !t.pinned)
+                    .map(|t| t.id)
+                    .collect();
+                self.panel = None;
+                self.tabs.select(id);
+                for other in others {
+                    self.close_tab(other)?;
+                }
+                self.activate()?;
+            }
             Command::KeepAwake => {
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.keep_awake = !tab.keep_awake;

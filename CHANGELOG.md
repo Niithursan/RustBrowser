@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fourth chrome critique follow-up (27/40):
+  - **Address line:** while a page loads, the badge keeps its round shape and turns a quiet arc (still with reduced motion) instead of widening into a "Connecting" pill, so the address no longer jumps on every load.
+  - **Tab gestures:** middle-click closes any tab, pinned ones included. Right-click a tab (or Shift+F10 / the Menu key on it) for Duplicate, Pin or Unpin, Move left or right, Close tab, Close other tabs and Reopen closed tab; the menu acts on that tab, not the selected one. New `pin_tab`, `duplicate_tab` and `close_other_tabs` commands back it.
+  - **Menu:** Reopen closed tab joins This tab; Profiles… and Extensions… open Settings at those sections. Move tab left and right moved to the tab menu (their shortcuts are now in the shortcut list).
+  - **Shield:** a plain outline without the check mark, so it no longer reads as a verdict on the site beside the lock.
+  - **Tab strip:** the selected tab keeps at least 120px and is scrolled back into view when the scroll arrows appear; narrow sleeping tabs drop the moon; keyboard focus rings the whole tab card, clear of the signal rule.
 - Third chrome critique follow-up (27/40):
   - **Tab strip:** tabs share the strip equally (up to 240px, shrinking together to 64px before it scrolls), so a page changing its title no longer moves the other tabs. After closing a tab with its close button, tabs keep their width until the pointer leaves the strip. Long titles fade out instead of ending in an ellipsis; a narrow inactive tab shows its close button on hover. Pinned tabs are icon-only cards without a close button. The selected tab's accent line stops short of the rounded corners, a hairline separates the strip from the toolbar, and the close button is a drawn icon.
   - **Tab list:** the all-tabs button is a down chevron next to +, away from the window's Minimize button.
