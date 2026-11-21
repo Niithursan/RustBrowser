@@ -76,6 +76,11 @@ non-US keyboard layouts and native mixed-DPI transitions remain unverified.
   only once an extension that can block requests is added) and requires both of its
   buttons in the Tab order, and checks
   the toolbar at the narrower widths it has beside the column.
+- The tab menu opens from the keyboard with Shift+F10 or the Menu key on a focused tab,
+  focuses its first row, moves with Up, Down, Home and End, and Escape returns focus
+  to the tab. Keyboard focus on a tab rings the whole card inset 5px, so it is never
+  confused with the selected tab's signal rule (checked by sending Shift+Tab through
+  DevTools; not yet with Narrator).
 - The tab column is a `tablist` with `aria-orientation="vertical"`, with the strip's
   names, positions and selected state. The library resizer is a focusable `separator`
   with its range and value. The shield button's name says what it shows ("Ad

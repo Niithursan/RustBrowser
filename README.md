@@ -117,20 +117,24 @@ you close a tab with its close button, the other tabs keep their width until the
 pointer leaves the strip, so you can close several in a row without aiming again. The
 + button and the all-tabs button (⌄, the list of every tab) follow the last tab, with
 scroll buttons before them when tabs overflow. A pinned tab is a small card showing
-only the page's icon and has no close button (Ctrl+W or Unpin tab closes it). A tab
-shows small icons when it is loading or asleep; hovering it shows its title, with its
-state on the next line.
+only the page's icon and has no close button. Middle-click closes any tab, pinned
+ones included. Right-click a tab (or press Shift+F10 on it) for its menu: Duplicate,
+Pin or Unpin, Move left or right, Close tab, Close other tabs (pinned tabs stay) and
+Reopen closed tab. The selected tab always keeps room for its title. A tab shows small
+icons when it is loading or asleep; hovering it shows its title, with its state on the
+next line.
 
 The toolbar row holds back, forward, reload (stop while loading) and home, then the
 address line. At its start, the site-information badge shows the connection: a small
-lock on an encrypted page, and a word (Not encrypted, Not connected, Browser page)
-when there is something to read. At its end, the star bookmarks the page and, once
+lock on an encrypted page, a turning arc while a page loads (the address beside it
+never moves), and a word (Not encrypted, Not connected, Browser page) when there is
+something to read. At its end, the star bookmarks the page and, once
 you have added an extension that can block requests, the shield shows ad blocking
 (below). The Menu (⋮) at the far right holds everything else, in labelled groups: New
 (new tab, new window, new private window, reopen closed window), This page (find,
-zoom with the current percentage, print), This tab (pin, keep awake, move), Library
-(bookmarks, history, downloads) and then Settings, the list of keyboard shortcuts and
-Exit. Each item shows its keyboard shortcut at the right.
+zoom with the current percentage, print), This tab (pin, keep awake, reopen closed
+tab), Library (bookmarks, history, downloads) and then Settings, Profiles…,
+Extensions…, the list of keyboard shortcuts and Exit. Each item shows its keyboard shortcut at the right.
 Up and Down move through the items, Home and End jump to the first and last.
 
 The menu, the site-information badge, the star, the shield and each folder on the
