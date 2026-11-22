@@ -35,7 +35,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use webkit2gtk::{PermissionRequestExt, WebViewExt};
+use webkit2gtk::{FindControllerExt, PermissionRequestExt, WebViewExt};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
@@ -53,6 +53,8 @@ const DEFAULT_CHROME: f64 = 119.0;
 const ZOOM_STEPS: [f64; 13] = [
     0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0,
 ];
+/// The most matches the find bar highlights and counts.
+const FIND_LIMIT: u32 = 1000;
 const UNSUPPORTED: &str = "That is not available on Linux yet.";
 
 /// What reaches the event loop from views, GTK handlers and worker threads.
@@ -64,6 +66,8 @@ pub enum Event {
     /// A website asked for a new window: the address opens as a tab.
     OpenTab(String),
     Library(library_worker::Reply),
+    /// The clipboard's text arrived for the address field's Paste.
+    Paste(String),
     StorageError,
 }
 
@@ -76,6 +80,8 @@ pub enum PageEvent {
     Blocked,
     /// The page was pressed with the mouse.
     Pressed,
+    /// How many matches the page has for the find bar's text.
+    FindCount(u32),
 }
 
 /// One tab's website view and what the toolbar shows about it.
@@ -193,17 +199,44 @@ impl Shaper {
         })
     }
 
-    /// Clip `view` to `areas` (in its logical pixels, `scale` physical pixels
-    /// each) and raise it above the page, or remove its clip.
-    fn clip(&self, view: &WebView, areas: Option<&[ClipArea]>, scale: f64) {
+    /// The X11 window wry hosts `view` in.
+    fn window_of(view: &WebView) -> Option<u64> {
         use gtk::{glib::Cast, prelude::WidgetExt};
-        let Some(xid) = view
-            .webview()
+        view.webview()
             .toplevel()
             .and_then(|top| top.window())
             .and_then(|window| window.downcast::<gdkx11::X11Window>().ok())
             .map(|window| window.xid())
+    }
+
+    /// Give `view` the keyboard: GTK's focus moves only within a view, and each
+    /// view is its own X11 window, so the X input focus moves to it as well. It
+    /// goes to the web view's own window, not wry's container: GDK never selects
+    /// key events on the container, so keys sent there would be lost.
+    fn focus(&self, view: &WebView) {
+        use gtk::{glib::Cast, prelude::WidgetExt};
+        let _ = view.focus();
+        let Some(xid) = view
+            .webview()
+            .window()
+            .and_then(|window| window.downcast::<gdkx11::X11Window>().ok())
+            .map(|window| window.xid())
         else {
+            return;
+        };
+        const REVERT_TO_PARENT: i32 = 2;
+        // SAFETY: this struct's own open connection and a live, mapped window of
+        // this process; CurrentTime (0) as the timestamp.
+        unsafe {
+            (self.xlib.XSetInputFocus)(self.display, xid, REVERT_TO_PARENT, 0);
+            (self.xlib.XFlush)(self.display);
+        }
+    }
+
+    /// Clip `view` to `areas` (in its logical pixels, `scale` physical pixels
+    /// each) and raise it above the page, or remove its clip.
+    fn clip(&self, view: &WebView, areas: Option<&[ClipArea]>, scale: f64) {
+        let Some(xid) = Self::window_of(view) else {
             return;
         };
         let rects = areas.map(|areas| {
@@ -333,6 +366,8 @@ struct Browser {
     /// The bookmarks-bar folder the open dropdown lists.
     menu_folder: Option<i64>,
     fullscreen: bool,
+    /// The tab and text of the find bar's last search.
+    find: Option<(TabId, String)>,
     /// Until when the page that entered fullscreen is named, and its host.
     fullscreen_notice: Option<(Instant, String)>,
     chrome: f64,
@@ -410,6 +445,7 @@ impl Browser {
             menu_area: None,
             menu_folder: None,
             fullscreen: false,
+            find: None,
             fullscreen_notice: None,
             chrome: DEFAULT_CHROME,
             notice: String::new(),
@@ -634,9 +670,19 @@ impl Browser {
         self.layout();
         self.render();
         if let Some((view, _)) = &self.library_view {
-            view.focus()?;
+            self.focus(view);
         }
         Ok(())
+    }
+
+    /// Give `view` the keyboard (see `Shaper::focus`).
+    fn focus(&self, view: &WebView) {
+        match &self.shaper {
+            Some(x11) => x11.focus(view),
+            None => {
+                let _ = view.focus();
+            }
+        }
     }
 
     fn persist(&self) {
@@ -778,6 +824,20 @@ impl Browser {
         self.window.set_title(&title);
     }
 
+    /// Stop highlighting the matches of the last find, in whichever tab it ran.
+    fn finish_find(&mut self) {
+        if let Some((id, _)) = self.find.take()
+            && let Some(finder) = self
+                .tabs
+                .items
+                .iter()
+                .find(|t| t.id == id)
+                .and_then(|t| t.content.view.webview().find_controller())
+        {
+            finder.search_finish();
+        }
+    }
+
     fn select(&mut self, id: TabId) {
         if self.tabs.select(id) {
             self.panel = None;
@@ -828,6 +888,11 @@ impl Browser {
                     self.menu_area = None;
                 }
                 self.menu_open = open;
+                // A dropdown opened from a shortcut takes the keyboard, as its
+                // focused field or item expects.
+                if open {
+                    self.focus(&self.toolbar);
+                }
             }
             Command::SetMenuArea {
                 x,
@@ -945,6 +1010,66 @@ impl Browser {
                     _ => {}
                 }
             }
+            // As on Windows, find, zoom and print act on a website page only.
+            Command::FindInPage
+            | Command::PrintPage
+            | Command::ZoomIn
+            | Command::ZoomOut
+            | Command::ResetZoom
+                if self.effective_panel().is_some() =>
+            {
+                return Err("Find, zoom and print apply to the visible website page. Return to the page first (F7).".into());
+            }
+            Command::FindInPage
+            | Command::PrintPage
+            | Command::ZoomIn
+            | Command::ZoomOut
+            | Command::ResetZoom
+                if !self
+                    .tabs
+                    .active()
+                    .is_some_and(|t| navigation::allowed(&t.url)) =>
+            {
+                return Err("Find, zoom and print require a website page.".into());
+            }
+            Command::FindInPage => {
+                self.focus(&self.toolbar);
+                self.toolbar
+                    .evaluate_script("typeof openFind==='function'&&openFind()")?;
+            }
+            Command::FindText { text, forward } => {
+                if text.is_empty() || text.chars().count() > 1000 {
+                    return Err("Find needs 1 to 1000 characters.".into());
+                }
+                let tab = self.tabs.active().ok_or("No tab is selected.")?;
+                let id = tab.id;
+                let finder = tab
+                    .content
+                    .view
+                    .webview()
+                    .find_controller()
+                    .ok_or("Find in page is unavailable.")?;
+                if self
+                    .find
+                    .as_ref()
+                    .is_some_and(|(t, last)| *t == id && *last == text)
+                {
+                    if forward {
+                        finder.search_next();
+                    } else {
+                        finder.search_previous();
+                    }
+                } else {
+                    self.finish_find();
+                    let options = (webkit2gtk::FindOptions::CASE_INSENSITIVE
+                        | webkit2gtk::FindOptions::WRAP_AROUND)
+                        .bits();
+                    finder.search(&text, options, FIND_LIMIT);
+                    finder.count_matches(&text, options, FIND_LIMIT);
+                    self.find = Some((id, text));
+                }
+            }
+            Command::CloseFind => self.finish_find(),
             Command::ZoomIn | Command::ZoomOut | Command::ResetZoom => {
                 let tab = self.tabs.active_mut().ok_or("No tab is selected.")?;
                 let zoom = match command {
@@ -1147,14 +1272,42 @@ impl Browser {
                     .active()
                     .is_some_and(|tab| tab.url == navigation::HOME)
                 {
+                    self.focus(&self.toolbar);
                     self.toolbar
                         .evaluate_script("document.getElementById('home-query').focus()")?;
                 } else if let Some(tab) = self.tabs.active() {
-                    tab.content.view.focus()?;
+                    self.focus(&tab.content.view);
                 }
             }
-            Command::FocusAddress | Command::FocusTabs => {
-                let _ = self.toolbar.focus();
+            // The address field's menu. Only its selection is copied, so it is
+            // bounded like an address; Paste reads the clipboard without waiting.
+            Command::CopyText(text) => {
+                if text.chars().count() > navigation::MAX_ADDRESS {
+                    return Err("The selection is too long to copy.".into());
+                }
+                gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(&text);
+            }
+            Command::PasteAddress => {
+                let proxy = self.proxy.clone();
+                gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).request_text(move |_, text| {
+                    if let Some(text) = text {
+                        let _ = proxy.send_event(Event::Paste(text.to_string()));
+                    }
+                });
+            }
+            Command::FocusAddress => {
+                self.focus(&self.toolbar);
+                self.toolbar.evaluate_script("window.focusAddress()")?;
+            }
+            Command::FocusTabs => {
+                let column = self
+                    .tabs_view
+                    .as_ref()
+                    .filter(|_| self.current_layout().tabs.is_some())
+                    .map(|(view, _)| view);
+                let view = column.unwrap_or(&self.toolbar);
+                self.focus(view);
+                view.evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
             }
             _ => return Err(UNSUPPORTED.into()),
         }
@@ -1164,6 +1317,14 @@ impl Browser {
     fn page_event(&mut self, id: TabId, event: PageEvent) {
         // A press on the page closes a dropdown open over it, as a press anywhere
         // else in the toolbar would.
+        if let PageEvent::FindCount(count) = event {
+            if self.find.as_ref().is_some_and(|(t, _)| *t == id) {
+                let _ = self
+                    .toolbar
+                    .evaluate_script(&format!("window.findResult&&findResult({count})"));
+            }
+            return;
+        }
         if matches!(event, PageEvent::Pressed) {
             if self.menu_open && self.tabs.active().is_some_and(|t| t.id == id) {
                 let _ = self
@@ -1225,7 +1386,7 @@ impl Browser {
                         .set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
                 }
             }
-            PageEvent::Pressed => {}
+            PageEvent::Pressed | PageEvent::FindCount(_) => {}
             PageEvent::Blocked => {
                 self.notice =
                     "Downloads and website permissions are not available on Linux yet.".into();
@@ -1444,6 +1605,15 @@ fn content_view(
         request.deny();
         true
     });
+    if let Some(finder) = engine.find_controller() {
+        let (counted, failed) = (proxy.clone(), proxy.clone());
+        finder.connect_counted_matches(move |_, count| {
+            let _ = counted.send_event(Event::Page(id, PageEvent::FindCount(count)));
+        });
+        finder.connect_failed_to_find_text(move |_| {
+            let _ = failed.send_event(Event::Page(id, PageEvent::FindCount(0)));
+        });
+    }
     let pressed = proxy.clone();
     engine.connect_button_press_event(move |_, _| {
         let _ = pressed.send_event(Event::Page(id, PageEvent::Pressed));
@@ -1527,6 +1697,19 @@ impl ApplicationHandler<Event> for App {
                     browser.data = *data;
                 }
                 Ok(())
+            }
+            Event::Paste(text) => {
+                let text = navigation::paste_text(&text);
+                serde_json::to_string(&text)
+                    .map_err(Into::into)
+                    .and_then(|json| {
+                        browser
+                            .toolbar
+                            .evaluate_script(&format!(
+                                "window.pasteAddress&&window.pasteAddress({json})"
+                            ))
+                            .map_err(Into::into)
+                    })
             }
             Event::StorageError => {
                 browser.notice =

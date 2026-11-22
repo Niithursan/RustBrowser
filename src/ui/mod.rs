@@ -204,6 +204,16 @@ pub enum Command {
     SetHistoryEnabled(bool),
     CancelDownload(u64),
     OpenDownloadFolder(u64),
+    /// The find bar (Linux; WebView2 has its own): find `text` in the page, or
+    /// move to the next (`forward`) or previous match of the same text.
+    #[cfg(target_os = "linux")]
+    FindText {
+        text: String,
+        forward: bool,
+    },
+    /// The find bar closed: stop highlighting matches.
+    #[cfg(target_os = "linux")]
+    CloseFind,
 }
 
 #[derive(Default, Serialize)]
