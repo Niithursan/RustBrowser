@@ -18,6 +18,8 @@ mod native_clipboard;
 #[cfg(windows)]
 mod native_downloads;
 #[cfg(windows)]
+mod native_extension_popup;
+#[cfg(windows)]
 mod native_extensions;
 #[cfg(windows)]
 mod native_handoff;

@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Rust Browser test popup blocker",
+  "version": "1.0.0",
+  "description": "Test fixture written for Rust Browser. Blocks requests whose address contains blocked-by-fixture and has a toolbar-button popup that shows the tab it acts on; it reads only the address of the loopback test page it acts on and sends nothing.",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "action": { "default_popup": "popup.html" },
+  "declarative_net_request": {
+    "rule_resources": [{ "id": "fixture", "enabled": true, "path": "rules.json" }]
+  }
+}

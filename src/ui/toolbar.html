@@ -556,7 +556,8 @@ function renderShield(){const s=latestShield;if(!s)return;const on=s.private?[]:
   if(unknown.length)state.push('Rust Browser cannot tell whether '+names(unknown)+' can block requests: its folder could not be read.');
   if(others.length)state.push((blockers.length||unknown.length?'On, but not asking to block requests: ':'No extension on in this window asks to block requests, so none blocks ads here. On: ')+names(others)+'.');
   count=!s.counting?'Counting blocked requests is off (Settings > Extensions).':s.blocked==null?'The blocked-request count is not available for this page.':(s.blocked===1?'1 request':s.blocked+' requests')+' blocked on this page.';
-  limits='The browser engine reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. Rust Browser cannot turn blocking off for one site: an extension can only be turned on or off everywhere. Use the extension\'s own settings for site exceptions.'}
+  const popup=shieldPopup();
+  limits='The browser engine reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. '+(popup?'Click the shield to open '+popup.name+'\'s own panel, where it can be turned off or tuned for this site.':'Rust Browser cannot turn blocking off for one site: an extension can only be turned on or off everywhere. Use the extension\'s own settings for site exceptions.')}
  byId('shield-state').textContent=state.join(' ');byId('shield-count-text').textContent=count;byId('shield-count-text').hidden=!count;byId('shield-limits').textContent=limits;byId('shield-limits').hidden=!limits;
  const counted=on.length>0&&s.blocked!=null&&s.blocked>0;byId('shield-count').textContent=counted?String(Math.min(s.blocked,999))+(s.blocked>999?'+':''):'';
  button.dataset.on=String(blockers.length>0);
@@ -565,8 +566,14 @@ function renderShield(){const s=latestShield;if(!s)return;const on=s.private?[]:
   const shown=!s.private&&s.extensions.some(e=>e.blocks!==false);
   if(!shown&&dropdown?.anchor===button)closeDropdown(false);
   button.hidden=!shown;
- const label='Ad blocking: '+(s.private?'private window, no extensions':counted?s.blocked+' blocked on this page':blockers.length?'an extension that can block requests is on':'no extension that blocks requests is on');button.setAttribute('aria-label',label);button.title=label}
-byId('shield').onclick=()=>{renderShield();toggleDropdown(byId('shield'),byId('shield-panel'))};
+ const popup=shieldPopup(),label='Ad blocking: '+(s.private?'private window, no extensions':counted?s.blocked+' blocked on this page':blockers.length?'an extension that can block requests is on':'no extension that blocks requests is on')+(popup?'. Opens '+popup.name+'; right-click for details':'');button.setAttribute('aria-label',label);button.title=label;
+ button.setAttribute('aria-haspopup',popup?'true':'dialog');if(dropdown?.anchor!==button)button.setAttribute('aria-expanded',String(!!s.popupOpen))}
+// The on extension whose own popup the shield opens: the first that can block requests and has one.
+function shieldPopup(){const s=latestShield;return s&&!s.private?s.extensions.find(e=>e.state==='on'&&e.popup&&e.blocks!==false)||null:null}
+byId('shield').onclick=()=>{const popup=shieldPopup(),b=byId('shield');
+ if(popup){closeDropdown(false);const r=b.getBoundingClientRect();send('open_extension_popup',{id:popup.id,right:r.right,top:r.bottom+4});return}
+ renderShield();toggleDropdown(b,byId('shield-panel'))};
+byId('shield').oncontextmenu=e=>{e.preventDefault();renderShield();toggleDropdown(byId('shield'),byId('shield-panel'))};
 byId('shield-close').onclick=()=>closeDropdown(true);
 byId('shield-manage').onclick=()=>{closeDropdown(false);openSettings('extensions-heading')};
 byId('save-passwords').onchange=e=>send('set_save_passwords',e.target.checked);
@@ -992,7 +999,7 @@ window.render=incoming=>{
     byId('autofill').checked=!s.private&&s.settings.autofill;byId('autofill').disabled=s.private;
     renderExtensions(s.extensions,s.private);
     renderProfiles(s);
-    latestShield={private:s.private,extensions:s.extensions,blocked:s.blocked,counting:!!s.count_blocked};renderShield();
+    latestShield={private:s.private,extensions:s.extensions,blocked:s.blocked,counting:!!s.count_blocked,popupOpen:!!s.extension_popup};renderShield();
     const bookmarked=!s.private&&!!(s.library?.page_bookmark&&s.library.page_bookmark.url===s.url);
     const starLabel=bookmarked?'Edit bookmark for this page (Ctrl+D)':'Bookmark this page (Ctrl+D)';
     byId('bookmark-star').disabled=s.private||!!coveredPanel||!/^https?:/i.test(s.url||'');byId('shield').disabled=!!coveredPanel;

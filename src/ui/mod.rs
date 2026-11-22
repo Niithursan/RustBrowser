@@ -126,6 +126,14 @@ pub enum Command {
         /// Corner radius of the dropdown, so the clip follows its rounded shape.
         radius: f64,
     },
+    /// The shield was pressed and an extension that blocks requests has a popup:
+    /// show that popup with its right edge at `right` and its top at `top`, in
+    /// the toolbar view's CSS pixels. Pressed again, it closes.
+    OpenExtensionPopup {
+        id: String,
+        right: f64,
+        top: f64,
+    },
     /// Bookmarks > Import from file: the browser asks for the file natively.
     ImportBookmarks,
     /// Privacy & security > Extensions > Add from folder (native folder dialog).
@@ -247,6 +255,8 @@ pub struct ExtensionRow {
     pub state: &'static str,
     /// Whether it asks to block requests; `None` when Rust Browser cannot tell.
     pub blocks: Option<bool>,
+    /// Whether it has a toolbar-button page (popup) the shield can open.
+    pub popup: bool,
 }
 
 #[derive(Serialize)]
@@ -291,6 +301,8 @@ pub struct ToolbarState<'a> {
     pub count_blocked: bool,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
+    /// The extension whose popup is open under the shield, if any.
+    pub extension_popup: Option<&'a str>,
     pub library: &'a Data,
     /// The folder the library column is filtered to, if any.
     pub library_folder: Option<i64>,
@@ -661,6 +673,10 @@ mod tests {
         assert!(matches!(
             parse(r#"{"action":"pin_tab","value":3}"#),
             Command::PinTab(3)
+        ));
+        assert!(matches!(
+            parse(r#"{"action":"open_extension_popup","value":{"id":"abc","right":900.5,"top":44}}"#),
+            Command::OpenExtensionPopup { id, right, top } if id == "abc" && right == 900.5 && top == 44.0
         ));
         assert!(matches!(
             parse(r#"{"action":"duplicate_tab","value":4}"#),

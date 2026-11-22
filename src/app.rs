@@ -1,8 +1,8 @@
 use crate::{
     engine::{self, Engine},
     library_worker::{self, Worker},
-    native_background, native_downloads, native_extensions, native_popup, native_security,
-    native_shield, native_window,
+    native_background, native_downloads, native_extension_popup, native_extensions, native_popup,
+    native_security, native_shield, native_window,
     ui::{self, Command, Panel, State, TabState, ToolbarState},
 };
 use base64::Engine as _;
@@ -56,6 +56,11 @@ pub enum Event {
     Extension(native_extensions::Reply),
     /// The count of requests extensions stopped changed for a tab.
     Blocked(TabId),
+    /// The page an extension popup will act on answered with its document's
+    /// `performance.timeOrigin` (`None` if it could not).
+    ExtensionPopupTarget(u64, Option<f64>),
+    /// An extension popup reported its size or asked to close.
+    ExtensionPopup(u64, crate::native_extension_popup::Report),
     /// The one-time toolbar autofill cleanup finished (true when it succeeded).
     ToolbarAutofillCleared(bool),
     EngineCleared {
@@ -229,6 +234,20 @@ struct SideView {
     last_render: RefCell<String>,
 }
 
+/// An extension's popup page open under the shield (see `native_extension_popup`).
+struct ExtensionPopup {
+    ticket: u64,
+    extension: String,
+    /// The tab it acts on; switching tabs closes it.
+    tab: TabId,
+    address: String,
+    /// The right edge and top it hangs from, in the window's logical pixels.
+    anchor: (f64, f64),
+    /// Built once the page answered which document it shows.
+    view: Option<WebView>,
+    shown: bool,
+}
+
 /// Width of the vertical tab column, in logical pixels.
 const TABS_WIDTH: f64 = 240.0;
 /// Default, smallest and largest library column width, in logical pixels.
@@ -262,6 +281,9 @@ enum Full {
     /// A dropdown over a webpage: the page and library stay where they are, and the
     /// toolbar spans its column above them, clipped to the chrome and the dropdown.
     Dropdown,
+    /// A fullscreen page (a video, a game) fills its column and the toolbar is
+    /// hidden (zero height). Escape, which always reaches the page, leaves it.
+    Bare,
 }
 
 /// The layout table (see ARCHITECTURE.md). In `Full::Cover` (Settings or an open
@@ -289,15 +311,17 @@ fn layout(
                 .min((rest - PAGE_MIN).max(0.0))
         })
         .filter(|w| *w >= LIBRARY_MIN.min(rest / 2.0) && *w > 0.0);
+    let chrome = if full == Full::Bare { 0.0 } else { chrome };
     let body = (height - chrome).max(1.0);
     let (toolbar_w, toolbar_h) = match full {
         Full::None => (rest, chrome),
+        Full::Bare => (rest, 0.0),
         Full::NewTab => ((rest - lib.unwrap_or(0.0)).max(1.0), height),
         Full::Cover | Full::Dropdown => (rest, height),
     };
     Layout {
         toolbar: (left, 0.0, toolbar_w, toolbar_h),
-        page: matches!(full, Full::None | Full::Dropdown).then_some((
+        page: matches!(full, Full::None | Full::Dropdown | Full::Bare).then_some((
             left,
             chrome,
             (rest - lib.unwrap_or(0.0)).max(1.0),
@@ -536,6 +560,16 @@ struct WindowState {
     /// the page, and that page's focus event can arrive just after a new dropdown
     /// opened; it must not close the new one.
     menu_opened_at: Option<Instant>,
+    /// An extension's own popup, open under the shield.
+    extension_popup: Option<ExtensionPopup>,
+    /// When focus leaving a popup closed it, and whose it was: the press on the
+    /// shield that took the focus must not open it again.
+    popup_blurred: Option<(Instant, String)>,
+    /// Closed popup views, hidden and kept for `RETIRE_DELAY` like closed tabs.
+    retired_popups: Vec<(Instant, WebView)>,
+    /// The ticket of the last popup opened in this window: a website it asked
+    /// to open arrives here even if the popup closed first.
+    last_popup: u64,
     /// The vertical tab column, once vertical tabs were used in this window.
     tabs_view: Option<SideView>,
     /// The library column, once it was opened in this window.
@@ -621,6 +655,11 @@ struct Session {
     extensions: Vec<native_extensions::Info>,
     /// Whether `extensions` has been read from WebView2 since startup.
     extensions_listed: bool,
+    /// Each added extension's toolbar-button page, read from its manifest once
+    /// per session (`None` when it has none).
+    extension_popups: std::collections::HashMap<String, Option<String>>,
+    /// The last extension popup ticket handed out (in every window).
+    popup_tickets: u64,
     /// The last `native_extensions::installed` answer (tests only).
     #[cfg(test)]
     extension_probe: Option<Result<Vec<native_extensions::Info>, String>>,
@@ -843,6 +882,18 @@ impl Session {
         if learned {
             self.persist();
         }
+        // Each extension's popup page, read once per session from its manifest.
+        for saved in &self.settings.extensions {
+            if !self.extension_popups.contains_key(&saved.id) {
+                self.extension_popups.insert(
+                    saved.id.clone(),
+                    native_extensions::folder_popup(std::path::Path::new(&saved.folder)),
+                );
+            }
+        }
+        let saved = &self.settings.extensions;
+        self.extension_popups
+            .retain(|id, _| saved.iter().any(|e| &e.id == id));
         let ids = self
             .settings
             .extensions
@@ -876,6 +927,10 @@ impl Session {
                         None => "off",
                     },
                     blocks: saved.blocks,
+                    popup: self
+                        .extension_popups
+                        .get(&saved.id)
+                        .is_some_and(Option::is_some),
                 }
             })
             .collect()
@@ -1093,6 +1148,10 @@ impl Session {
             menu_open: false,
             menu_area: None,
             menu_opened_at: None,
+            extension_popup: None,
+            popup_blurred: None,
+            retired_popups: Vec::new(),
+            last_popup: 0,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -1185,6 +1244,7 @@ impl Session {
 
     /// Close the window being handled while others stay open.
     fn close_window(&mut self) {
+        self.close_extension_popup(false);
         let tabs = self
             .tabs
             .items
@@ -1253,6 +1313,11 @@ impl Session {
             }
             Event::ToolbarProcess(source, _) | Event::ToolbarResponsive(source, _) => {
                 self.select_toolbar(*source);
+            }
+            Event::ExtensionPopupTarget(ticket, _) | Event::ExtensionPopup(ticket, _) => {
+                if let Some(index) = self.windows.iter().position(|w| w.last_popup == *ticket) {
+                    self.current = index;
+                }
             }
             Event::PermissionPrompt => {
                 let tab = self.permissions.borrow().prompt().map(|p| p.tab);
@@ -1670,6 +1735,10 @@ impl Session {
             menu_open: false,
             menu_area: None,
             menu_opened_at: None,
+            extension_popup: None,
+            popup_blurred: None,
+            retired_popups: Vec::new(),
+            last_popup: 0,
             tabs_view: None,
             library_view: None,
             library_panel: None,
@@ -1729,6 +1798,8 @@ impl Session {
             pending_extension: None,
             extensions: Vec::new(),
             extensions_listed: false,
+            extension_popups: std::collections::HashMap::new(),
+            popup_tickets: 0,
             #[cfg(test)]
             extension_probe: None,
             #[cfg(test)]
@@ -1879,6 +1950,227 @@ impl Session {
         Ok(engine)
     }
 
+    /// The shield asked for an extension's popup (see `Command::OpenExtensionPopup`).
+    /// The popup is built once the page answers which document it shows, so the
+    /// popup acts on that page.
+    fn open_extension_popup(&mut self, id: String, right: f64, top: f64) {
+        // A press on the shield while the popup is open closes it: either it is
+        // still open, or the press took its focus and closed it a moment ago.
+        let closed = self.close_extension_popup(false);
+        let blurred = self
+            .popup_blurred
+            .take()
+            .filter(|(at, _)| at.elapsed() < MENU_FOCUS_GRACE)
+            .map(|(_, closed)| closed);
+        if closed.as_ref() == Some(&id) || blurred.as_ref() == Some(&id) {
+            self.render();
+            return;
+        }
+        let path = self.extension_popups.get(&id).cloned().flatten();
+        let enabled = self.extensions.iter().any(|e| e.id == id && e.enabled);
+        let address = path
+            .as_deref()
+            .and_then(|path| native_extension_popup::address(&id, path));
+        let Some(address) =
+            address.filter(|_| enabled && !self.private && right.is_finite() && top.is_finite())
+        else {
+            return;
+        };
+        self.popup_tickets += 1;
+        let ticket = self.popup_tickets;
+        let Some(tab) = self.windows[self.current].tabs.active() else {
+            return;
+        };
+        let tab_id = tab.id;
+        let proxy = self.proxy.clone();
+        // Two tabs can show the same address; the document's time origin tells
+        // them apart. Without an answer the popup still opens.
+        let asked = tab.content.engine.view.evaluate_script_with_callback(
+            "performance.timeOrigin",
+            move |value| {
+                let origin = value.trim().parse::<f64>().ok();
+                let _ = proxy.send_event(Event::ExtensionPopupTarget(ticket, origin));
+            },
+        );
+        if asked.is_err() {
+            let _ = self
+                .proxy
+                .send_event(Event::ExtensionPopupTarget(ticket, None));
+        }
+        let left = self.current_layout().toolbar.0;
+        self.last_popup = ticket;
+        self.extension_popup = Some(ExtensionPopup {
+            ticket,
+            extension: id,
+            tab: tab_id,
+            address,
+            anchor: (left + right, top),
+            view: None,
+            shown: false,
+        });
+        self.render();
+    }
+
+    /// Build the popup view once its page is known.
+    fn extension_popup_target(&mut self, ticket: u64, origin: Option<f64>) {
+        let current = self.current;
+        let window = &self.windows[current];
+        let Some(popup) = window
+            .extension_popup
+            .as_ref()
+            .filter(|p| p.ticket == ticket && p.view.is_none())
+        else {
+            return;
+        };
+        let page = window
+            .tabs
+            .items
+            .iter()
+            .find(|t| t.id == popup.tab)
+            .and_then(|t| t.content.engine.view.url().ok());
+        let Some(page) = page else {
+            self.close_extension_popup(false);
+            self.render();
+            return;
+        };
+        let size = window
+            .window
+            .inner_size()
+            .to_logical::<f64>(window.window.scale_factor());
+        let bounds = native_extension_popup::place(
+            popup.anchor.0,
+            popup.anchor.1,
+            (
+                native_extension_popup::START_WIDTH,
+                native_extension_popup::START_HEIGHT,
+            ),
+            (size.width, size.height),
+        );
+        let address = popup.address.clone();
+        let script = native_extension_popup::shim(&page, origin);
+        let built = native_extension_popup::open(
+            &self.windows[current].window,
+            &mut self.content_context,
+            self.proxy.clone(),
+            ticket,
+            &address,
+            &script,
+            bounds,
+        );
+        match built {
+            Ok(view) => {
+                if let Some(popup) = &mut self.windows[current].extension_popup {
+                    popup.view = Some(view);
+                }
+            }
+            Err(_) => {
+                self.close_extension_popup(false);
+                self.notice = "The extension's popup could not open.".into();
+                self.render();
+            }
+        }
+    }
+
+    /// The popup reported its size (shown the first time), asked to close, or
+    /// lost focus to a press elsewhere.
+    fn extension_popup_report(&mut self, ticket: u64, report: native_extension_popup::Report) {
+        use native_extension_popup::Report;
+        if let Report::Link(url) = report {
+            if ticket == self.last_popup {
+                self.close_extension_popup(false);
+                let opened = self.open_tab(url).and_then(|()| self.activate());
+                if let Err(error) = opened {
+                    self.notice = error.to_string();
+                }
+                self.persist();
+                self.render();
+            }
+            return;
+        }
+        if !self
+            .extension_popup
+            .as_ref()
+            .is_some_and(|p| p.ticket == ticket)
+        {
+            return;
+        }
+        match report {
+            Report::Close => {
+                self.close_extension_popup(true);
+                self.render();
+            }
+            Report::Link(_) => {}
+            Report::Blur => {
+                if let Some(closed) = self.close_extension_popup(false) {
+                    self.popup_blurred = Some((Instant::now(), closed));
+                }
+                self.render();
+            }
+            Report::Size(width, height) => {
+                let window = &mut self.windows[self.current];
+                let scale = window.window.scale_factor();
+                let room = window.window.inner_size().to_logical::<f64>(scale);
+                let page = window.tabs.active().map(|tab| &tab.content.engine.view);
+                let Some(popup) = &mut window.extension_popup else {
+                    return;
+                };
+                let Some(view) = &popup.view else {
+                    return;
+                };
+                let bounds = native_extension_popup::place(
+                    popup.anchor.0,
+                    popup.anchor.1,
+                    (width, height),
+                    (room.width, room.height),
+                );
+                let size = bounds.size.to_logical::<f64>(scale);
+                let placed = view.set_bounds(bounds).is_ok()
+                    && (popup.shown || view.set_visible(true).is_ok());
+                // Above the page and the toolbar, with the dropdowns' rounded corners.
+                let siblings: Vec<&WebView> = page.into_iter().chain([&window.toolbar]).collect();
+                let raised = engine::clip_view(
+                    view,
+                    &siblings,
+                    Some(&[engine::ClipArea {
+                        x: 0.0,
+                        y: 0.0,
+                        width: size.width,
+                        height: size.height,
+                        radius: 8.0,
+                    }]),
+                    scale,
+                );
+                if !popup.shown && placed {
+                    popup.shown = true;
+                    let _ = view.focus();
+                }
+                if !placed || raised.is_err() {
+                    self.diagnostics.record(DiagnosticCode::CommandFailed);
+                }
+            }
+        }
+    }
+
+    /// Close this window's extension popup, if one is open, and say whose it was.
+    /// `refocus` hands the keyboard back to the page (the popup closed itself).
+    fn close_extension_popup(&mut self, refocus: bool) -> Option<String> {
+        let window = &mut self.windows[self.current];
+        let popup = window.extension_popup.take()?;
+        if let Some(view) = popup.view {
+            let _ = view.set_visible(false);
+            if window.retired_popups.len() >= 4 {
+                window.retired_popups.remove(0);
+            }
+            window
+                .retired_popups
+                .push((Instant::now() + RETIRE_DELAY, view));
+            if refocus && let Some(tab) = window.tabs.active() {
+                let _ = tab.content.engine.view.focus();
+            }
+        }
+        Some(popup.extension)
+    }
+
     /// Hide a closed tab's view now and destroy it after `RETIRE_DELAY`.
     fn retire(&mut self, page: Page) {
         // A view that cannot be hidden is already unusable; it is still only dropped.
@@ -1896,6 +2188,9 @@ impl Session {
             + self.closing_windows.len();
         for window in &mut self.windows {
             window.retired.retain(|(deadline, _)| *deadline > now);
+            window
+                .retired_popups
+                .retain(|(deadline, _)| *deadline > now);
             if window
                 .retired_toolbar
                 .as_ref()
@@ -1919,6 +2214,7 @@ impl Session {
                     .map(|(deadline, _)| *deadline)
                     .into_iter()
                     .chain(w.retired_toolbar.as_ref().map(|(deadline, _)| *deadline))
+                    .chain(w.retired_popups.first().map(|(deadline, _)| *deadline))
             })
             .chain(self.closing_windows.first().map(|(deadline, _)| *deadline))
             .min()
@@ -2176,8 +2472,8 @@ impl Session {
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
         let window = &self.windows[self.current];
-        // A fullscreen page keeps the toolbar (its address and origin) but takes
-        // the room of the tab column and the library.
+        // A fullscreen page takes the whole screen: no toolbar, tab column or
+        // library. A dropdown or panel opened from a shortcut brings the toolbar back.
         let fullscreen = window.fullscreen.is_some();
         let panel = self.effective_panel();
         let full = if self.panel.is_some() || (self.menu_open && panel.is_some()) {
@@ -2186,6 +2482,8 @@ impl Session {
             Full::Dropdown
         } else if panel == Some(Panel::NewTab) {
             Full::NewTab
+        } else if fullscreen {
+            Full::Bare
         } else {
             Full::None
         };
@@ -2208,7 +2506,12 @@ impl Session {
             size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
         };
         let plan = self.current_layout();
-        self.toolbar.set_bounds(at(plan.toolbar))?;
+        // A fullscreen page hides the toolbar (zero height) rather than covering it.
+        let chrome_shown = plan.toolbar.3 > 0.0;
+        if chrome_shown {
+            self.toolbar.set_bounds(at(plan.toolbar))?;
+        }
+        self.toolbar.set_visible(chrome_shown)?;
         self.clip_toolbar(&plan);
         if let Some(tab) = self.tabs.active()
             && let Some(page) = plan.page
@@ -2280,6 +2583,15 @@ impl Session {
     }
 
     fn activate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // A popup acts on the tab it opened over; another tab closes it.
+        let active = self.tabs.active().map(|t| t.id);
+        if self
+            .extension_popup
+            .as_ref()
+            .is_some_and(|p| Some(p.tab) != active)
+        {
+            self.close_extension_popup(false);
+        }
         let fullscreen = self
             .tabs
             .active()
@@ -2506,6 +2818,10 @@ impl Session {
             } else {
                 self.extension_rows()
             },
+            extension_popup: self.windows[self.current]
+                .extension_popup
+                .as_ref()
+                .map(|p| p.extension.as_str()),
             diagnostics: (self.panel == Some(Panel::Settings)).then(|| self.diagnostics.snapshot()),
             tabs: self
                 .tabs
@@ -2954,7 +3270,14 @@ impl Session {
                 }
                 self.inform(format!("Deleted the profile {name} and its data."));
             }
+            Command::OpenExtensionPopup { id, right, top } => {
+                self.open_extension_popup(id, right, top);
+            }
             Command::SetMenuOpen(open) => {
+                // A dropdown and an extension popup are never open together.
+                if open {
+                    self.close_extension_popup(false);
+                }
                 if !open {
                     self.menu_folder = None;
                     self.menu_area = None;
@@ -4030,7 +4353,7 @@ mod tests {
                 for chrome in [80.0, 119.0, 160.0] {
                     for vertical in [false, true] {
                         for library in [None, Some(200.0), Some(360.0), Some(900.0)] {
-                            for full in [Full::None, Full::NewTab, Full::Cover] {
+                            for full in [Full::None, Full::NewTab, Full::Cover, Full::Bare] {
                                 let plan = layout(width, height, chrome, vertical, library, full);
                                 let shown: Vec<_> =
                                     [Some(plan.toolbar), plan.page, plan.tabs, plan.library]
@@ -4052,8 +4375,11 @@ mod tests {
                                         );
                                     }
                                 }
-                                // Only Full::None shows the webpage; Full::Cover hides the library too.
-                                assert_eq!(plan.page.is_some(), full == Full::None);
+                                // Full::None and Full::Bare show the webpage; Full::Cover hides the library too.
+                                assert_eq!(
+                                    plan.page.is_some(),
+                                    matches!(full, Full::None | Full::Bare)
+                                );
                                 if full == Full::Cover {
                                     assert!(plan.library.is_none());
                                 }
@@ -4065,7 +4391,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 3);
+        assert_eq!(cases, 5 * 3 * 3 * 2 * 4 * 4);
     }
 
     /// A dropdown over a webpage moves nothing: the page and library keep their
@@ -4085,6 +4411,15 @@ mod tests {
                 assert_eq!(menu.toolbar.3, 820.0);
             }
         }
+    }
+
+    /// A fullscreen page (a video) fills the whole window: the toolbar is hidden.
+    #[test]
+    fn a_fullscreen_page_fills_the_window() {
+        let plan = layout(1920.0, 1080.0, 119.0, false, None, Full::Bare);
+        assert_eq!(plan.page, Some((0.0, 0.0, 1920.0, 1080.0)));
+        assert_eq!(plan.toolbar.3, 0.0);
+        assert!(plan.tabs.is_none() && plan.library.is_none());
     }
 
     #[test]
@@ -4400,6 +4735,7 @@ impl ApplicationHandler<Event> for App {
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(session) = &mut self.session {
+                    session.close_extension_popup(false);
                     if session.resize().is_err() {
                         session.notice = "Could not resize webpage.".into();
                     }
@@ -4567,6 +4903,7 @@ impl ApplicationHandler<Event> for App {
             }
             Event::Fullscreen(id, enabled) => {
                 if session.tabs.active().is_some_and(|t| t.id == id) {
+                    session.close_extension_popup(false);
                     session.fullscreen = enabled.then_some(id);
                     session.window.set_fullscreen(if enabled {
                         Some(winit::window::Fullscreen::Borderless(None))
@@ -4665,6 +5002,10 @@ impl ApplicationHandler<Event> for App {
                 Err(message) => session.notice = message,
             },
             Event::Extension(reply) => session.extension_reply(reply),
+            Event::ExtensionPopupTarget(ticket, origin) => {
+                session.extension_popup_target(ticket, origin)
+            }
+            Event::ExtensionPopup(ticket, report) => session.extension_popup_report(ticket, report),
             // Shown by the render that follows every event.
             Event::Blocked(_) => {}
             Event::ToolbarAutofillCleared(success) => {

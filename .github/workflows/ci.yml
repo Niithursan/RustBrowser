@@ -144,6 +144,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_library_sidebar_beside_a_live_page -- --ignored --test-threads=1
       - name: Native shield counts what an extension blocks
         run: cargo test --locked --bin rust-browser native_shield_counts_what_an_extension_blocks -- --ignored --test-threads=1
+      - name: Native shield opens the extension's own popup
+        run: cargo test --locked --bin rust-browser native_shield_opens_the_extension_popup -- --ignored --test-threads=1
       - name: Native vertical tabs in two windows
         run: cargo test --locked --bin rust-browser native_vertical_tabs_in_two_windows -- --ignored --test-threads=1
       - name: Native new-tab tiles and background

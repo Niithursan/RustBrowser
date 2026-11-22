@@ -3230,6 +3230,279 @@ fn native_shield_counts_what_an_extension_blocks() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+const POPUP_BLOCKER: &str = "Rust Browser test popup blocker";
+
+/// Run `script` in the first window's extension popup; the answer lands in `p.result`.
+fn eval_extension_popup(p: &mut Probe, script: &str) -> Result<(), String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    *p.result.lock().unwrap() = None;
+    let result = p.result.clone();
+    s.windows[0]
+        .extension_popup
+        .as_ref()
+        .and_then(|popup| popup.view.as_ref())
+        .ok_or("No popup view")?
+        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .map_err(|_| "Popup script failed".to_string())
+}
+
+/// The popup is open, shown, and fits under the shield inside the window.
+fn popup_shown(s: &Session) -> Result<bool, String> {
+    let window = &s.windows[0];
+    let Some(view) = window
+        .extension_popup
+        .as_ref()
+        .filter(|popup| popup.shown)
+        .and_then(|popup| popup.view.as_ref())
+    else {
+        return Ok(false);
+    };
+    if !view_visible(view) {
+        return Err("A shown popup is not visible".into());
+    }
+    let bounds = view.bounds().map_err(|e| e.to_string())?;
+    let scale = window.window.scale_factor();
+    let (at, size) = (
+        bounds.position.to_logical::<f64>(scale),
+        bounds.size.to_logical::<f64>(scale),
+    );
+    let room = window.window.inner_size().to_logical::<f64>(scale);
+    if at.x < -0.5
+        || at.y < window.chrome_height - 60.0
+        || at.x + size.width > room.width + 0.5
+        || at.y + size.height > room.height + 0.5
+    {
+        return Err(format!(
+            "The popup should hang under the shield inside the window: {at:?} {size:?} in {room:?}"
+        ));
+    }
+    // The fixture popup's body is 300 + 2 * 16 pixels wide and taller than the
+    // first height: the view fits its content.
+    if (size.width - 332.0).abs() > 2.0 || size.height <= 150.0 {
+        return Err(format!("The popup should fit its content: {size:?}"));
+    }
+    Ok(true)
+}
+
+/// The shield opens an extension's own popup over the live page, and that popup
+/// acts on the page (not on itself). Escape, a press on the page, a second press
+/// on the shield and a tab switch close it; a right-click still shows the details.
+fn extension_popup_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    let page = format!("{url}shield.html");
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            // WebView2 writes indexed rules into the folder: use a copy.
+            let folder = p.root.join("popup-blocker");
+            std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+            let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/extensions/popup-blocker");
+            for name in ["manifest.json", "rules.json", "popup.html", "popup.js"] {
+                std::fs::copy(source.join(name), folder.join(name)).map_err(|e| e.to_string())?;
+            }
+            p.app
+                .proxy
+                .send_event(Event::Extension(native_extensions::Reply::Folder(Ok(
+                    Some(folder),
+                ))))
+                .map_err(|_| "proxy")?;
+            p.next();
+        }
+        1 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if names(s) == [(POPUP_BLOCKER.to_string(), "on")]
+                && s.extension_rows().iter().all(|row| row.popup)
+            {
+                p.command(el, 0, Command::Navigate(page))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(20) {
+                return Err(format!(
+                    "Adding the popup blocker: {:?}, notice {:?}",
+                    names(s),
+                    s.notice
+                ));
+            }
+        }
+        2 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
+            eval_toolbar(p, "document.getElementById('shield').click()")?;
+            p.next();
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if popup_shown(s)? {
+                if s.windows[0].menu_open || !view_visible(&s.tabs.items[0].content.engine.view) {
+                    return Err("The popup should open over the live page, with no dropdown".into());
+                }
+                eval_extension_popup(p, "document.getElementById('tab').textContent")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The extension popup never showed".into());
+            }
+        }
+        4 => {
+            let Some(text) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let seen: String = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            if seen != page {
+                return Err(format!(
+                    "The popup should act on the page ({page}), not on {seen:?}"
+                ));
+            }
+            p.log.push(format!("extension popup: acts on {seen}"));
+            eval_toolbar(
+                p,
+                "document.getElementById('shield').getAttribute('aria-expanded')",
+            )?;
+            p.next();
+        }
+        5 => {
+            let Some(expanded) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            if expanded != "\"true\"" {
+                return Err(format!("The shield should read as expanded: {expanded}"));
+            }
+            // Escape in the popup closes it.
+            eval_extension_popup(
+                p,
+                "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true",
+            )?;
+            p.next();
+        }
+        6 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows[0].extension_popup.is_none() {
+                if s.windows[0].retired_popups.is_empty() {
+                    return Err("A closed popup should be retired, not destroyed".into());
+                }
+                eval_toolbar(p, "document.getElementById('shield').click()")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(5) {
+                return Err("Escape should close the popup".into());
+            }
+        }
+        7 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if popup_shown(s)? {
+                // A press on the page takes the focus from the popup.
+                s.tabs.items[0]
+                    .content
+                    .engine
+                    .view
+                    .focus()
+                    .map_err(|e| e.to_string())?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The popup did not open again".into());
+            }
+        }
+        8 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows[0].extension_popup.is_none() {
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(5) {
+                return Err("Focusing the page should close the popup".into());
+            }
+        }
+        // Past the grace period a press on the shield opens it again; a second
+        // press while it is open closes it.
+        9 if p.at.elapsed() > Duration::from_millis(600) => {
+            eval_toolbar(p, "document.getElementById('shield').click()")?;
+            p.next();
+        }
+        10 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if popup_shown(s)? {
+                eval_toolbar(p, "document.getElementById('shield').click()")?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The popup did not open a third time".into());
+            }
+        }
+        11 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows[0].extension_popup.is_none() {
+                // A right-click shows the shield's details instead.
+                eval_toolbar(
+                    p,
+                    "document.getElementById('shield').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true",
+                )?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(5) {
+                return Err("A second press on the shield should close the popup".into());
+            }
+        }
+        12 if p.at.elapsed() > Duration::from_millis(500) => {
+            eval_toolbar(p, SHIELD_REPORT)?;
+            p.next();
+        }
+        13 => {
+            let Some(r) = shield_report(p)? else {
+                return Ok(());
+            };
+            let limits = r["limits"].as_str().unwrap_or("");
+            if r["open"] != true || !limits.contains(POPUP_BLOCKER) {
+                return Err(format!("A right-click should show the details: {r}"));
+            }
+            eval_toolbar(
+                p,
+                "closeDropdown(false);document.getElementById('shield').click()",
+            )?;
+            p.next();
+        }
+        14 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if popup_shown(s)? {
+                // A website the popup opens (`chrome.tabs.create`) opens in a new
+                // tab, which closes the popup: it acts on one tab.
+                eval_extension_popup(
+                    p,
+                    &format!("chrome.tabs.create({{url:'{url}shield.html?from-popup'}});true"),
+                )?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err("The popup did not open after the details".into());
+            }
+        }
+        15 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let active = s.tabs.active().map(|t| t.url.clone()).unwrap_or_default();
+            if s.windows[0].extension_popup.is_none()
+                && s.tabs.items.len() == 2
+                && active == format!("{url}shield.html?from-popup")
+            {
+                p.log.push(
+                    "extension popup: Escape, page press, shield, new tab close it; links open in a tab"
+                        .into(),
+                );
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!(
+                    "A website opened from the popup should be a new active tab: {} tabs, active {active}, popup open {}",
+                    s.tabs.items.len(),
+                    s.windows[0].extension_popup.is_some()
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_shield_opens_the_extension_popup() {
+    let (root, _) = run("extension-popup", extension_popup_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Load a page of 300 requests 12 times, alternating between a tab that counts
 /// blocked requests and one that does not, and log both load times.
 fn shield_cost_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
@@ -3626,8 +3899,8 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 .map_err(|_| "proxy")?;
             p.next();
         }
-        // The toolbar (and its address and origin) stays, as in every fullscreen
-        // page; the tab column and the library give the page their room.
+        // A fullscreen page (a video) is all there is: the toolbar, the tab column
+        // and the library are hidden and the page fills the window.
         21 if p.at.elapsed() > Duration::from_millis(1500) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             check_no_overlap(s, "fullscreen")?;
@@ -3636,16 +3909,20 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 .window
                 .inner_position()
                 .map_err(|e| e.to_string())?;
-            let width = s.windows[0].window.inner_size().width as i32;
+            let size = s.windows[0].window.inner_size();
+            let (width, height) = (size.width as i32, size.height as i32);
             let page = named(&views, "page").ok_or("No page")?;
             if s.windows[0].fullscreen.is_none()
+                || named(&views, "toolbar").is_some()
                 || named(&views, "tabs").is_some()
                 || named(&views, "library").is_some()
                 || (page.left - host.x).abs() > 2
+                || (page.top - host.y).abs() > 2
                 || ((page.right - page.left) - width).abs() > 2
+                || ((page.bottom - page.top) - height).abs() > 2
             {
                 return Err(format!(
-                    "A fullscreen page should have the whole width: {views:?}"
+                    "A fullscreen page should fill the window alone: {views:?}"
                 ));
             }
             let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
@@ -3659,9 +3936,12 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let s = p.app.session.as_mut().ok_or("No session")?;
             check_no_overlap(s, "after fullscreen")?;
             let views = shown_views(s);
-            if named(&views, "tabs").is_none() || named(&views, "library").is_none() {
+            if named(&views, "toolbar").is_none()
+                || named(&views, "tabs").is_none()
+                || named(&views, "library").is_none()
+            {
                 return Err(format!(
-                    "The column and library should come back: {views:?}"
+                    "The toolbar, column and library should come back: {views:?}"
                 ));
             }
             p.command(el, 0, Command::CloseLibrary)?;
