@@ -276,6 +276,13 @@ fn fullscreen_notice_area(width: f64) -> engine::ClipArea {
     }
 }
 
+/// Put `window` in or out of borderless full screen on its monitor. The frame flag
+/// goes first, so even a maximized window covers the whole monitor, taskbar included.
+fn set_window_fullscreen(window: &Window, on: bool) {
+    crate::native_window::set_fullscreen_frame(window, on);
+    window.set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+}
+
 /// The host a fullscreen notice names for a page at `url`.
 fn fullscreen_host(url: &str) -> String {
     url::Url::parse(url)
@@ -2429,7 +2436,7 @@ impl Session {
     fn recover_window(&mut self) -> bool {
         self.retired.clear();
         self.fullscreen = None;
-        self.window.set_fullscreen(None);
+        set_window_fullscreen(&self.window, false);
         let mut failed = false;
         for index in 0..self.tabs.items.len() {
             let id = self.tabs.items[index].id;
@@ -2694,8 +2701,7 @@ impl Session {
             .map(|t| t.id);
         if fullscreen != self.fullscreen {
             self.fullscreen = fullscreen;
-            self.window
-                .set_fullscreen(fullscreen.map(|_| winit::window::Fullscreen::Borderless(None)));
+            set_window_fullscreen(&self.window, fullscreen.is_some());
             self.update_fullscreen_notice();
         }
         self.claim_permissions();
@@ -5032,11 +5038,7 @@ impl ApplicationHandler<Event> for App {
                     session.close_extension_popup(false);
                     session.fullscreen = enabled.then_some(id);
                     session.update_fullscreen_notice();
-                    session.window.set_fullscreen(if enabled {
-                        Some(winit::window::Fullscreen::Borderless(None))
-                    } else {
-                        None
-                    });
+                    set_window_fullscreen(&session.window, enabled);
                     let _ = session.resize();
                 }
             }

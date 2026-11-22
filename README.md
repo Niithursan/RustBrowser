@@ -526,8 +526,8 @@ worker, WebSocket or WebRTC operation is observable: use **Keep awake** for live
 especially generated/muted media or calls. Private views use the same conservative
 policy within their isolated context.
 
-HTML fullscreen (a video's full-screen button, for example) fills the whole screen
-with the page alone: the toolbar, tab column and library are hidden until it ends.
+HTML fullscreen (a video's full-screen button, for example) fills the whole monitor,
+taskbar included and even from a maximized window, with the page alone: the toolbar, tab column and library are hidden until it ends.
 For its first four seconds a notice at the top names the site ("www.youtube.com is
 now full screen - Press Esc to exit"), so a page cannot pass itself off as the
 browser. Escape always reaches the page and leaves fullscreen; a shortcut that opens a

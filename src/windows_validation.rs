@@ -3890,14 +3890,26 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             p.phase = 19;
             p.next();
         }
+        // From a maximized window, as most people browse: full screen must still
+        // cover the whole monitor, taskbar included, not just its work area.
         20 if p.at.elapsed() > Duration::from_millis(800) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
+            s.windows[0].window.set_maximized(true);
+            p.phase = 92;
+            p.at = Instant::now();
+        }
+        92 if p.at.elapsed() > Duration::from_millis(800) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.windows[0].window.is_maximized() {
+                return Err("The window did not maximize".into());
+            }
             let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
             p.app
                 .proxy
                 .send_event(Event::Fullscreen(id, true))
                 .map_err(|_| "proxy")?;
-            p.next();
+            p.phase = 21;
+            p.at = Instant::now();
         }
         // A fullscreen page (a video) fills the window: the tab column and the
         // library are hidden, and for its first seconds the toolbar shows only a
@@ -3914,6 +3926,23 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             let (width, height) = (size.width as i32, size.height as i32);
             let scale = s.windows[0].window.scale_factor();
             let page = named(&views, "page").ok_or("No page")?;
+            let monitor = s.windows[0].window.current_monitor().ok_or("No monitor")?;
+            let (screen_at, screen) = (monitor.position(), monitor.size());
+            let (window_at, window) = (
+                s.windows[0]
+                    .window
+                    .outer_position()
+                    .map_err(|e| e.to_string())?,
+                s.windows[0].window.outer_size(),
+            );
+            if window_at != screen_at
+                || window != screen
+                || (width, height) != (screen.width as i32, screen.height as i32)
+            {
+                return Err(format!(
+                    "Full screen should cover the whole monitor {screen_at:?} {screen:?}: window {window_at:?} {window:?}, page area {width}x{height}"
+                ));
+            }
             if s.windows[0].fullscreen.is_none()
                 || named(&views, "tabs").is_some()
                 || named(&views, "library").is_some()
@@ -3999,6 +4028,16 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         22 if p.at.elapsed() > Duration::from_millis(1500) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             check_no_overlap(s, "after fullscreen")?;
+            // Back to the maximized window it was, its work area clear of the taskbar.
+            let monitor = s.windows[0].window.current_monitor().ok_or("No monitor")?;
+            if s.windows[0].fullscreen.is_some()
+                || s.windows[0].window.fullscreen().is_some()
+                || !s.windows[0].window.is_maximized()
+                || s.windows[0].window.inner_size().height > monitor.size().height
+            {
+                return Err("Leaving full screen should restore the maximized window".into());
+            }
+            s.windows[0].window.set_maximized(false);
             let views = shown_views(s);
             if named(&views, "toolbar").is_none()
                 || named(&views, "tabs").is_none()

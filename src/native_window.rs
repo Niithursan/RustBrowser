@@ -30,8 +30,9 @@ pub fn apply_theme(window: &Window, theme: Theme) {
 /// lets Windows compute the standard frame instead (on Windows 10 and 11 its side and
 /// bottom borders are invisible, just outside the drawn window, like other apps') and
 /// pulls only the top back up to the window's edge, where the toolbar draws the
-/// caption and its own strip resizes the top edge. Maximized and full-screen windows
-/// are left to winit. Returns whether the subclass was installed.
+/// caption and its own strip resizes the top edge. Maximized windows are left to
+/// winit; full-screen ones fill the monitor (see [`set_fullscreen_frame`]). Returns
+/// whether the subclass was installed.
 pub fn enable_edge_resize(window: &Window) -> bool {
     use windows::Win32::{
         Foundation::HWND,
@@ -71,6 +72,58 @@ pub fn enable_edge_resize(window: &Window) -> bool {
 
 const EDGE_RESIZE_ID: usize = 0x5242_4544; // "RBED"
 
+/// Tell the edge-resize subclass whether the window is full screen, and recompute
+/// its frame.
+///
+/// winit keeps a maximized window marked maximized while it is full screen and then
+/// shrinks its client area to the monitor's work area, so the taskbar stays and the
+/// page stops above it. While this is on, the subclass makes the whole window the
+/// client area instead: a full-screen page covers the entire monitor. Call it with
+/// `true` before entering full screen and with `false` before leaving it. Returns
+/// whether the subclass (installed by [`enable_edge_resize`]) took the change.
+pub fn set_fullscreen_frame(window: &Window, fullscreen: bool) -> bool {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::{
+            Shell::SetWindowSubclass,
+            WindowsAndMessaging::{
+                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+                SetWindowPos,
+            },
+        },
+    };
+    use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let hwnd = match window.window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Win32(handle)) => HWND(handle.hwnd.get() as *mut _),
+        _ => return false,
+    };
+    // SAFETY: this thread's own live window, as in `enable_edge_resize`. Calling
+    // SetWindowSubclass again with the same procedure and ID only replaces its
+    // reference data (the full-screen flag).
+    unsafe {
+        if !SetWindowSubclass(
+            hwnd,
+            Some(edge_resize_proc),
+            EDGE_RESIZE_ID,
+            usize::from(fullscreen),
+        )
+        .as_bool()
+        {
+            return false;
+        }
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    true
+}
+
 /// The subclass behind [`enable_edge_resize`].
 ///
 /// # Safety
@@ -82,7 +135,7 @@ unsafe extern "system" fn edge_resize_proc(
     wparam: windows::Win32::Foundation::WPARAM,
     lparam: windows::Win32::Foundation::LPARAM,
     _id: usize,
-    _data: usize,
+    fullscreen: usize,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::{
         Shell::DefSubclassProc,
@@ -93,6 +146,11 @@ unsafe extern "system" fn edge_resize_proc(
     };
     // SAFETY: see the function's contract; every call here takes that window.
     unsafe {
+        // Full screen: the whole window is the client area, whatever winit would
+        // trim from a maximized window (see `set_fullscreen_frame`).
+        if message == WM_NCCALCSIZE && wparam.0 != 0 && fullscreen != 0 {
+            return windows::Win32::Foundation::LRESULT(0);
+        }
         if message == WM_NCCALCSIZE
             && wparam.0 != 0
             && !IsZoomed(hwnd).as_bool()
