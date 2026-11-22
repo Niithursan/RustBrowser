@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.22.0 (release candidate)
 
+- **Release candidate:** version 0.22.0 with `release-notes/v0.22.0.md`; the installer's upgrade check now starts from the published v0.21.0 (`c7c9e15`) instead of the unpublished v0.20 build.
+- **Fix:** tabs down the side are 36 pixels tall again. Since the equal-width tab strip (#63) gave every tab a 240-pixel flex basis, each row in the vertical tab column was 240 pixels tall.
 - **Security:** `url` is upgraded to 2.5.9 (and `Cargo.toml` now requires at least 2.5.9) for RUSTSEC-2026-0592, a stack overflow in `Url::origin()` on deeply nested `blob:` URLs that a web page could supply.
 - **Fullscreen is the page alone:** a video's full-screen button (or any HTML fullscreen) now fills the whole screen with the page; the toolbar, tab column and library are hidden until Escape or the page leaves fullscreen. For the first four seconds a notice at the top names the site and says how to leave ("www.youtube.com is now full screen - Press Esc to exit"). Full screen covers the whole monitor even from a maximized window; before, a maximized window stopped above the taskbar. Before, the toolbar also stayed on screen.
 - **The blocker's own panel:** clicking the shield opens the ad-blocking extension's own toolbar panel (uBlock Origin Lite: the per-site filtering mode, from off to complete, Remove an element, Create a custom filter, Report an issue) under the shield, acting on the current page. It closes on Escape, a click elsewhere, a second click on the shield or a tab switch; a website it opens arrives in a new tab. Right-click the shield for the previous details dropdown. A new `open_extension_popup` command backs it. Extension pages such as the dashboard do not open yet.
