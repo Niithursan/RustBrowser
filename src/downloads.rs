@@ -1,9 +1,24 @@
 //! Engine-independent destination handling. Never trust a server-suggested filename.
+use serde::Serialize;
 use std::{
     fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+/// A download as the library column lists it. Engine adapters keep their own
+/// transfer objects beside it.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct Record {
+    pub id: u64,
+    pub name: String,
+    pub status: String,
+    pub received: i64,
+    pub total: i64,
+    pub folder: Option<String>,
+    pub path: Option<String>,
+    pub detail: String,
+}
 
 /// Count forward progress only: retrying the same bytes must not reset a stalled transfer.
 #[derive(Default)]

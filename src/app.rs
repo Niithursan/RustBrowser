@@ -1731,7 +1731,12 @@ impl Session {
             } else {
                 profile.join("library.sqlite")
             },
-            proxy.clone(),
+            {
+                let proxy = proxy.clone();
+                move |reply| {
+                    let _ = proxy.send_event(Event::Library(reply));
+                }
+            },
         )?;
         let window = new_native_window(event_loop, true)?;
         let content_context = WebContext::new(Some(profile.join("content")));

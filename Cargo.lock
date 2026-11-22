@@ -2101,10 +2101,12 @@ version = "0.22.2"
 dependencies = [
  "base64",
  "dunce",
+ "gtk",
  "rusqlite",
  "serde",
  "serde_json",
  "url",
+ "webkit2gtk",
  "webview2-com",
  "windows",
  "winit",

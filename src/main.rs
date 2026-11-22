@@ -7,8 +7,10 @@
 mod app;
 #[cfg(windows)]
 mod engine;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod library_worker;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(windows)]
 mod native_activity;
 #[cfg(windows)]
@@ -39,7 +41,7 @@ mod native_validation;
 mod native_window;
 #[cfg(all(windows, test))]
 mod servo_validation;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod ui;
 
 /// Tell the user something in a dialog (release) or on stderr (debug and tests).
@@ -137,8 +139,29 @@ fn main() -> std::process::ExitCode {
         };
         return start_or_hand_off(&root, &profile, private, links);
     }
-    #[cfg(not(windows))]
-    eprintln!("Rust Browser currently supports Windows x64 only.");
+    #[cfg(target_os = "linux")]
+    {
+        let launch = match linux::parse_args(std::env::args().skip(1)) {
+            Ok(launch) => launch,
+            Err(error) => {
+                eprintln!("Rust Browser did not start. {error}");
+                return std::process::ExitCode::from(2);
+            }
+        };
+        if launch.version {
+            println!("Rust Browser {}", env!("CARGO_PKG_VERSION"));
+            return std::process::ExitCode::SUCCESS;
+        }
+        return match linux::run(launch) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("Rust Browser did not start. {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    eprintln!("Rust Browser supports Windows x64 and Linux only.");
     std::process::ExitCode::FAILURE
 }
 

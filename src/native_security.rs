@@ -5,7 +5,6 @@ use rust_browser::{
     security::{self, Capability, Decision, Rule},
     tabs::TabId,
 };
-use serde::Serialize;
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -31,13 +30,7 @@ pub fn seconds_left(elapsed: Duration) -> u64 {
     left.as_secs() + u64::from(left.subsec_nanos() > 0)
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct Prompt {
-    pub id: u64,
-    pub tab: TabId,
-    pub origin: String,
-    pub capability: Capability,
-}
+pub use rust_browser::security::Prompt;
 struct Pending {
     prompt: Prompt,
     args: ICoreWebView2PermissionRequestedEventArgs,

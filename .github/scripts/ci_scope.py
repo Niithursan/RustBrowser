@@ -1,4 +1,4 @@
-"""Decide whether a CI run needs the Windows jobs, and judge the aggregate result.
+"""Decide whether a CI run needs the platform jobs, and judge the aggregate result.
 
 The Windows jobs are skipped only when every file the change touches is Markdown
 documentation that no build, test or package reads. Anything else, and any doubt
@@ -6,7 +6,7 @@ documentation that no build, test or package reads. Anything else, and any doubt
 everything.
 
     ci_scope.py scope    # reads EVENT, BASE, HEAD; writes full=true|false to GITHUB_OUTPUT
-    ci_scope.py result SCOPE_RESULT FULL WINDOWS_RESULT RELEASE_RESULT
+    ci_scope.py result SCOPE_RESULT FULL WINDOWS_RESULT RELEASE_RESULT [LINUX_RESULT]
 
 Standard library only. Unit tests: validation/test_ci_scope.py.
 """
@@ -69,12 +69,17 @@ def full_run_needed(event, base, head, diff=changed_paths):
         return True
 
 
-def verdict(scope_result, full, windows_result, release_result):
-    """The aggregate "CI result": success only if every job that had to run passed."""
+def verdict(scope_result, full, windows_result, release_result, linux_result=None):
+    """The aggregate "CI result": success only if every job that had to run passed.
+
+    The Linux job is judged like the Windows ones when its result is given."""
     if scope_result != "success" or full not in ("true", "false"):
         return False
     expected = "success" if full == "true" else "skipped"
-    return windows_result == expected and release_result == expected
+    results = [windows_result, release_result]
+    if linux_result is not None:
+        results.append(linux_result)
+    return all(result == expected for result in results)
 
 
 def main(argv):
@@ -94,9 +99,10 @@ def main(argv):
             with open(output, "a", encoding="utf-8") as handle:
                 handle.write(line + "\n")
         return 0
-    if len(argv) == 6 and argv[1] == "result":
+    if len(argv) in (6, 7) and argv[1] == "result":
         ok = verdict(*argv[2:])
-        print(f"scope={argv[2]} full={argv[3]} windows={argv[4]} release={argv[5]}: "
+        linux = f" linux={argv[6]}" if len(argv) == 7 else ""
+        print(f"scope={argv[2]} full={argv[3]} windows={argv[4]} release={argv[5]}{linux}: "
               f"{'success' if ok else 'failure'}")
         return 0 if ok else 1
     print(__doc__, file=sys.stderr)

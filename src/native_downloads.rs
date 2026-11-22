@@ -4,7 +4,6 @@ use rust_browser::{
     downloads::{ProgressWatch, Staged, safe_filename},
     navigation,
 };
-use serde::Serialize;
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
@@ -32,17 +31,7 @@ use winit::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewExtWindows};
 
 pub type Shared = Rc<RefCell<Manager>>;
-#[derive(Clone, Debug, Serialize)]
-pub struct Record {
-    pub id: u64,
-    pub name: String,
-    pub status: String,
-    pub received: i64,
-    pub total: i64,
-    pub folder: Option<String>,
-    pub path: Option<String>,
-    pub detail: String,
-}
+pub use rust_browser::downloads::Record;
 struct Entry {
     record: Record,
     operation: Option<ICoreWebView2DownloadOperation>,

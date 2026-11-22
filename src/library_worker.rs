@@ -1,12 +1,10 @@
 //! SQLite is owned exclusively by this worker; no database calls run in the event loop.
-use crate::app::Event;
 use rust_browser::library::{Action, Data, Database, Filter};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, SyncSender},
     thread::JoinHandle,
 };
-use winit::event_loop::EventLoopProxy;
 
 pub struct Job {
     pub revision: u64,
@@ -27,15 +25,20 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn start(path: PathBuf, proxy: EventLoopProxy<Event>) -> std::io::Result<Self> {
+    /// Open the database at `path` on its own thread. Every answer goes to
+    /// `notify`, on that thread (the caller forwards it to its event loop).
+    pub fn start(
+        path: PathBuf,
+        notify: impl Fn(Reply) + Send + 'static,
+    ) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel::<Job>(64);
         let thread = std::thread::Builder::new().name("library-database".into()).spawn(move || {
             let (mut database, recovered) = match Database::open(&path) {
                 Ok(result) => result,
-                Err(_) => { let _ = proxy.send_event(Event::Library(Reply { revision: 0, data: None, summary: None,
-                    message: Some("Library database is unavailable or uses a newer schema. Its files were preserved; check profile access or use the newer browser.".into()) })); return; }
+                Err(_) => { notify(Reply { revision: 0, data: None, summary: None,
+                    message: Some("Library database is unavailable or uses a newer schema. Its files were preserved; check profile access or use the newer browser.".into()) }); return; }
             };
-            if recovered { let _ = proxy.send_event(Event::Library(Reply { revision: 0, data: None, summary: None, message: Some("Corrupted library was backed up; a new database was created.".into()) })); }
+            if recovered { notify(Reply { revision: 0, data: None, summary: None, message: Some("Corrupted library was backed up; a new database was created.".into()) }); }
             while let Ok(job) = receiver.recv() {
                 if let Action::ImportBookmarks(parsed) = &job.action {
                     let reply = match database.import_bookmarks(parsed) {
@@ -45,7 +48,7 @@ impl Worker {
                             Reply { revision: job.revision, data: None, summary: None, message: Some(if text.contains("nothing was imported") { text } else { "Bookmark import failed, so nothing was imported. Check profile access and disk space.".into() }) }
                         }
                     };
-                    let _ = proxy.send_event(Event::Library(reply));
+                    notify(reply);
                     continue;
                 }
                 let record = matches!(job.action, Action::Record { .. });
@@ -54,7 +57,7 @@ impl Worker {
                     Ok(data) => Reply { revision: job.revision, data, message: None, summary: None },
                     Err(_) => Reply { revision: job.revision, data: None, summary: None, message: Some("Library action failed. Check the values, duplicate URLs/folder names, date range and profile access.".into()) },
                 };
-                if !record || reply.message.is_some() { let _ = proxy.send_event(Event::Library(reply)); }
+                if !record || reply.message.is_some() { notify(reply); }
             }
         })?;
         Ok(Self {

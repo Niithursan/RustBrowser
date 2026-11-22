@@ -278,7 +278,7 @@ pub struct ToolbarState<'a> {
     pub private: bool,
     pub restore_session: bool,
     pub security: rust_browser::security::Indicator,
-    pub permission_prompt: Option<crate::native_security::Prompt>,
+    pub permission_prompt: Option<rust_browser::security::Prompt>,
     /// Seconds before `permission_prompt` is denied unanswered.
     pub permission_seconds: Option<u64>,
     pub busy: bool,
@@ -320,7 +320,7 @@ pub struct ToolbarState<'a> {
     /// The folder the library column is filtered to, if any.
     pub library_folder: Option<i64>,
     pub history_enabled: bool,
-    pub downloads: Vec<crate::native_downloads::Record>,
+    pub downloads: Vec<rust_browser::downloads::Record>,
     /// Every profile, this window's first.
     pub profiles: Vec<ProfileRow<'a>>,
     pub profile_colors: &'static [&'static str],
