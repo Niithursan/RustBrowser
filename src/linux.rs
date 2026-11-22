@@ -37,10 +37,7 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Fullscreen, ResizeDirection, Window, WindowId},
 };
-use wry::{
-    PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtUnix,
-    WebViewExtUnix,
-};
+use wry::{PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder, WebViewExtUnix};
 
 /// How often GTK (which runs WebKitGTK) is serviced while winit waits.
 const GTK_TICK: Duration = Duration::from_millis(8);
@@ -360,19 +357,10 @@ impl Browser {
             return;
         };
         let restore = self.settings.restore_session;
-        let tabs: Vec<_> = self
-            .tabs
-            .items
-            .iter()
-            .filter(|_| restore)
-            .collect();
+        let tabs: Vec<_> = self.tabs.items.iter().filter(|_| restore).collect();
         let snapshot = Snapshot {
             tabs: tabs.iter().map(|t| t.url.clone()).collect(),
-            active: if restore {
-                self.tabs.active_index()
-            } else {
-                0
-            },
+            active: if restore { self.tabs.active_index() } else { 0 },
             pinned: tabs.iter().map(|t| t.pinned).collect(),
             titles: tabs.iter().map(|t| t.title.clone()).collect(),
             keep_awake: tabs.iter().map(|_| false).collect(),
@@ -445,18 +433,20 @@ impl Browser {
             search_engine: self.settings.search_engine,
             notice: &self.notice,
             notice_kind: ui::notice_kind(&self.notice, ""),
-            panel: self.panel.or_else(|| {
-                (active.url == navigation::HOME).then_some(Panel::NewTab)
-            }),
+            panel: self
+                .panel
+                .or_else(|| (active.url == navigation::HOME).then_some(Panel::NewTab)),
             menu_open: self.menu_open,
             library_panel: None,
             vertical_tabs: false,
             maximized: self.window.is_maximized(),
             fullscreen: self.fullscreen,
+            fullscreen_notice: None,
             controls_in_library: false,
             blocked: None,
             count_blocked: false,
             extensions: Vec::new(),
+            extension_popup: None,
             library: &self.data,
             library_folder: self.filter.folder,
             history_enabled: self.settings.history_enabled,
@@ -527,7 +517,9 @@ impl Browser {
             }
             Command::DismissNotice => self.notice.clear(),
             Command::SetMenuOpen(open) => self.menu_open = open,
-            Command::SetMenuArea { .. } | Command::RefreshDiagnostics | Command::RefreshProfiles => {}
+            Command::SetMenuArea { .. }
+            | Command::RefreshDiagnostics
+            | Command::RefreshProfiles => {}
             Command::Navigate(input) => {
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.panel = None;
@@ -644,7 +636,13 @@ impl Browser {
                 }
             }
             Command::PinTab(id) => {
-                if let Some(pinned) = self.tabs.items.iter().find(|t| t.id == id).map(|t| !t.pinned) {
+                if let Some(pinned) = self
+                    .tabs
+                    .items
+                    .iter()
+                    .find(|t| t.id == id)
+                    .map(|t| !t.pinned)
+                {
                     self.tabs.pin(id, pinned);
                     self.persist();
                 }
@@ -678,7 +676,8 @@ impl Browser {
             Command::OpenSavedTabs(urls) => {
                 self.panel = None;
                 for url in urls.into_iter().take(MAX_TABS) {
-                    let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
+                    let url =
+                        rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
                     self.open_tab(url)?;
                 }
                 self.persist();
@@ -794,7 +793,11 @@ impl Browser {
                 self.persist();
             }
             PageEvent::Title(title) => {
-                tab.title = title.chars().filter(|c| !c.is_control()).take(512).collect();
+                tab.title = title
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(512)
+                    .collect();
                 self.persist();
             }
             PageEvent::Fullscreen(on) => {
@@ -856,7 +859,8 @@ fn content_view(
     id: TabId,
     private: bool,
 ) -> Result<WebView, Box<dyn Error>> {
-    let (title, load, popup, blocked) = (proxy.clone(), proxy.clone(), proxy.clone(), proxy.clone());
+    let (title, load, popup, blocked) =
+        (proxy.clone(), proxy.clone(), proxy.clone(), proxy.clone());
     let download = proxy.clone();
     let view = WebViewBuilder::new_with_web_context(context)
         .with_incognito(private)

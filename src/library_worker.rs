@@ -27,10 +27,7 @@ pub struct Worker {
 impl Worker {
     /// Open the database at `path` on its own thread. Every answer goes to
     /// `notify`, on that thread (the caller forwards it to its event loop).
-    pub fn start(
-        path: PathBuf,
-        notify: impl Fn(Reply) + Send + 'static,
-    ) -> std::io::Result<Self> {
+    pub fn start(path: PathBuf, notify: impl Fn(Reply) + Send + 'static) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel::<Job>(64);
         let thread = std::thread::Builder::new().name("library-database".into()).spawn(move || {
             let (mut database, recovered) = match Database::open(&path) {
