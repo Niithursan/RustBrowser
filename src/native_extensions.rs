@@ -68,6 +68,41 @@ pub fn folder_asks_to_block(folder: &Path) -> Option<bool> {
     read_manifest(folder).ok().map(|m| asks_to_block(&m))
 }
 
+/// Longest popup path accepted from a manifest.
+const MAX_POPUP_PATH: usize = 200;
+
+/// The page an extension shows from its toolbar button (`action.default_popup`
+/// in Manifest V3, `browser_action.default_popup` in V2), as a path inside the
+/// extension. Only a plain relative path to an HTML file is accepted: no scheme,
+/// query, fragment, parent step or leading slash, so it can only name a page of
+/// the extension itself.
+pub fn action_popup(manifest: &serde_json::Value) -> Option<String> {
+    let path = ["/action/default_popup", "/browser_action/default_popup"]
+        .iter()
+        .find_map(|pointer| manifest.pointer(pointer).and_then(|p| p.as_str()))?
+        .trim_start_matches("./");
+    let plain = !path.is_empty()
+        && path.len() <= MAX_POPUP_PATH
+        && path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+        && !path.starts_with('/')
+        && path
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+        && {
+            let lower = path.to_ascii_lowercase();
+            lower.ends_with(".html") || lower.ends_with(".htm")
+        };
+    plain.then(|| path.to_string())
+}
+
+/// The toolbar-button page of the extension in `folder`, if it has one and its
+/// manifest can still be read.
+pub fn folder_popup(folder: &Path) -> Option<String> {
+    read_manifest(folder).ok().and_then(|m| action_popup(&m))
+}
+
 fn read_manifest(folder: &Path) -> Result<serde_json::Value, String> {
     if !folder.is_dir() {
         return Err("Choose the extension's folder (the one containing manifest.json).".into());
@@ -368,6 +403,48 @@ mod tests {
             Some(false)
         );
         assert_eq!(folder_asks_to_block(&fixtures.join("missing")), None);
+    }
+
+    #[test]
+    fn only_a_plain_page_of_the_extension_is_its_popup() {
+        let popup = |json: &str| action_popup(&serde_json::from_str(json).unwrap());
+        assert_eq!(
+            popup(r#"{"action":{"default_popup":"popup.html"}}"#).as_deref(),
+            Some("popup.html")
+        );
+        assert_eq!(
+            popup(r#"{"browser_action":{"default_popup":"./ui/popup-fenced.html"}}"#).as_deref(),
+            Some("ui/popup-fenced.html")
+        );
+        for bad in [
+            r#"{"action":{}}"#,
+            r#"{"action":{"default_popup":""}}"#,
+            r#"{"action":{"default_popup":"https://example.test/p.html"}}"#,
+            r#"{"action":{"default_popup":"/popup.html"}}"#,
+            r#"{"action":{"default_popup":"../other/popup.html"}}"#,
+            r#"{"action":{"default_popup":"a//popup.html"}}"#,
+            r#"{"action":{"default_popup":"popup.html?x=1"}}"#,
+            r#"{"action":{"default_popup":"popup.html#top"}}"#,
+            r#"{"action":{"default_popup":"pop up.html"}}"#,
+            r#"{"action":{"default_popup":"popup.js"}}"#,
+            r#"{"action":{"default_popup":"a\\popup.html"}}"#,
+            r#"{"action":{"default_popup":7}}"#,
+        ] {
+            assert_eq!(popup(bad), None, "{bad}");
+        }
+        let long = format!(
+            r#"{{"action":{{"default_popup":"{}.html"}}}}"#,
+            "a".repeat(MAX_POPUP_PATH)
+        );
+        assert_eq!(popup(&long), None);
+        let fixtures =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extensions");
+        assert_eq!(
+            folder_popup(&fixtures.join("popup-blocker")).as_deref(),
+            Some("popup.html")
+        );
+        assert_eq!(folder_popup(&fixtures.join("blocker")), None);
+        assert_eq!(folder_popup(&fixtures.join("missing")), None);
     }
 
     #[test]

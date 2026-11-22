@@ -38,7 +38,7 @@ panel, the new-tab page or an open dropdown fills the window:
 | Library open | as above | as above | narrower by the library width | right, below the toolbar |
 | New tab + library | as above | narrower by the library width, full height | hidden | right, full height |
 | Full panel, dropdown | as above | its column, full height | hidden | hidden |
-| Page fullscreen | hidden | full width, top | full width, below the toolbar | hidden |
+| Page fullscreen | hidden | hidden (zero height) | the whole window | hidden |
 
 The library keeps at least 320 pixels for the page (or new-tab column). A unit test checks 1,080
 combinations for overlap, and native tests measure the real windows.
