@@ -387,7 +387,10 @@ Browser has no ad blocker of its own; Dial Grey at rest, the text colour while a
 extension can block, with its blocked-request count in Dial Grey 12px/600 tabular
 figures: a tally, not a warning). The shield is always a plain outline with no check
 mark, so it never reads as a verdict on the site next to the lock (GrayText in high
-contrast while no extension can block).
+contrast while no extension can block). When that extension has its own toolbar panel,
+a click opens it (the extension's page, drawn by the extension) right-aligned 4px under
+the shield, clipped to an 8px radius and sized to its content; the shield then reads
+as pressed. A right-click opens the shield's own details dropdown.
 
 ### Tabs
 - **Width:** every tab is 240px until the strip is full; then all shrink together to 64px before the strip scrolls, so a title change never moves another tab. After a close with the close button, every tab keeps its width while the pointer stays in the strip, so the next close button slides under the pointer; widths are released when the pointer leaves or a tab opens.

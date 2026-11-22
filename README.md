@@ -153,16 +153,23 @@ switches straight to that dropdown.
 
 The **shield** appears at the end of the address line once you add an extension that
 can block requests (Rust Browser has no ad blocker of its own, so there is nothing to
-show before that, and it never appears in private windows). Its dropdown lists the
-extensions that are on and whether each asks to block
+show before that, and it never appears in private windows). When that extension has
+its own toolbar panel (uBlock Origin Lite, for example), clicking the shield opens that
+panel under it, acting on the current page: turn the blocker off or change its
+filtering mode for this site, remove an element, create a custom filter. Escape, a
+click anywhere else, a second click on the shield or another tab closes it, and a
+website it opens arrives in a new tab. Extension pages such as the blocker's own
+dashboard (the gear) do not open yet: browser tabs show only websites. Right-click
+the shield (or click it when the extension has no panel) for its details: a dropdown
+listing the extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
 normal windows while you have added an extension and **Count blocked requests**
 (Settings > Extensions, on by default) is on; turned off, no page listens
 for blocked requests at all. WebView2 does not say which
 extension, or whether the engine itself, blocked a request; requests inside frames
-from other sites are not counted; and blocking cannot be turned off for one site
-(use the extension's own settings). Rust Browser has no ad blocker of its own.
+from other sites are not counted; and Rust Browser itself cannot turn blocking off for
+one site (the extension's own panel can). Rust Browser has no ad blocker of its own.
 
 **Bookmarks, history and downloads** open in a library column at the right of the
 page or the new-tab page, which shrinks and stays usable. Ctrl+Shift+B shows or hides
@@ -175,8 +182,8 @@ list into a column at the left of every open window. It has the same actions as 
 strip: select, close, pin, drag to reorder, + New tab, Ctrl+Tab and the arrow keys
 (Up and Down as well as Left and Right). Private windows follow this one setting
 from normal windows, read-only: they read nothing else from the normal profile,
-cannot change it, and never write settings. In fullscreen the page also takes the room of the
-tab column and the library; the toolbar stays, as it always has.
+cannot change it, and never write settings. In fullscreen the page takes the whole
+screen: no toolbar, tab column or library.
 
 There is no status line under the toolbar: the thin bar at the bottom of the toolbar
 shows loading, reload turns into stop while a page loads, and WebView2 shows its own
@@ -256,7 +263,8 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 | Choose the search engine | Menu (⋮) → Settings → Search |
 | See every keyboard shortcut | Menu (⋮) → Keyboard shortcuts, or hover the address field |
 | Ad blocking: extensions on and requests blocked | Shield at the end of the address line |
-| Manage extensions | Shield → Manage extensions, or Menu (⋮) → Settings → Extensions |
+| Blocker's own panel (per-site switch, element zapper) | Click the shield (when the extension has a panel) |
+| Manage extensions | Right-click the shield → Manage extensions, or Menu (⋮) → Settings → Extensions |
 | Library beside the page | Ctrl+Shift+B, or Menu (⋮) → Bookmarks, History or Downloads |
 | Tabs down the side | Menu (⋮) → Settings → Appearance → Show tabs down the side |
 | Bookmarks bar | Under the address line; Menu (⋮) → Settings → Appearance → Show bookmarks bar |
@@ -518,9 +526,10 @@ worker, WebSocket or WebRTC operation is observable: use **Keep awake** for live
 especially generated/muted media or calls. Private views use the same conservative
 policy within their isolated context.
 
-HTML fullscreen expands the native window while retaining the browser toolbar and
-origin indicator. Escape reaches the document's fullscreen handling and native
-controls. A renderer failure shows an actionable error on that tab; Reload recovers
+HTML fullscreen (a video's full-screen button, for example) fills the whole screen
+with the page alone: the toolbar, tab column and library are hidden until it ends.
+Escape always reaches the page and leaves fullscreen; a shortcut that opens a
+dropdown or panel brings the toolbar back over it. A renderer failure shows an actionable error on that tab; Reload recovers
 it. If the shared WebView2 browser process ends, every tab's view is rebuilt and its
 address reloaded automatically, keeping tab order, pins and the selected tab; a
 notice says so. After three such restarts within two minutes the browser stops

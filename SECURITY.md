@@ -1,5 +1,30 @@
 # Security
 
+## Extension popups and fullscreen (after v0.21.0)
+
+- **Extension popups.** Clicking the shield opens the extension's own toolbar page
+  (`action.default_popup` or `browser_action.default_popup`) in a small view of the
+  normal website profile, as other browsers do. The page is the extension's code with
+  the extension's own rights; Rust Browser adds no rights to it. The path is read from
+  the manifest the user added and accepted only as a plain relative `.html` path (no
+  scheme, query, fragment, `..` or leading slash). The view may navigate only within
+  `chrome-extension://<that id>/`, has no DevTools, downloads, permissions, clipboard
+  or browser accelerators, and cannot open windows: an HTTP(S) address it asks to open
+  becomes a new tab like any link; anything else is dropped. Its only message to the
+  browser is its size (`size:<w>,<h>`, clamped to 25-800 by 25-600). It never opens
+  in private windows.
+- **The tab it acts on.** WebView2 treats every view as its own tab and window, so a
+  script added before the popup's own replaces `chrome.tabs.query({active: true,
+  currentWindow: true})` inside the popup with the tab showing the current page,
+  matched by address and, for duplicates, by `performance.timeOrigin` read through the
+  extension's own `chrome.scripting` (its own host access applies). An extension
+  without access to the page sees no tab, as without `activeTab` in other browsers.
+  Nothing else in the extension changes.
+- **Fullscreen hides the toolbar.** HTML fullscreen now shows the page alone, as
+  other browsers do, so the origin indicator is hidden while it lasts. Escape always
+  reaches the page and leaves fullscreen; a dropdown or panel brings the toolbar back.
+  Rust Browser shows no fullscreen notice naming the site.
+
 ## v0.21 shield, side columns and new-tab tiles
 
 - **Shield count.** While at least one extension is added, each content view in a
@@ -464,7 +489,7 @@ does not inspect payloads or record request URLs. Conservative protection can pe
 for a view's lifetime after uploads/media. Unsupported observation disables automatic
 sleeping for the view. Native heuristics and Keep awake are still required for
 unobservable activity, including arbitrary calls, streams and generated media.
-Fullscreen keeps the origin toolbar visible. Renderer recovery is user initiated
+Fullscreen hides the toolbar (see above). Renderer recovery is user initiated
 and may lose unsaved page state; browser-process failures can require a restart.
 
 Session recovery validates temporary snapshots before promotion and preserves
