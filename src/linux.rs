@@ -24,9 +24,10 @@ use rust_browser::{
     tabs::{ClosedTabs, MAX_TABS, TabId, Tabs},
 };
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     error::Error,
     path::{Path, PathBuf},
+    rc::Rc,
     time::{Duration, Instant},
 };
 use webkit2gtk::{PermissionRequestExt, WebViewExt};
@@ -337,18 +338,20 @@ impl Browser {
             self.covered(),
             self.fullscreen,
         );
+        // A hidden wry view on X11 has no window to resize, so it is shown before
+        // its bounds are set; bounds set while hidden are lost on the next show.
         let shown = plan.toolbar.3 > 0.0;
+        let _ = self.toolbar.set_visible(shown);
         if shown {
             let _ = self.toolbar.set_bounds(rect(plan.toolbar));
         }
-        let _ = self.toolbar.set_visible(shown);
         let active = self.tabs.active().map(|t| t.id);
         for tab in &self.tabs.items {
-            let visible = Some(tab.id) == active && plan.page.is_some();
-            if visible && let Some(page) = plan.page {
+            let page = plan.page.filter(|_| Some(tab.id) == active);
+            let _ = tab.content.view.set_visible(page.is_some());
+            if let Some(page) = page {
                 let _ = tab.content.view.set_bounds(rect(page));
             }
-            let _ = tab.content.view.set_visible(visible);
         }
     }
 
@@ -839,15 +842,106 @@ fn toolbar_view(
         .with_download_started_handler(|_, _| false)
         .with_navigation_handler(move |to| to == allowed)
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
-        .with_ipc_handler(move |request| {
-            if request.body().len() <= 16384
-                && let Ok(command) = serde_json::from_str::<Command>(request.body())
-            {
-                let _ = proxy.send_event(Event::Command(command));
+        .with_ipc_handler({
+            let proxy = proxy.clone();
+            move |request| {
+                if request.body().len() <= 16384
+                    && let Ok(command) = serde_json::from_str::<Command>(request.body())
+                {
+                    let _ = proxy.send_event(Event::Command(command));
+                }
             }
         })
         .build_as_child(window)?;
+    shortcuts(&view.webview(), proxy);
     Ok(view)
+}
+
+/// The Windows virtual-key code `ui::shortcut` reads for an X keysym (a GDK
+/// keyval), or 0 for keys no shortcut uses. Letters match in either case; `+`
+/// and `_` are the shifted `=` and `-`, as Windows reports them.
+fn virtual_key(keyval: u32) -> u32 {
+    match keyval {
+        0x61..=0x7a => keyval - 0x20,
+        0x30..=0x39 | 0x41..=0x5a => keyval,
+        0x3d | 0x2b => 0xbb,
+        0x2d | 0x5f => 0xbd,
+        0xffab => 0x6b,
+        0xffad => 0x6d,
+        0xffb0 => 0x60,
+        0xff09 | 0xfe20 => 0x09,
+        0xff1b => 0x1b,
+        0xff50 => 0x24,
+        0xff51 => 0x25,
+        0xff53 => 0x27,
+        0xff55 => 0x21,
+        0xff56 => 0x22,
+        0xffc1..=0xffc4 => keyval - 0xffc1 + 0x73,
+        _ => 0,
+    }
+}
+
+/// Whether a press of `keycode` repeats the key already held: GDK 3 has no repeat
+/// flag, so the held key is remembered until any key is released.
+fn repeated(held: &Cell<Option<u16>>, keycode: u16) -> bool {
+    held.replace(Some(keycode)) == Some(keycode)
+}
+
+/// The browser's shortcuts on a view, as Windows registers them on every
+/// WebView2 controller: they run before the page sees the key. Escape also
+/// reaches the page (fullscreen, selects and dialogs), and Ctrl+wheel zooms.
+fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>) {
+    use gtk::{gdk::ModifierType, glib::Propagation, prelude::WidgetExt};
+    let held = Rc::new(Cell::new(None));
+    let released = Rc::clone(&held);
+    let keys = proxy.clone();
+    widget.connect_key_press_event(move |_, key| {
+        let state = key.state();
+        let code = virtual_key(*key.keyval());
+        let Some(command) = ui::shortcut(
+            code,
+            state.contains(ModifierType::CONTROL_MASK),
+            state.contains(ModifierType::MOD1_MASK),
+            state.contains(ModifierType::SHIFT_MASK),
+        ) else {
+            return Propagation::Proceed;
+        };
+        if !repeated(&held, key.hardware_keycode()) || ui::repeatable(&command) {
+            let _ = keys.send_event(Event::Command(command));
+        }
+        if code == 0x1b {
+            Propagation::Proceed
+        } else {
+            Propagation::Stop
+        }
+    });
+    widget.connect_key_release_event(move |_, _| {
+        released.set(None);
+        Propagation::Proceed
+    });
+    widget.connect_scroll_event(move |_, scroll| {
+        if !scroll.state().contains(ModifierType::CONTROL_MASK) {
+            return Propagation::Proceed;
+        }
+        let up = match scroll.direction() {
+            gtk::gdk::ScrollDirection::Up => Some(true),
+            gtk::gdk::ScrollDirection::Down => Some(false),
+            gtk::gdk::ScrollDirection::Smooth => {
+                let dy = scroll.delta().1;
+                (dy != 0.0).then_some(dy < 0.0)
+            }
+            _ => None,
+        };
+        if let Some(up) = up {
+            let command = if up {
+                Command::ZoomIn
+            } else {
+                Command::ZoomOut
+            };
+            let _ = proxy.send_event(Event::Command(command));
+        }
+        Propagation::Stop
+    });
 }
 
 /// A website view: HTTP(S) and `about:blank` only, no command bridge, every
@@ -898,6 +992,7 @@ fn content_view(
         })
         .build_as_child(window)?;
     let engine = view.webview();
+    shortcuts(&engine, proxy.clone());
     // Every permission request (camera, microphone, location, notifications) is
     // refused until Linux has the prompt Windows has.
     engine.connect_permission_request(|_, request| {
@@ -1076,6 +1171,78 @@ mod tests {
         assert_eq!(full.page, Some((0.0, 0.0, 1920.0, 1080.0)));
         // A dropdown opened over a fullscreen page brings the toolbar back.
         assert_eq!(plan(1920.0, 1080.0, 119.0, true, true).page, None);
+    }
+
+    #[test]
+    fn keys_map_to_the_codes_the_shortcut_table_reads() {
+        // Ctrl+T, Ctrl+Shift+T (an upper-case keyval), Ctrl+5 and Ctrl+9.
+        assert!(matches!(
+            ui::shortcut(virtual_key(0x74), true, false, false),
+            Some(Command::NewTab)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0x54), true, false, true),
+            Some(Command::ReopenClosedTab)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0x35), true, false, false),
+            Some(Command::SelectIndex(4))
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0x39), true, false, false),
+            Some(Command::SelectIndex(usize::MAX))
+        ));
+        // Ctrl+= and Ctrl++ (Shift held), Ctrl+- and the keypad keys zoom.
+        for keyval in [0x3d, 0x2b, 0xffab] {
+            assert!(matches!(
+                ui::shortcut(virtual_key(keyval), true, false, keyval == 0x2b),
+                Some(Command::ZoomIn)
+            ));
+        }
+        for keyval in [0x2d, 0xffad] {
+            assert!(matches!(
+                ui::shortcut(virtual_key(keyval), true, false, false),
+                Some(Command::ZoomOut)
+            ));
+        }
+        // Alt+Left and Alt+Right, F5, F6, Escape, Ctrl+Shift+Tab (ISO_Left_Tab).
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xff51), false, true, false),
+            Some(Command::Back)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xff53), false, true, false),
+            Some(Command::Forward)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xffc2), false, false, false),
+            Some(Command::Reload)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xffc3), false, false, false),
+            Some(Command::FocusAddress)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xff1b), false, false, false),
+            Some(Command::Stop)
+        ));
+        assert!(matches!(
+            ui::shortcut(virtual_key(0xfe20), true, false, true),
+            Some(Command::CycleTab(true))
+        ));
+        // Ctrl+Shift+1 arrives as `!`: no shortcut, and typing is left alone.
+        assert_eq!(virtual_key(0x21), 0);
+        assert!(ui::shortcut(virtual_key(0x61), false, false, false).is_none());
+    }
+
+    #[test]
+    fn a_held_key_repeats_until_a_key_is_released() {
+        let held = Cell::new(None);
+        assert!(!repeated(&held, 28));
+        assert!(repeated(&held, 28));
+        assert!(!repeated(&held, 29));
+        held.set(None);
+        assert!(!repeated(&held, 29));
     }
 
     #[test]
