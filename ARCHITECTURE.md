@@ -27,7 +27,7 @@ local document; the URL fragment (`#tabs`, `#library`) picks the part each shows
 each is built by the same function with the same restrictions. Side views are created
 the first time they are needed and hidden, not destroyed, when not shown.
 
-Where each goes comes from one pure function, `layout()`, of the window size, the
+Where each goes comes from one pure function, `layout()` in `src/layout.rs` (shared by the Windows and Linux front ends), of the window size, the
 toolbar height, whether vertical tabs and the library are on, and whether a full
 panel, the new-tab page or an open dropdown fills the window:
 

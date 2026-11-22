@@ -6,6 +6,7 @@ pub mod downloads;
 pub mod engine_api;
 pub mod handoff;
 pub mod launch;
+pub mod layout;
 pub mod library;
 pub mod navigation;
 pub mod privacy;

@@ -257,15 +257,7 @@ fn favicon_data(stream: &windows::Win32::System::Com::IStream) -> Option<String>
     favicon_url(&bytes)
 }
 
-/// A rectangle with rounded corners, in logical pixels relative to a view.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ClipArea {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub radius: f64,
-}
+pub use rust_browser::layout::ClipArea;
 
 /// Clip `view` to `areas` (scaled by `scale`) and raise it above its sibling
 /// views, or remove the clip when `areas` is `None`.
