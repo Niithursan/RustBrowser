@@ -3899,8 +3899,9 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 .map_err(|_| "proxy")?;
             p.next();
         }
-        // A fullscreen page (a video) is all there is: the toolbar, the tab column
-        // and the library are hidden and the page fills the window.
+        // A fullscreen page (a video) fills the window: the tab column and the
+        // library are hidden, and for its first seconds the toolbar shows only a
+        // notice naming the site, centred at the top and clipped to it.
         21 if p.at.elapsed() > Duration::from_millis(1500) => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             check_no_overlap(s, "fullscreen")?;
@@ -3911,9 +3912,9 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             let size = s.windows[0].window.inner_size();
             let (width, height) = (size.width as i32, size.height as i32);
+            let scale = s.windows[0].window.scale_factor();
             let page = named(&views, "page").ok_or("No page")?;
             if s.windows[0].fullscreen.is_none()
-                || named(&views, "toolbar").is_some()
                 || named(&views, "tabs").is_some()
                 || named(&views, "library").is_some()
                 || (page.left - host.x).abs() > 2
@@ -3922,15 +3923,78 @@ fn vertical_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 || ((page.bottom - page.top) - height).abs() > 2
             {
                 return Err(format!(
-                    "A fullscreen page should fill the window alone: {views:?}"
+                    "A fullscreen page should fill the window: {views:?}"
                 ));
             }
+            let clip = toolbar_clip(s, 0);
+            let notice_ok = named(&views, "toolbar").is_some()
+                && clip.is_some_and(|r| {
+                    let (w, h) = (f64::from(r.right - r.left), f64::from(r.bottom - r.top));
+                    let centre = f64::from(r.left + r.right) / 2.0;
+                    w <= 442.0 * scale
+                        && (h - 44.0 * scale).abs() <= 3.0
+                        && (f64::from(r.top) - 16.0 * scale).abs() <= 2.0
+                        && (centre - f64::from(width) / 2.0).abs() <= 2.0
+                });
+            if !notice_ok {
+                return Err(format!(
+                    "The toolbar should show only the centred fullscreen notice: {views:?}, clip {clip:?}"
+                ));
+            }
+            eval_toolbar(
+                p,
+                "JSON.stringify({hidden:document.getElementById('fullscreen-notice').hidden,text:document.getElementById('fullscreen-notice').textContent})",
+            )?;
+            p.phase = 90;
+            p.at = Instant::now();
+        }
+        90 => {
+            let Some(report) = answer(p)? else {
+                return Ok(());
+            };
+            let text = report["text"].as_str().unwrap_or("");
+            let s = p.app.session.as_ref().ok_or("No session")?;
+            let named_host = s.windows[0]
+                .fullscreen_notice
+                .as_ref()
+                .map(|(_, host)| host.clone())
+                .unwrap_or_default();
+            let tab_url = s.windows[0]
+                .tabs
+                .active()
+                .map(|t| t.url.clone())
+                .unwrap_or_default();
+            if report["hidden"] != false
+                || named_host != fullscreen_host(&tab_url)
+                || !text.starts_with(&named_host)
+                || !text.contains("is now full screen")
+                || !text.contains("Press Esc to exit")
+            {
+                return Err(format!(
+                    "The fullscreen notice should name the site: {report}"
+                ));
+            }
+            p.next();
+        }
+        // Once the notice's time is up, the page is all there is.
+        91 if p.at.elapsed() > Duration::from_millis(3500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            check_no_overlap(s, "fullscreen after the notice")?;
+            let views = shown_views(s);
+            if named(&views, "toolbar").is_some() || s.windows[0].fullscreen.is_none() {
+                return Err(format!(
+                    "After its notice a fullscreen page should be alone: {views:?}"
+                ));
+            }
+            p.log
+                .push("fullscreen: page alone, site named for 4 s".into());
             let id = s.windows[0].tabs.active().map(|t| t.id).ok_or("No tab")?;
             p.app
                 .proxy
                 .send_event(Event::Fullscreen(id, false))
                 .map_err(|_| "proxy")?;
-            p.next();
+            p.phase = 22;
+            p.at = Instant::now();
         }
         22 if p.at.elapsed() > Duration::from_millis(1500) => {
             let s = p.app.session.as_mut().ok_or("No session")?;

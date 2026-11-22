@@ -256,6 +256,34 @@ const LIBRARY_MIN: f64 = 260.0;
 const LIBRARY_MAX: f64 = 640.0;
 /// The page keeps at least this much width beside the columns.
 const PAGE_MIN: f64 = 320.0;
+/// How long a page entering fullscreen is named at the top of the screen.
+const FULLSCREEN_NOTICE: Duration = Duration::from_secs(4);
+/// The fullscreen notice: its widest width, its height and its distance from the top.
+const FULLSCREEN_NOTICE_WIDTH: f64 = 440.0;
+const FULLSCREEN_NOTICE_HEIGHT: f64 = 44.0;
+const FULLSCREEN_NOTICE_TOP: f64 = 16.0;
+
+/// Where the fullscreen notice is drawn in a toolbar view `width` wide: centred
+/// at the top, at most `FULLSCREEN_NOTICE_WIDTH` and 16 pixels from each side.
+fn fullscreen_notice_area(width: f64) -> engine::ClipArea {
+    let w = FULLSCREEN_NOTICE_WIDTH.min(width - 32.0).max(1.0);
+    engine::ClipArea {
+        x: ((width - w) / 2.0).max(0.0).floor(),
+        y: FULLSCREEN_NOTICE_TOP,
+        width: w,
+        height: FULLSCREEN_NOTICE_HEIGHT,
+        radius: 8.0,
+    }
+}
+
+/// The host a fullscreen notice names for a page at `url`.
+fn fullscreen_host(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .filter(|host| !host.is_empty())
+        .unwrap_or_else(|| "This page".into())
+}
 /// After a dropdown opens, page focus events this recent come from the browser
 /// moving focus as the previous dropdown closed, not from a press on the page.
 const MENU_FOCUS_GRACE: Duration = Duration::from_millis(400);
@@ -548,6 +576,9 @@ struct WindowState {
     info_notice: String,
     panel: Option<Panel>,
     fullscreen: Option<TabId>,
+    /// Until when the fullscreen page's host is named at the top of the screen.
+    /// The toolbar view shows only that notice then, clipped and above the page.
+    fullscreen_notice: Option<(Instant, String)>,
     focus_pending: bool,
     /// A dropdown is open. Over a webpage the toolbar covers its column but is
     /// clipped to the chrome and the dropdown, so the live page keeps running
@@ -1144,6 +1175,7 @@ impl Session {
             info_notice: String::new(),
             panel: None,
             fullscreen: None,
+            fullscreen_notice: None,
             focus_pending: false,
             menu_open: false,
             menu_area: None,
@@ -1731,6 +1763,7 @@ impl Session {
             info_notice: String::new(),
             panel: None,
             fullscreen: None,
+            fullscreen_notice: None,
             focus_pending: false,
             menu_open: false,
             menu_area: None,
@@ -2506,12 +2539,21 @@ impl Session {
             size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
         };
         let plan = self.current_layout();
-        // A fullscreen page hides the toolbar (zero height) rather than covering it.
+        // A fullscreen page hides the toolbar (zero height) rather than covering it;
+        // while the page is first named, the toolbar shows only that notice.
         let chrome_shown = plan.toolbar.3 > 0.0;
+        let notice = self.fullscreen_notice_shown(&plan);
         if chrome_shown {
             self.toolbar.set_bounds(at(plan.toolbar))?;
+        } else if let Some(area) = notice {
+            self.toolbar.set_bounds(at((
+                plan.toolbar.0,
+                0.0,
+                plan.toolbar.2,
+                area.y + area.height,
+            )))?;
         }
-        self.toolbar.set_visible(chrome_shown)?;
+        self.toolbar.set_visible(chrome_shown || notice.is_some())?;
         self.clip_toolbar(&plan);
         if let Some(tab) = self.tabs.active()
             && let Some(page) = plan.page
@@ -2533,23 +2575,76 @@ impl Session {
         Ok(())
     }
 
+    /// The fullscreen notice's area in the toolbar view, while a fullscreen page
+    /// (the toolbar otherwise hidden) is being named.
+    fn fullscreen_notice_shown(&self, plan: &Layout) -> Option<engine::ClipArea> {
+        let window = &self.windows[self.current];
+        (plan.toolbar.3 == 0.0
+            && window.fullscreen.is_some()
+            && window
+                .fullscreen_notice
+                .as_ref()
+                .is_some_and(|(until, _)| *until > Instant::now()))
+        .then(|| fullscreen_notice_area(plan.toolbar.2))
+    }
+
+    /// Name the page that just entered fullscreen, or forget the notice when
+    /// fullscreen ends.
+    fn update_fullscreen_notice(&mut self) {
+        let window = &mut self.windows[self.current];
+        window.fullscreen_notice = window.fullscreen.and_then(|id| {
+            let tab = window.tabs.items.iter().find(|t| t.id == id)?;
+            Some((
+                Instant::now() + FULLSCREEN_NOTICE,
+                fullscreen_host(&tab.url),
+            ))
+        });
+    }
+
+    /// Hide fullscreen notices whose time is up. Returns the next deadline.
+    fn expire_fullscreen_notices(&mut self) -> Option<Instant> {
+        let now = Instant::now();
+        let current = self.current;
+        let mut next: Option<Instant> = None;
+        for index in 0..self.windows.len() {
+            let Some((until, _)) = self.windows[index].fullscreen_notice else {
+                continue;
+            };
+            if until <= now {
+                self.current = index;
+                self.windows[index].fullscreen_notice = None;
+                if self.resize().is_err() {
+                    self.diagnostics.record(DiagnosticCode::CommandFailed);
+                }
+                self.render();
+            } else {
+                next = Some(next.map_or(until, |n| n.min(until)));
+            }
+        }
+        self.current = current;
+        next
+    }
+
     /// Over a webpage, an open dropdown's toolbar shows only the chrome and the
     /// dropdown (in its rounded shape); anywhere else it is unclipped.
     fn clip_toolbar(&self, plan: &Layout) {
         let window = &self.windows[self.current];
         let clip = window.menu_open && plan.page.is_some() && plan.toolbar.3 > self.chrome_height;
-        let areas = clip.then(|| {
-            let chrome = engine::ClipArea {
-                x: 0.0,
-                y: 0.0,
-                width: plan.toolbar.2,
-                height: self.chrome_height,
-                radius: 0.0,
-            };
-            [Some(chrome), window.menu_area]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
+        let notice = self.fullscreen_notice_shown(plan);
+        let areas = notice.map(|area| vec![area]).or_else(|| {
+            clip.then(|| {
+                let chrome = engine::ClipArea {
+                    x: 0.0,
+                    y: 0.0,
+                    width: plan.toolbar.2,
+                    height: self.chrome_height,
+                    radius: 0.0,
+                };
+                [Some(chrome), window.menu_area]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            })
         });
         let mut siblings: Vec<&WebView> = Vec::new();
         if let Some(tab) = window.tabs.active() {
@@ -2601,6 +2696,7 @@ impl Session {
             self.fullscreen = fullscreen;
             self.window
                 .set_fullscreen(fullscreen.map(|_| winit::window::Fullscreen::Borderless(None)));
+            self.update_fullscreen_notice();
         }
         self.claim_permissions();
         let active = self.tabs.active_index();
@@ -2805,6 +2901,16 @@ impl Session {
             vertical_tabs: layout.tabs.is_some(),
             maximized: self.window.is_maximized(),
             fullscreen: self.fullscreen.is_some(),
+            fullscreen_notice: self
+                .fullscreen_notice_shown(&layout)
+                .zip(self.windows[self.current].fullscreen_notice.as_ref())
+                .map(|(area, (_, host))| ui::FullscreenNotice {
+                    host,
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: area.height,
+                }),
             controls_in_library: self.fullscreen.is_none()
                 && layout.library.is_some_and(|(_, y, _, _)| y == 0.0),
             count_blocked: self.settings.count_blocked,
@@ -4413,6 +4519,26 @@ mod tests {
         }
     }
 
+    /// The fullscreen notice is centred near the top and never wider than the
+    /// window less 16 pixels a side; it names the page's host.
+    #[test]
+    fn the_fullscreen_notice_names_the_site_at_the_top() {
+        let wide = fullscreen_notice_area(1920.0);
+        assert_eq!(
+            (wide.x, wide.y, wide.width, wide.height),
+            (740.0, 16.0, 440.0, 44.0)
+        );
+        let narrow = fullscreen_notice_area(300.0);
+        assert_eq!((narrow.x, narrow.width), (16.0, 268.0));
+        assert_eq!(
+            fullscreen_host("https://www.youtube.com/watch?v=x"),
+            "www.youtube.com"
+        );
+        assert_eq!(fullscreen_host("http://127.0.0.1:8080/a"), "127.0.0.1");
+        assert_eq!(fullscreen_host("about:blank"), "This page");
+        assert_eq!(fullscreen_host("not a url"), "This page");
+    }
+
     /// A fullscreen page (a video) fills the whole window: the toolbar is hidden.
     #[test]
     fn a_fullscreen_page_fills_the_window() {
@@ -4905,6 +5031,7 @@ impl ApplicationHandler<Event> for App {
                 if session.tabs.active().is_some_and(|t| t.id == id) {
                     session.close_extension_popup(false);
                     session.fullscreen = enabled.then_some(id);
+                    session.update_fullscreen_notice();
                     session.window.set_fullscreen(if enabled {
                         Some(winit::window::Fullscreen::Borderless(None))
                     } else {
@@ -5100,6 +5227,10 @@ impl ApplicationHandler<Event> for App {
                 (a, b) => a.or(b),
             };
             let retiring = match (session.reap_retired(), recording) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            let retiring = match (session.expire_fullscreen_notices(), retiring) {
                 (Some(a), Some(b)) => Some(a.min(b)),
                 (a, b) => a.or(b),
             };

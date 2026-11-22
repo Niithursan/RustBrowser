@@ -259,6 +259,16 @@ pub struct ExtensionRow {
     pub popup: bool,
 }
 
+/// "<host> is now full screen", drawn at the top of a fullscreen page.
+#[derive(Serialize)]
+pub struct FullscreenNotice<'a> {
+    pub host: &'a str,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Serialize)]
 pub struct ToolbarState<'a> {
     pub zoom_percent: Option<u32>,
@@ -291,6 +301,9 @@ pub struct ToolbarState<'a> {
     pub maximized: bool,
     /// Whether a webpage is in borderless fullscreen (hides window caption buttons).
     pub fullscreen: bool,
+    /// The site a page that just entered fullscreen belongs to, and where to draw
+    /// its notice (the toolbar view shows nothing else then).
+    pub fullscreen_notice: Option<FullscreenNotice<'a>>,
     /// Whether the library column sits at the top-right corner of the window (`New tab + library`), hosting `#window-controls`.
     pub controls_in_library: bool,
     /// Requests extensions stopped for the active page, as the engine reported

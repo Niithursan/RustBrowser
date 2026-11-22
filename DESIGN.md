@@ -392,6 +392,12 @@ a click opens it (the extension's page, drawn by the extension) right-aligned 4p
 the shield, clipped to an 8px radius and sized to its content; the shield then reads
 as pressed. A right-click opens the shield's own details dropdown.
 
+**Fullscreen notice.** When a page enters fullscreen the chrome is hidden and, for 4
+seconds, a single Graphite Panel bubble (1px Hairline, 8px radius, 44px tall, at most
+440px wide and 16px from the top, centred) reads "**host** is now full screen" in
+14px text-colour type with the host at 600, then "Press **Esc** to exit" in Dial
+Grey. It has no motion and no close button; it simply goes away.
+
 ### Tabs
 - **Width:** every tab is 240px until the strip is full; then all shrink together to 64px before the strip scrolls, so a title change never moves another tab. After a close with the close button, every tab keeps its width while the pointer stays in the strip, so the next close button slides under the pointer; widths are released when the pointer leaves or a tab opens.
 - **Inactive:** transparent cards, 36px tall; title in Dial Grey, fading out over its last 20px when it is too long (no ellipsis); a 1px hairline separates neighbouring inactive tabs; the drawn close button sits at 55% opacity until hovered, and on a tab narrower than 96px it appears only on hover.

@@ -21,9 +21,13 @@
   without access to the page sees no tab, as without `activeTab` in other browsers.
   Nothing else in the extension changes.
 - **Fullscreen hides the toolbar.** HTML fullscreen now shows the page alone, as
-  other browsers do, so the origin indicator is hidden while it lasts. Escape always
-  reaches the page and leaves fullscreen; a dropdown or panel brings the toolbar back.
-  Rust Browser shows no fullscreen notice naming the site.
+  other browsers do, so the origin indicator is hidden while it lasts. To keep a page
+  from passing itself off as the browser, every entry into fullscreen (including
+  switching to a tab that is in fullscreen) names the page's host for four seconds
+  in a notice drawn by the trusted toolbar view, clipped to the notice and raised
+  above the page: "<host> is now full screen - Press Esc to exit". The host comes
+  from the parsed page address, never from page content. Escape always reaches the
+  page and leaves fullscreen; a dropdown or panel brings the toolbar back.
 
 ## v0.21 shield, side columns and new-tab tiles
 

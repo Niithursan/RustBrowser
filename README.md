@@ -528,7 +528,9 @@ policy within their isolated context.
 
 HTML fullscreen (a video's full-screen button, for example) fills the whole screen
 with the page alone: the toolbar, tab column and library are hidden until it ends.
-Escape always reaches the page and leaves fullscreen; a shortcut that opens a
+For its first four seconds a notice at the top names the site ("www.youtube.com is
+now full screen - Press Esc to exit"), so a page cannot pass itself off as the
+browser. Escape always reaches the page and leaves fullscreen; a shortcut that opens a
 dropdown or panel brings the toolbar back over it. A renderer failure shows an actionable error on that tab; Reload recovers
 it. If the shared WebView2 browser process ends, every tab's view is rebuilt and its
 address reloaded automatically, keeping tab order, pins and the selected tab; a
