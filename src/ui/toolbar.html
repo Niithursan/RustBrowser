@@ -799,7 +799,7 @@ for(const action of ['back','forward','reload','stop','home'])document.getElemen
 document.getElementById('new').onclick=()=>send('new_tab');
 document.getElementById('search').onchange=e=>send('set_search_engine',e.target.value);
 document.getElementById('nav').onsubmit=e=>{e.preventDefault();editing=false;send('navigate',input.value)};
-input.onfocus=()=>editing=true;input.oninput=()=>{editing=true;updateAddressView()};input.onblur=()=>{editing=false;updateAddressView()};
+input.onfocus=()=>editing=true;input.oninput=()=>{editing=true;updateAddressView()};input.onblur=e=>{if(e.relatedTarget&&byId('address-menu').contains(e.relatedTarget))return;editing=false;updateAddressView()};
 // Show the host emphasised and the rest muted while the field is not focused. URL.host
 // drops embedded credentials and keeps punycode, so the real host is what is emphasised.
 function splitOrigin(host,hostname){
@@ -817,16 +817,18 @@ function updateAddressView(){const view=byId('address-view'),originEl=view.first
 // keeps running and stays clickable around it.
 let dropdown=null,coveredPanel='';
 function dropdownFocus(panel){if(panel.getAttribute('role')!=='dialog')return panel.querySelector('button:not(:disabled),input,select');const heading=byId(panel.getAttribute('aria-labelledby'));if(heading&&!heading.hasAttribute('tabindex'))heading.setAttribute('tabindex','-1');return heading}
-function openDropdown(anchor,panel,focus){
-    if(dropdown){if(dropdown.panel===panel&&dropdown.anchor===anchor)return;hideDropdown()}else send('set_menu_open',true);
-    dropdown={anchor,panel};anchor.setAttribute('aria-expanded','true');panel.hidden=false;byId('menu-backdrop').hidden=false;placeDropdown();
+// `at`, when given, places the panel at that point (a context menu) instead of
+// under its anchor.
+function openDropdown(anchor,panel,focus,at){
+    if(dropdown){if(dropdown.panel===panel&&dropdown.anchor===anchor&&!at)return;hideDropdown()}else send('set_menu_open',true);
+    dropdown={anchor,panel,at};anchor.setAttribute('aria-expanded','true');panel.hidden=false;byId('menu-backdrop').hidden=false;placeDropdown();
     (focus||dropdownFocus(panel))?.focus({preventScroll:true});
 }
-function hideDropdown(){const {anchor,panel}=dropdown;dropdown=null;if(anchor.isConnected)anchor.setAttribute('aria-expanded','false');panel.hidden=true;byId('shortcut-list').hidden=true;byId('show-shortcuts').setAttribute('aria-expanded','false');if(panel===byId('site-panel'))answerPermission('deny',false)}
+function hideDropdown(){const {anchor,panel}=dropdown;dropdown=null;if(anchor.isConnected)anchor.setAttribute('aria-expanded','false');panel.hidden=true;byId('shortcut-list').hidden=true;byId('show-shortcuts').setAttribute('aria-expanded','false');if(panel===byId('site-panel'))answerPermission('deny',false);if(panel===byId('address-menu')&&document.activeElement!==input){editing=false;updateAddressView()}}
 function closeDropdown(returnFocus){if(!dropdown)return;const anchor=dropdown.anchor;hideDropdown();byId('menu-backdrop').hidden=true;menuArea='';send('set_menu_open',false);if(returnFocus&&anchor.isConnected)anchor.focus()}
 function toggleDropdown(anchor,panel){if(dropdown&&dropdown.anchor===anchor)closeDropdown(false);else openDropdown(anchor,panel)}
 // Under the button, left-aligned, or right-aligned when it would leave the window.
-function placeDropdown(){if(!dropdown)return;const {anchor,panel}=dropdown,r=anchor.getBoundingClientRect();panel.style.top=Math.round(r.bottom+4)+'px';panel.style.maxHeight=Math.max(120,Math.floor(innerHeight-r.bottom-16))+'px';const width=panel.offsetWidth;let left=r.left;if(left+width>innerWidth-8)left=r.right-width;panel.style.left=Math.max(8,Math.round(left))+'px';sendMenuArea()}
+function placeDropdown(){if(!dropdown)return;const {anchor,panel,at}=dropdown,r=anchor.getBoundingClientRect(),top=at?at.y:r.bottom+4;panel.style.top=Math.round(top)+'px';panel.style.maxHeight=Math.max(120,Math.floor(innerHeight-top-12))+'px';const width=panel.offsetWidth;let left=at?at.x:r.left;if(left+width>innerWidth-8)left=at?innerWidth-8-width:r.right-width;panel.style.left=Math.max(8,Math.round(left))+'px';sendMenuArea()}
 // Tell the browser where the dropdown is, so only it (and the chrome) covers the page.
 let menuArea='';
 function sendMenuArea(){if(!dropdown)return;const b=dropdown.panel.getBoundingClientRect(),area={x:b.left,y:b.top,width:b.width,height:b.height,radius:parseFloat(getComputedStyle(dropdown.panel).borderTopLeftRadius)||0},key=JSON.stringify(area);if(key!==menuArea&&b.width>0&&b.height>0){menuArea=key;send('set_menu_area',area)}}
@@ -1219,10 +1221,11 @@ send('ready');
 // clipboard is read and written by the browser in Rust, as plain text.
 (()=>{const menu=document.getElementById('address-menu'),address=document.getElementById('address');
 const items=()=>[...menu.querySelectorAll('button:not(:disabled)')];
-const close=focus=>{menu.hidden=true;if(focus)address.focus()};
+// It opens as a dropdown, so the browser makes room for it below the toolbar.
+const close=focus=>{if(dropdown&&dropdown.panel===menu)closeDropdown(focus)};
 address.addEventListener('contextmenu',e=>{e.preventDefault();address.focus();const r=address.getBoundingClientRect(),selected=address.selectionStart!==address.selectionEnd;
-for(const op of ['cut','copy'])menu.querySelector('[data-op='+op+']').disabled=!selected;menu.hidden=false;
-const x=e.clientX||r.left,y=e.clientY||r.bottom;menu.style.left=Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-4))+'px';menu.style.top=Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-4))+'px';items()[0].focus()});
+for(const op of ['cut','copy'])menu.querySelector('[data-op='+op+']').disabled=!selected;
+openDropdown(address,menu,items()[0],{x:e.clientX||r.left,y:e.clientY||r.bottom})});
 menu.addEventListener('keydown',e=>{const list=items(),at=list.indexOf(document.activeElement);
 if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();close(true)}else if(e.key==='ArrowDown'){e.preventDefault();list[(at+1)%list.length].focus()}else if(e.key==='ArrowUp'){e.preventDefault();list[(at+list.length-1)%list.length].focus()}else if(e.key==='Home'){e.preventDefault();list[0].focus()}else if(e.key==='End'){e.preventDefault();list.at(-1).focus()}});
 menu.addEventListener('click',e=>{const op=e.target.dataset&&e.target.dataset.op;if(!op)return;const s=address.selectionStart,t=address.selectionEnd;
