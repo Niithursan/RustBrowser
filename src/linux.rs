@@ -16,7 +16,12 @@ use crate::{
     library_worker::{self, Worker},
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
+use gtk::prelude::WidgetExt as _;
 use rust_browser::{
+    layout::{
+        ClipArea, FULLSCREEN_NOTICE, Full, LIBRARY_MAX, LIBRARY_MIN, LIBRARY_WIDTH, Layout,
+        fullscreen_host, fullscreen_notice_area, layout,
+    },
     library::{Action, Data, Filter},
     navigation,
     settings::Settings,
@@ -69,6 +74,8 @@ pub enum PageEvent {
     Title(String),
     Fullscreen(bool),
     Blocked,
+    /// The page was pressed with the mouse.
+    Pressed,
 }
 
 /// One tab's website view and what the toolbar shows about it.
@@ -108,35 +115,167 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Launch, Stri
     Ok(launch)
 }
 
-/// Where each view goes: `None` hides it.
-#[derive(Debug, PartialEq)]
-struct Plan {
-    toolbar: (f64, f64, f64, f64),
-    page: Option<(f64, f64, f64, f64)>,
+/// The part of the shared toolbar document a trusted view shows (its URL
+/// fragment), as on Windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Role {
+    Toolbar,
+    Tabs,
+    Library,
 }
 
-/// The layout: the toolbar on top and the page below it; a full panel, an open
-/// dropdown or the new-tab page makes the toolbar fill the window and hides the
-/// page (WebKitGTK child views cannot be clipped to a shape as on Windows); a
-/// fullscreen page fills the window alone.
-fn plan(width: f64, height: f64, chrome: f64, covered: bool, fullscreen: bool) -> Plan {
-    let (width, height) = (width.max(1.0), height.max(1.0));
-    if fullscreen && !covered {
-        return Plan {
-            toolbar: (0.0, 0.0, width, 0.0),
-            page: Some((0.0, 0.0, width, height)),
-        };
+impl Role {
+    fn fragment(self) -> &'static str {
+        match self {
+            Role::Toolbar => "",
+            Role::Tabs => "#tabs",
+            Role::Library => "#library",
+        }
     }
-    if covered {
-        return Plan {
-            toolbar: (0.0, 0.0, width, height),
-            page: None,
-        };
+}
+
+/// Rectangles (x, y, width, height) in whole pixels.
+type Rects = Vec<(i32, i32, i32, i32)>;
+
+/// The rectangles, in whole logical pixels, that make up `areas`; rounded
+/// corners are approximated one pixel row at a time, as an X11 shape needs.
+fn clip_rects(areas: &[ClipArea]) -> Rects {
+    let mut rects = Vec::new();
+    for area in areas.iter().filter(|a| a.width > 0.0 && a.height > 0.0) {
+        let (left, top) = (area.x.floor() as i32, area.y.floor() as i32);
+        let right = (area.x + area.width).ceil() as i32;
+        let bottom = (area.y + area.height).ceil() as i32;
+        let (width, height) = (right - left, bottom - top);
+        if width <= 0 || height <= 0 {
+            continue;
+        }
+        let radius = (area.radius.round() as i32).clamp(0, width.min(height) / 2);
+        let r = f64::from(radius);
+        for row in 0..radius {
+            // How far in the curve is, at the middle of this row, from each end.
+            let dy = r - f64::from(row) - 0.5;
+            let inset = (r - (r * r - dy * dy).max(0.0).sqrt()).round() as i32;
+            let w = width - 2 * inset;
+            rects.push((left + inset, top + row, w, 1));
+            rects.push((left + inset, bottom - 1 - row, w, 1));
+        }
+        rects.push((left, top + radius, width, height - 2 * radius));
     }
-    let chrome = chrome.clamp(1.0, height);
-    Plan {
-        toolbar: (0.0, 0.0, width, chrome),
-        page: Some((0.0, chrome, width, (height - chrome).max(1.0))),
+    rects.retain(|r| r.2 > 0 && r.3 > 0);
+    rects
+}
+
+/// Sets the shape of a view's X11 window, so that outside it the page below
+/// shows and receives the pointer, as a window region does on Windows. GDK
+/// cannot shape the container window wry hosts each view in (it is foreign to
+/// GDK), so this uses XFixes on its own connection; shapes live on the server.
+/// Without libX11 or libXfixes views stay unclipped.
+struct Shaper {
+    xlib: x11_dl::xlib::Xlib,
+    // x11-dl names its XFixes bindings `Xlib` too.
+    xfixes: x11_dl::xfixes::Xlib,
+    display: *mut x11_dl::xlib::Display,
+    /// What each window was last set to, so unchanged layouts cost nothing.
+    applied: RefCell<Vec<(u64, Option<Rects>)>>,
+}
+
+impl Shaper {
+    fn open() -> Option<Self> {
+        let xlib = x11_dl::xlib::Xlib::open().ok()?;
+        let xfixes = x11_dl::xfixes::Xlib::open().ok()?;
+        // SAFETY: opens a new connection to the default display; checked for null.
+        let display = unsafe { (xlib.XOpenDisplay)(std::ptr::null()) };
+        (!display.is_null()).then(|| Self {
+            xlib,
+            xfixes,
+            display,
+            applied: RefCell::new(Vec::new()),
+        })
+    }
+
+    /// Clip `view` to `areas` (in its logical pixels, `scale` physical pixels
+    /// each) and raise it above the page, or remove its clip.
+    fn clip(&self, view: &WebView, areas: Option<&[ClipArea]>, scale: f64) {
+        use gtk::{glib::Cast, prelude::WidgetExt};
+        let Some(xid) = view
+            .webview()
+            .toplevel()
+            .and_then(|top| top.window())
+            .and_then(|window| window.downcast::<gdkx11::X11Window>().ok())
+            .map(|window| window.xid())
+        else {
+            return;
+        };
+        let rects = areas.map(|areas| {
+            let scaled: Vec<_> = areas
+                .iter()
+                .map(|a| ClipArea {
+                    x: a.x * scale,
+                    y: a.y * scale,
+                    width: a.width * scale,
+                    height: a.height * scale,
+                    radius: a.radius * scale,
+                })
+                .collect();
+            clip_rects(&scaled)
+        });
+        {
+            let mut applied = self.applied.borrow_mut();
+            match applied.iter_mut().find(|(id, _)| *id == xid) {
+                Some((_, last)) if *last == rects => return,
+                Some((_, last)) => last.clone_from(&rects),
+                None => applied.push((xid, rects.clone())),
+            }
+        }
+        const SHAPE_BOUNDING: i32 = 0;
+        // SAFETY: `display` is this struct's own open connection and `xid` a live
+        // window of this process; the region is created and destroyed here.
+        unsafe {
+            match rects {
+                None => (self.xfixes.XFixesSetWindowShapeRegion)(
+                    self.display,
+                    xid,
+                    SHAPE_BOUNDING,
+                    0,
+                    0,
+                    0,
+                ),
+                Some(rects) => {
+                    let mut rects: Vec<_> = rects
+                        .into_iter()
+                        .map(|(x, y, w, h)| x11_dl::xlib::XRectangle {
+                            x: x.clamp(0, i32::from(i16::MAX)) as i16,
+                            y: y.clamp(0, i32::from(i16::MAX)) as i16,
+                            width: w.clamp(0, i32::from(u16::MAX)) as u16,
+                            height: h.clamp(0, i32::from(u16::MAX)) as u16,
+                        })
+                        .collect();
+                    let region = (self.xfixes.XFixesCreateRegion)(
+                        self.display,
+                        rects.as_mut_ptr(),
+                        rects.len() as i32,
+                    );
+                    (self.xfixes.XFixesSetWindowShapeRegion)(
+                        self.display,
+                        xid,
+                        SHAPE_BOUNDING,
+                        0,
+                        0,
+                        region,
+                    );
+                    (self.xfixes.XFixesDestroyRegion)(self.display, region);
+                    (self.xlib.XRaiseWindow)(self.display, xid);
+                }
+            }
+            (self.xlib.XFlush)(self.display);
+        }
+    }
+}
+
+impl Drop for Shaper {
+    fn drop(&mut self) {
+        // SAFETY: closes the connection `open` made; nothing uses it afterwards.
+        unsafe { (self.xlib.XCloseDisplay)(self.display) };
     }
 }
 
@@ -167,6 +306,12 @@ fn next_zoom(current: f64, increase: bool) -> f64 {
 struct Browser {
     window: Window,
     toolbar: WebView,
+    /// The vertical tab column and the library column, built when first needed
+    /// and hidden, not destroyed, when not shown; each with its last render.
+    tabs_view: Option<(WebView, RefCell<String>)>,
+    library_view: Option<(WebView, RefCell<String>)>,
+    toolbar_context: WebContext,
+    shaper: Option<Shaper>,
     tabs: Tabs<Page>,
     closed: ClosedTabs,
     content: WebContext,
@@ -179,8 +324,17 @@ struct Browser {
     revision: u64,
     private: bool,
     panel: Option<Panel>,
+    /// What the library column shows, while it is open.
+    library_panel: Option<Panel>,
+    library_width: f64,
     menu_open: bool,
+    /// Where the open dropdown is drawn in the toolbar view.
+    menu_area: Option<ClipArea>,
+    /// The bookmarks-bar folder the open dropdown lists.
+    menu_folder: Option<i64>,
     fullscreen: bool,
+    /// Until when the page that entered fullscreen is named, and its host.
+    fullscreen_notice: Option<(Instant, String)>,
     chrome: f64,
     notice: String,
     last_render: RefCell<String>,
@@ -213,7 +367,13 @@ impl Browser {
                 .with_min_inner_size(LogicalSize::new(480.0, 360.0)),
         )?;
         let mut toolbar_context = WebContext::new((!private).then(|| profile.join("toolbar")));
-        let toolbar = toolbar_view(&window, &mut toolbar_context, proxy.clone(), private)?;
+        let toolbar = toolbar_view(
+            &window,
+            &mut toolbar_context,
+            proxy.clone(),
+            private,
+            Role::Toolbar,
+        )?;
         let library_proxy = proxy.clone();
         let library = Worker::start(
             if private {
@@ -228,6 +388,10 @@ impl Browser {
         let mut browser = Self {
             window,
             toolbar,
+            tabs_view: None,
+            library_view: None,
+            toolbar_context,
+            shaper: Shaper::open(),
             tabs: Tabs::default(),
             closed: ClosedTabs::default(),
             content: WebContext::new((!private).then(|| profile.join("content"))),
@@ -240,8 +404,13 @@ impl Browser {
             revision: 0,
             private,
             panel: None,
+            library_panel: None,
+            library_width: LIBRARY_WIDTH,
             menu_open: false,
+            menu_area: None,
+            menu_folder: None,
             fullscreen: false,
+            fullscreen_notice: None,
             chrome: DEFAULT_CHROME,
             notice: String::new(),
             last_render: RefCell::new(String::new()),
@@ -250,8 +419,6 @@ impl Browser {
                 .map_or(0, |d| d.as_nanos()),
             loads: 0,
         };
-        // The toolbar view must exist for as long as its context: keep it alive.
-        std::mem::forget(toolbar_context);
         let restore = !private && browser.settings.restore_session;
         if restore {
             for (index, url) in snapshot.tabs.iter().enumerate().take(MAX_TABS) {
@@ -273,6 +440,9 @@ impl Browser {
         }
         if browser.tabs.items.is_empty() {
             browser.open_tab(navigation::HOME.into())?;
+        }
+        if browser.settings.vertical_tabs {
+            browser.ensure_side(Role::Tabs)?;
         }
         browser.layout();
         browser.refresh_library();
@@ -316,34 +486,73 @@ impl Browser {
         Ok(())
     }
 
-    fn covered(&self) -> bool {
-        self.panel.is_some()
-            || self.menu_open
-            || self
-                .tabs
+    /// The full panel, or the new-tab page when the active tab shows it.
+    fn effective_panel(&self) -> Option<Panel> {
+        self.panel.or_else(|| {
+            self.tabs
                 .active()
-                .is_some_and(|t| t.url == navigation::HOME)
+                .filter(|t| t.url == navigation::HOME)
+                .map(|_| Panel::NewTab)
+        })
     }
 
-    /// Place and show the views for the current state.
-    fn layout(&self) {
+    /// Where each view goes now, by the table Windows uses.
+    fn current_layout(&self) -> Layout {
         let size = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        let plan = plan(
+        let panel = self.effective_panel();
+        let full = if self.panel.is_some() || (self.menu_open && panel.is_some()) {
+            Full::Cover
+        } else if self.menu_open {
+            Full::Dropdown
+        } else if panel == Some(Panel::NewTab) {
+            Full::NewTab
+        } else if self.fullscreen {
+            Full::Bare
+        } else {
+            Full::None
+        };
+        layout(
             size.width,
             size.height,
             self.chrome,
-            self.covered(),
-            self.fullscreen,
-        );
+            self.settings.vertical_tabs && self.tabs_view.is_some() && !self.fullscreen,
+            self.library_panel
+                .filter(|_| self.library_view.is_some() && !self.fullscreen)
+                .map(|_| self.library_width),
+            full,
+        )
+    }
+
+    /// The fullscreen notice's area in the toolbar view, while a fullscreen page
+    /// (the toolbar otherwise hidden) is being named.
+    fn fullscreen_notice_shown(&self, plan: &Layout) -> Option<ClipArea> {
+        (plan.toolbar.3 == 0.0
+            && self.fullscreen
+            && self
+                .fullscreen_notice
+                .as_ref()
+                .is_some_and(|(until, _)| *until > Instant::now()))
+        .then(|| fullscreen_notice_area(plan.toolbar.2))
+    }
+
+    /// Place and show the views for the current state.
+    fn layout(&self) {
+        let plan = self.current_layout();
+        let notice = self.fullscreen_notice_shown(&plan);
         // A hidden wry view on X11 has no window to resize, so it is shown before
         // its bounds are set; bounds set while hidden are lost on the next show.
         let shown = plan.toolbar.3 > 0.0;
-        let _ = self.toolbar.set_visible(shown);
+        let _ = self.toolbar.set_visible(shown || notice.is_some());
         if shown {
             let _ = self.toolbar.set_bounds(rect(plan.toolbar));
+        } else if let Some(area) = notice {
+            let (x, _, w, _) = plan.toolbar;
+            let _ = self
+                .toolbar
+                .set_bounds(rect((x, 0.0, w, area.y + area.height)));
         }
         let active = self.tabs.active().map(|t| t.id);
         for tab in &self.tabs.items {
@@ -353,6 +562,81 @@ impl Browser {
                 let _ = tab.content.view.set_bounds(rect(page));
             }
         }
+        for (side, place) in [
+            (&self.tabs_view, plan.tabs),
+            (&self.library_view, plan.library),
+        ] {
+            if let Some((view, _)) = side {
+                let _ = view.set_visible(place.is_some());
+                if let Some(place) = place {
+                    let _ = view.set_bounds(rect(place));
+                }
+            }
+        }
+        // Over a webpage, an open dropdown's toolbar shows only the chrome and the
+        // dropdown; anywhere else it is unclipped.
+        let dropdown = self.menu_open && plan.page.is_some() && plan.toolbar.3 > self.chrome;
+        let areas = notice.map(|area| vec![area]).or_else(|| {
+            dropdown.then(|| {
+                let chrome = ClipArea {
+                    x: 0.0,
+                    y: 0.0,
+                    width: plan.toolbar.2,
+                    height: self.chrome,
+                    radius: 0.0,
+                };
+                [Some(chrome), self.menu_area]
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            })
+        });
+        if let Some(shaper) = &self.shaper {
+            shaper.clip(&self.toolbar, areas.as_deref(), self.window.scale_factor());
+        }
+    }
+
+    /// Create the side view for `role`, hidden, if it is missing.
+    fn ensure_side(&mut self, role: Role) -> Result<(), Box<dyn Error>> {
+        let present = match role {
+            Role::Tabs => self.tabs_view.is_some(),
+            Role::Library => self.library_view.is_some(),
+            Role::Toolbar => true,
+        };
+        if present {
+            return Ok(());
+        }
+        let view = toolbar_view(
+            &self.window,
+            &mut self.toolbar_context,
+            self.proxy.clone(),
+            self.private,
+            role,
+        )?;
+        view.set_visible(false)?;
+        let side = Some((view, RefCell::new(String::new())));
+        match role {
+            Role::Tabs => self.tabs_view = side,
+            Role::Library => self.library_view = side,
+            Role::Toolbar => {}
+        }
+        Ok(())
+    }
+
+    /// Open the library column beside the page, showing `panel`, and move keyboard
+    /// focus into it.
+    fn open_library(&mut self, panel: Panel) -> Result<(), Box<dyn Error>> {
+        self.panel = None;
+        self.ensure_side(Role::Library)?;
+        self.library_panel = Some(panel);
+        self.filter = Filter::default();
+        self.refresh_library();
+        self.layout();
+        self.render();
+        if let Some((view, _)) = &self.library_view {
+            view.focus()?;
+        }
+        Ok(())
     }
 
     fn persist(&self) {
@@ -379,6 +663,7 @@ impl Browser {
         }
         self.revision += 1;
         let mut filter = self.filter.clone();
+        filter.menu_folder = self.menu_folder;
         filter.page = self
             .tabs
             .active()
@@ -405,9 +690,10 @@ impl Browser {
         let page = &active.content.state;
         let security = rust_browser::security::indicator(&active.url, page.loading, page.failed);
         let zoom = active.content.zoom;
+        let plan = self.current_layout();
         let state = ToolbarState {
             zoom_percent: ((zoom - 1.0).abs() > 0.001).then(|| (zoom * 100.0).round() as u32),
-            page_tools: navigation::allowed(&active.url),
+            page_tools: self.effective_panel().is_none() && navigation::allowed(&active.url),
             diagnostics: None,
             settings: &self.settings,
             private: self.private,
@@ -436,16 +722,24 @@ impl Browser {
             search_engine: self.settings.search_engine,
             notice: &self.notice,
             notice_kind: ui::notice_kind(&self.notice, ""),
-            panel: self
-                .panel
-                .or_else(|| (active.url == navigation::HOME).then_some(Panel::NewTab)),
+            panel: self.effective_panel(),
             menu_open: self.menu_open,
-            library_panel: None,
-            vertical_tabs: false,
+            library_panel: self.library_panel,
+            vertical_tabs: plan.tabs.is_some(),
             maximized: self.window.is_maximized(),
             fullscreen: self.fullscreen,
-            fullscreen_notice: None,
-            controls_in_library: false,
+            fullscreen_notice: self
+                .fullscreen_notice_shown(&plan)
+                .zip(self.fullscreen_notice.as_ref())
+                .map(|(area, (_, host))| ui::FullscreenNotice {
+                    host,
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: area.height,
+                }),
+            controls_in_library: !self.fullscreen
+                && plan.library.is_some_and(|(_, y, _, _)| y == 0.0),
             blocked: None,
             count_blocked: false,
             extensions: Vec::new(),
@@ -458,14 +752,23 @@ impl Browser {
             profile_colors: &rust_browser::profiles::COLORS,
             can_add_profile: false,
         };
-        if let Ok(json) = serde_json::to_string(&state)
-            && *self.last_render.borrow() != json
-            && self
-                .toolbar
-                .evaluate_script(&format!("window.render && window.render({json})"))
-                .is_ok()
-        {
-            *self.last_render.borrow_mut() = json;
+        if let Ok(json) = serde_json::to_string(&state) {
+            let sides = [&self.tabs_view, &self.library_view]
+                .into_iter()
+                .flatten()
+                .map(|(view, last)| (view, last));
+            for (view, last) in [(&self.toolbar, &self.last_render)]
+                .into_iter()
+                .chain(sides)
+            {
+                if *last.borrow() != json
+                    && view
+                        .evaluate_script(&format!("window.render && window.render({json})"))
+                        .is_ok()
+                {
+                    last.borrow_mut().clone_from(&json);
+                }
+            }
         }
         let title = if active.title.is_empty() {
             "Rust Browser".to_string()
@@ -519,10 +822,94 @@ impl Browser {
                 });
             }
             Command::DismissNotice => self.notice.clear(),
-            Command::SetMenuOpen(open) => self.menu_open = open,
-            Command::SetMenuArea { .. }
-            | Command::RefreshDiagnostics
-            | Command::RefreshProfiles => {}
+            Command::SetMenuOpen(open) => {
+                if !open {
+                    self.menu_folder = None;
+                    self.menu_area = None;
+                }
+                self.menu_open = open;
+            }
+            Command::SetMenuArea {
+                x,
+                y,
+                width,
+                height,
+                radius,
+            } => {
+                if self.menu_open
+                    && [x, y, width, height, radius].iter().all(|v| v.is_finite())
+                    && width > 0.0
+                    && height > 0.0
+                {
+                    self.menu_area = Some(ClipArea {
+                        x,
+                        y,
+                        width,
+                        height,
+                        radius: radius.clamp(0.0, 32.0),
+                    });
+                }
+            }
+            Command::OpenBookmarkFolder(id) => {
+                if self.private {
+                    return Err("Bookmarks are unavailable in private windows.".into());
+                }
+                if !self.data.folders.iter().any(|f| f.id == id) {
+                    return Err("That bookmark folder no longer exists.".into());
+                }
+                self.menu_folder = Some(id);
+                self.refresh_library();
+            }
+            Command::SetVerticalTabs(on) => {
+                if self.private {
+                    return Err(
+                        "Private windows follow this setting from normal windows; change it there."
+                            .into(),
+                    );
+                }
+                self.settings.vertical_tabs = on;
+                if on {
+                    self.ensure_side(Role::Tabs)?;
+                }
+                self.persist();
+            }
+            Command::SetLibraryWidth(width) => {
+                if !width.is_finite() {
+                    return Err("Invalid library width.".into());
+                }
+                self.library_width = width.clamp(LIBRARY_MIN, LIBRARY_MAX);
+            }
+            Command::AddFavorite { title, url } => {
+                let mut settings = self.settings.clone();
+                let url = navigation::address(&url)?;
+                // An open tab on the same site lends its icon at once.
+                let icon = self
+                    .tabs
+                    .items
+                    .iter()
+                    .find(|t| {
+                        rust_browser::settings::same_site(&t.url, &url)
+                            && rust_browser::settings::valid_icon(&t.content.state.favicon)
+                    })
+                    .map(|t| t.content.state.favicon.clone())
+                    .unwrap_or_default();
+                settings.favorites.push(rust_browser::settings::Favorite {
+                    title: title.trim().into(),
+                    url,
+                    icon,
+                });
+                settings.validate()?;
+                self.settings = settings;
+                self.persist();
+            }
+            Command::RemoveFavorite(index) => {
+                if index >= self.settings.favorites.len() {
+                    return Err("Favorite no longer exists.".into());
+                }
+                self.settings.favorites.remove(index);
+                self.persist();
+            }
+            Command::RefreshDiagnostics | Command::RefreshProfiles => {}
             Command::Navigate(input) => {
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.panel = None;
@@ -686,19 +1073,25 @@ impl Browser {
                 self.persist();
             }
             Command::ShowPanel(Panel::NewTab) => return self.command(el, Command::Home),
+            // Bookmarks, history and downloads open beside the page; Settings stays
+            // a full panel.
+            Command::ShowPanel(panel @ (Panel::Bookmarks | Panel::History | Panel::Downloads)) => {
+                return self.open_library(panel);
+            }
             Command::ShowPanel(panel) => {
                 self.panel = Some(panel);
                 self.filter = Filter::default();
                 self.refresh_library();
             }
             Command::ToggleLibrary => {
-                self.panel = match self.panel {
-                    Some(Panel::Bookmarks | Panel::History | Panel::Downloads) => None,
-                    _ => Some(Panel::Bookmarks),
-                };
-                self.refresh_library();
+                if self.library_panel.is_some() {
+                    self.library_panel = None;
+                } else {
+                    return self.open_library(Panel::Bookmarks);
+                }
             }
-            Command::ClosePanel | Command::CloseLibrary => self.panel = None,
+            Command::ClosePanel => self.panel = None,
+            Command::CloseLibrary => self.library_panel = None,
             Command::QueryLibrary(filter) => {
                 self.filter = filter;
                 self.refresh_library();
@@ -745,9 +1138,19 @@ impl Browser {
                 self.settings.newtab_background = background;
                 self.persist();
             }
+            // F7 and "Back to page": leave a full panel, then focus the page (or
+            // the new-tab page's search field).
             Command::FocusPage => {
-                if let Some(tab) = self.tabs.active() {
-                    let _ = tab.content.view.focus();
+                self.panel = None;
+                if self
+                    .tabs
+                    .active()
+                    .is_some_and(|tab| tab.url == navigation::HOME)
+                {
+                    self.toolbar
+                        .evaluate_script("document.getElementById('home-query').focus()")?;
+                } else if let Some(tab) = self.tabs.active() {
+                    tab.content.view.focus()?;
                 }
             }
             Command::FocusAddress | Command::FocusTabs => {
@@ -759,6 +1162,16 @@ impl Browser {
     }
 
     fn page_event(&mut self, id: TabId, event: PageEvent) {
+        // A press on the page closes a dropdown open over it, as a press anywhere
+        // else in the toolbar would.
+        if matches!(event, PageEvent::Pressed) {
+            if self.menu_open && self.tabs.active().is_some_and(|t| t.id == id) {
+                let _ = self
+                    .toolbar
+                    .evaluate_script("typeof closeDropdown==='function'&&closeDropdown(false)");
+            }
+            return;
+        }
         let history = self.settings.history_enabled && !self.private;
         let Some(tab) = self.tabs.get_mut(id) else {
             return;
@@ -804,12 +1217,15 @@ impl Browser {
                 self.persist();
             }
             PageEvent::Fullscreen(on) => {
+                let host = fullscreen_host(&tab.url);
                 if self.tabs.active().is_some_and(|t| t.id == id) {
                     self.fullscreen = on;
+                    self.fullscreen_notice = on.then(|| (Instant::now() + FULLSCREEN_NOTICE, host));
                     self.window
                         .set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
                 }
             }
+            PageEvent::Pressed => {}
             PageEvent::Blocked => {
                 self.notice =
                     "Downloads and website permissions are not available on Linux yet.".into();
@@ -825,14 +1241,22 @@ fn toolbar_view(
     context: &mut WebContext,
     proxy: EventLoopProxy<Event>,
     private: bool,
+    role: Role,
 ) -> Result<WebView, Box<dyn Error>> {
-    use base64::Engine as _;
-    let url = format!(
-        "data:text/html;charset=utf-8;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(ui::HTML)
-    );
+    // Every trusted view loads the same local document; the fragment names the
+    // part it shows. Navigation stays limited to this exact URL.
+    let url = format!("{TOOLBAR_URL}{}", role.fragment());
     let allowed = url.clone();
-    let view = WebViewBuilder::new_with_web_context(context)
+    // The scheme belongs to the trusted views' own context, so website views
+    // (another context) cannot load it; the first view registers it for all.
+    let register = !context.is_custom_protocol_registered(TOOLBAR_SCHEME);
+    let mut builder = WebViewBuilder::new_with_web_context(context);
+    if register {
+        builder = builder.with_custom_protocol(TOOLBAR_SCHEME.into(), |_, request| {
+            toolbar_document(request.uri().path())
+        });
+    }
+    let view = builder
         .with_url(&url)
         .with_incognito(private)
         .with_devtools(false)
@@ -944,6 +1368,27 @@ fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>) {
     });
 }
 
+/// The trusted views' private address. WebKitGTK cannot use a `data:` URL as on
+/// Windows: wry drops every IPC message from a page whose URL is longer than an
+/// HTTP URI may be (64 KiB), and the encoded toolbar document is longer.
+const TOOLBAR_SCHEME: &str = "rust-browser";
+const TOOLBAR_URL: &str = "rust-browser://toolbar/";
+
+/// What the trusted scheme serves: the toolbar document at `/`, nothing else.
+fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static, [u8]>> {
+    let (status, body): (u16, &'static [u8]) = if path == "/" {
+        (200, ui::HTML.as_bytes())
+    } else {
+        (404, b"")
+    };
+    wry::http::Response::builder()
+        .status(status)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .body(body.into())
+        .unwrap_or_else(|_| wry::http::Response::new((&[] as &[u8]).into()))
+}
+
 /// A website view: HTTP(S) and `about:blank` only, no command bridge, every
 /// permission and download refused, new windows opened as tabs.
 fn content_view(
@@ -998,6 +1443,11 @@ fn content_view(
     engine.connect_permission_request(|_, request| {
         request.deny();
         true
+    });
+    let pressed = proxy.clone();
+    engine.connect_button_press_event(move |_, _| {
+        let _ = pressed.send_event(Event::Page(id, PageEvent::Pressed));
+        gtk::glib::Propagation::Proceed
     });
     let (enter, leave) = (proxy.clone(), proxy);
     engine.connect_enter_fullscreen(move |_| {
@@ -1159,18 +1609,48 @@ mod tests {
     }
 
     #[test]
-    fn the_page_sits_below_the_toolbar_unless_covered_or_fullscreen() {
-        let normal = plan(1200.0, 800.0, 119.0, false, false);
-        assert_eq!(normal.toolbar, (0.0, 0.0, 1200.0, 119.0));
-        assert_eq!(normal.page, Some((0.0, 119.0, 1200.0, 681.0)));
-        let covered = plan(1200.0, 800.0, 119.0, true, false);
-        assert_eq!(covered.toolbar, (0.0, 0.0, 1200.0, 800.0));
-        assert_eq!(covered.page, None);
-        let full = plan(1920.0, 1080.0, 119.0, false, true);
-        assert_eq!(full.toolbar.3, 0.0);
-        assert_eq!(full.page, Some((0.0, 0.0, 1920.0, 1080.0)));
-        // A dropdown opened over a fullscreen page brings the toolbar back.
-        assert_eq!(plan(1920.0, 1080.0, 119.0, true, true).page, None);
+    fn the_trusted_scheme_serves_only_the_toolbar_document() {
+        let page = toolbar_document("/");
+        assert_eq!(page.status(), 200);
+        assert_eq!(page.body().as_ref(), ui::HTML.as_bytes());
+        assert_eq!(toolbar_document("/other").status(), 404);
+        assert_eq!(toolbar_document("/../etc/passwd").status(), 404);
+        // Short enough for wry to deliver the toolbar's IPC messages.
+        let longest = format!("{TOOLBAR_URL}{}", Role::Library.fragment());
+        assert!(longest.parse::<wry::http::Uri>().is_ok());
+    }
+
+    #[test]
+    fn a_rounded_dropdown_is_clipped_to_its_shape() {
+        let square = ClipArea {
+            x: 0.0,
+            y: 0.0,
+            width: 1200.0,
+            height: 119.0,
+            radius: 0.0,
+        };
+        assert_eq!(clip_rects(&[square]), [(0, 0, 1200, 119)]);
+        let menu = ClipArea {
+            x: 900.5,
+            y: 110.0,
+            width: 280.0,
+            height: 300.0,
+            radius: 8.0,
+        };
+        let rects = clip_rects(&[menu]);
+        let area: i32 = rects.iter().map(|r| r.2 * r.3).sum();
+        // Inside the box it covers (900 to 1181, 110 to 410), a little less than
+        // the whole box because of the corners, and never outside it.
+        assert!(area < 281 * 300 && area > 281 * 300 - 4 * 64, "{area}");
+        for (x, y, w, h) in &rects {
+            assert!(*x >= 900 && x + w <= 1181 && *y >= 110 && y + h <= 410);
+        }
+        // The top row is inset at the corners; the middle spans the full width.
+        assert!(rects.iter().any(|r| r.1 == 110 && r.0 > 900));
+        assert!(rects.iter().any(|r| r.0 == 900 && r.2 == 281 && r.3 > 200));
+        // Empty areas add nothing.
+        let empty = ClipArea { width: 0.0, ..menu };
+        assert!(clip_rects(&[empty]).is_empty());
     }
 
     #[test]

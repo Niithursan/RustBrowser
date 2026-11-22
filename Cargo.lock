@@ -2101,6 +2101,7 @@ version = "0.22.2"
 dependencies = [
  "base64",
  "dunce",
+ "gdkx11",
  "gtk",
  "rusqlite",
  "serde",
@@ -2111,6 +2112,7 @@ dependencies = [
  "windows",
  "winit",
  "wry",
+ "x11-dl",
 ]
 
 [[package]]
