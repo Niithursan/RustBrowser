@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Resize from every edge:** drag the left, right or bottom edge (or a bottom corner) of a restored window to resize it, as in other Windows apps. Before, only the top edge resized it, because the page covered the other edges. Windows supplies the invisible resize borders; a maximized or full-screen window is unchanged.
 - **Bookmark menus:** right-click a bookmark or folder on the bookmarks bar or in a folder's dropdown (or Shift+F10 on it). A bookmark opens in a new tab, window or private window, and can be edited, deleted, copied, or have a bookmark or folder added beside it. A folder opens all its bookmarks in tabs, and can be renamed, deleted (after a confirmation; nothing inside is deleted) or have a bookmark or folder added inside it. New `open_saved_tabs`, `open_saved_window` and `open_saved_private` commands back it, and bar links now carry their folder.
 - Fourth chrome critique follow-up (27/40):
   - **Address line:** while a page loads, the badge keeps its round shape and turns a quiet arc (still with reduced motion) instead of widening into a "Connecting" pill, so the address no longer jumps on every load.

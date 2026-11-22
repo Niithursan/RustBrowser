@@ -22,6 +22,96 @@ pub fn apply_theme(window: &Window, theme: Theme) {
     window.set_corner_preference(CornerPreference::Round);
 }
 
+/// Give a borderless window Windows' own resize borders on its left, right and bottom.
+///
+/// winit's borderless windows keep `WS_CAPTION | WS_SIZEBOX` but answer
+/// `WM_NCCALCSIZE` by making the whole window the client area, so the page views cover
+/// every edge and there is nothing to drag. While the window is restored, this subclass
+/// lets Windows compute the standard frame instead (on Windows 10 and 11 its side and
+/// bottom borders are invisible, just outside the drawn window, like other apps') and
+/// pulls only the top back up to the window's edge, where the toolbar draws the
+/// caption and its own strip resizes the top edge. Maximized and full-screen windows
+/// are left to winit. Returns whether the subclass was installed.
+pub fn enable_edge_resize(window: &Window) -> bool {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::{
+            Shell::SetWindowSubclass,
+            WindowsAndMessaging::{
+                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+                SetWindowPos,
+            },
+        },
+    };
+    use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let hwnd = match window.window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Win32(handle)) => HWND(handle.hwnd.get() as *mut _),
+        _ => return false,
+    };
+    // SAFETY: `hwnd` is this thread's own live window (winit creates it on the event
+    // loop thread, which is the only caller); the subclass procedure is a plain
+    // function with no data, removed by Windows when the window is destroyed.
+    unsafe {
+        if !SetWindowSubclass(hwnd, Some(edge_resize_proc), EDGE_RESIZE_ID, 0).as_bool() {
+            return false;
+        }
+        // Recompute the frame now that the borders exist.
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    true
+}
+
+const EDGE_RESIZE_ID: usize = 0x5242_4544; // "RBED"
+
+/// The subclass behind [`enable_edge_resize`].
+///
+/// # Safety
+/// Called by Windows with a valid window and, for `WM_NCCALCSIZE` with a non-zero
+/// `wparam`, an `lparam` pointing at a live `NCCALCSIZE_PARAMS`.
+unsafe extern "system" fn edge_resize_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    message: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    _id: usize,
+    _data: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::{
+        Shell::DefSubclassProc,
+        WindowsAndMessaging::{
+            DefWindowProcW, GWL_STYLE, GetWindowLongW, IsIconic, IsZoomed, NCCALCSIZE_PARAMS,
+            WM_NCCALCSIZE, WS_CAPTION, WS_SIZEBOX,
+        },
+    };
+    // SAFETY: see the function's contract; every call here takes that window.
+    unsafe {
+        if message == WM_NCCALCSIZE
+            && wparam.0 != 0
+            && !IsZoomed(hwnd).as_bool()
+            && !IsIconic(hwnd).as_bool()
+        {
+            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+            // Full screen drops the caption and sizing styles: leave it to winit.
+            if style & WS_SIZEBOX.0 != 0 && style & WS_CAPTION.0 == WS_CAPTION.0 {
+                let params = lparam.0 as *mut NCCALCSIZE_PARAMS;
+                let top = (*params).rgrc[0].top;
+                let result = DefWindowProcW(hwnd, message, wparam, lparam);
+                (*params).rgrc[0].top = top;
+                return result;
+            }
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

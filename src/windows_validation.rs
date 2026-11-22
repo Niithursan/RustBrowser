@@ -4884,6 +4884,143 @@ fn native_tab_menu_and_middle_click() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+type Rect = windows::Win32::Foundation::RECT;
+/// Hit-test answers by edge name, the client area and the window, in screen pixels.
+type EdgeHits = (Vec<(&'static str, isize)>, Rect, Rect);
+
+/// What Windows answers `WM_NCHITTEST` with just outside each edge of the client
+/// area, inside it, and the client and window rectangles (screen pixels).
+fn edge_hits(window: &Window) -> Result<EdgeHits, String> {
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, POINT, RECT, WPARAM},
+        Graphics::Gdi::ClientToScreen,
+        UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, SendMessageW, WM_NCHITTEST},
+    };
+    use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let hwnd = match window.window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Win32(handle)) => HWND(handle.hwnd.get() as *mut _),
+        _ => return Err("No window handle".into()),
+    };
+    let mut client = RECT::default();
+    let mut outer = RECT::default();
+    let mut origin = POINT::default();
+    // SAFETY: the fixture's own live window, on its own thread.
+    unsafe {
+        GetClientRect(hwnd, &mut client).map_err(|e| e.to_string())?;
+        GetWindowRect(hwnd, &mut outer).map_err(|e| e.to_string())?;
+        let _ = ClientToScreen(hwnd, &mut origin);
+    }
+    let (left, top) = (origin.x, origin.y);
+    let (right, bottom) = (left + client.right, top + client.bottom);
+    let (mid_x, mid_y) = ((left + right) / 2, (top + bottom) / 2);
+    let at = |x: i32, y: i32| {
+        let packed = ((y as u32 & 0xFFFF) << 16) | (x as u32 & 0xFFFF);
+        // SAFETY: as above; WM_NCHITTEST only reads the point.
+        unsafe {
+            SendMessageW(
+                hwnd,
+                WM_NCHITTEST,
+                Some(WPARAM(0)),
+                Some(LPARAM(packed as isize)),
+            )
+            .0
+        }
+    };
+    let screen = RECT {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    Ok((
+        vec![
+            ("left", at(left - 2, mid_y)),
+            ("right", at(right + 1, mid_y)),
+            ("bottom", at(mid_x, bottom + 1)),
+            ("bottom-right", at(right + 1, bottom + 1)),
+            ("inside", at(mid_x, mid_y)),
+        ],
+        screen,
+        outer,
+    ))
+}
+
+/// A restored window resizes from its left, right and bottom edges and bottom corner
+/// (Windows' invisible borders, outside the page), while the page fills the client
+/// area; a maximized window has no borders and its client area is the whole window.
+fn window_edges_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    const HTCLIENT: isize = 1;
+    const HTLEFT: isize = 10;
+    const HTRIGHT: isize = 11;
+    const HTBOTTOM: isize = 15;
+    const HTBOTTOMRIGHT: isize = 17;
+    let waited = p.at.elapsed();
+    match p.phase {
+        0 if waited > Duration::from_secs(1) => {
+            let s = p.s()?;
+            let (hits, client, outer) = edge_hits(&s.windows[0].window)?;
+            let want = [
+                ("left", HTLEFT),
+                ("right", HTRIGHT),
+                ("bottom", HTBOTTOM),
+                ("bottom-right", HTBOTTOMRIGHT),
+                ("inside", HTCLIENT),
+            ];
+            if hits != want {
+                return Err(format!("Edges do not resize: {hits:?}"));
+            }
+            // The caption stays the window's top edge; the borders sit outside the
+            // client area on the other three sides.
+            if client.top != outer.top
+                || client.left <= outer.left
+                || client.right >= outer.right
+                || client.bottom >= outer.bottom
+            {
+                return Err(format!(
+                    "Unexpected frame: client {client:?}, window {outer:?}"
+                ));
+            }
+            s.windows[0].window.set_maximized(true);
+            p.next();
+        }
+        1 => {
+            let s = p.s()?;
+            if s.windows[0].window.is_maximized() {
+                let (hits, _, _) = edge_hits(&s.windows[0].window)?;
+                let size = s.windows[0].window.inner_size();
+                let monitor = s.windows[0]
+                    .window
+                    .current_monitor()
+                    .ok_or("No monitor")?
+                    .size();
+                // Maximized: the page reaches the screen's edges (minus the taskbar),
+                // with no resize border left over at the sides.
+                if size.width != monitor.width || hits[4].1 != HTCLIENT {
+                    return Err(format!(
+                        "Maximized window has borders: {size:?} on {monitor:?}, {hits:?}"
+                    ));
+                }
+                p.log
+                    .push("window edges: left, right, bottom resize; maximized fills".into());
+                p.done = true;
+                el.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err("The window did not maximize".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_window_edges_resize() {
+    let (root, _) = run("window-edges", window_edges_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Right-click a bookmarks-bar button (by its label): its menu opens at the pointer
 /// with focus on its first row. Reports the menu's shown rows as JSON.
 fn bookmark_menu_open(label: &str) -> String {

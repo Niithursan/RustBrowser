@@ -193,7 +193,10 @@ into the top of the window with Minimize, Maximize/Restore and Close buttons flu
 the top-right edge (`#tabrow`, `#nav` in vertical-tabs mode, or `#library-caption` when
 the library sits beside `New tab`), while preserving Windows 11 rounded corners,
 theme-coloured window borders, Aero Snap, title-strip dragging, double-click to
-maximize, system context menu and Narrator.
+maximize, system context menu and Narrator. Drag any edge or corner of a restored
+window to resize it: the left, right and bottom edges use Windows' own invisible
+resize borders just outside the window, like other apps, and the top edge uses a
+thin strip at the top of the tab strip.
 
 ## Setup on Windows
 

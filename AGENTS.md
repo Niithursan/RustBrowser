@@ -368,6 +368,7 @@ The project aims to evolve through incremental releases:
 - After v0.21.0: second chrome critique follow-up PR #61 merged; third chrome critique follow-up (equal-width tab strip, quiet lock for encrypted pages, shield only once a blocking extension is added, Menu New group, profile button only with more than one profile) PR #63 squash-merged on `main` as `e92daae`
 - Fourth chrome critique follow-up (badge keeps its shape while loading, middle-click and a tab menu with Duplicate, Pin, Move, Close others and Reopen, Menu routes to Profiles and Extensions, plain outline shield) PR #65 squash-merged on `main` as `4d365f1`
 - Bookmark menus (right-click a bookmarks-bar bookmark or folder, or a row in a folder dropdown: open in a new tab, window or private window, open all in tabs, edit, rename, delete, copy link, add bookmark or folder, manage) PR #67 squash-merged on `main` as `a454e41`
+- Resize from every edge (Windows' invisible borders on the left, right and bottom of a restored window via a `WM_NCCALCSIZE` subclass; the top keeps the toolbar strip) on `feat/window-edge-resize`, before the next release candidate
 - Then: daily use by the owner
 - First tagged release: when the owner decides the browser is ready; not tied to a version
 - v1.0: Daily-use release candidate
