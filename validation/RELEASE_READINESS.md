@@ -6,6 +6,13 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.22.2 published (2026-11-23)
+
+- Tag `v0.22.2` on `b4536e7` (PR #75's merge commit, after #74 and #73; CI 45268005193 and Dependency security 45268005088 passed on it). CI on #74's merge commit `a57caea` (run 45260713013) had failed on `native_imported_bookmarks_show_on_the_bookmarks_bar`, fixed in #75, so the tag went on the next commit.
+- Tag build: run 45269553809 passed. The five files were downloaded, both checksums matched, `verify-release.ps1` reported `IntegrityVerified: True`, and the metadata names version 0.22.2 and source commit `b4536e7`.
+- First publish run 45272247238 failed in `native_launch_after_a_crash_takes_over_the_profile` (the saved session showed only the new-tab page 10 seconds after a crash takeover with a link). It passed in the tag build on the same commit and could not be reproduced locally (8 of 8 alone, 4 of 4 as the suite). The owner chose to run publish again.
+- Publish run 45274478007 passed; the release was published at 2026-11-23T22:10:23Z and is Latest. The Setup downloaded from the release page matches its `.sha256` (`b740671b...e5efda`), and the release text is `release-notes/v0.22.2.md`.
+
 ## v0.22.2 release candidate (2026-11-23)
 
 The v0.22.1 tag build passed (run 45236099610), but the owner's publish run (45239524988) stopped when `native_newtab_tiles_and_background` failed once; it was not published, and tags are never moved. The owner asked for a new release candidate after the test fixes' checks passed. The candidate is `main` at `cdf2bb6` (v0.22.1) plus PR #73 (two native tests wait for state instead of fixed delays; test code only) plus this pull request: version 0.22.2 and its release notes. The browser is unchanged from 0.22.1, the library schema (5) and session format are unchanged, and the installer upgrade check still starts from the published v0.21.0 (`c7c9e15`).

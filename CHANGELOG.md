@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.22.2 (release candidate)
+## 0.22.2 (published 2026-11-23)
 
-- **Release candidate:** the same browser as 0.22.1, which was tagged but not published: its publishing run stopped when `native_newtab_tiles_and_background` failed once and passed on a re-run. That test and `native_profiles_switch_add_edit_and_delete` now wait for the browser's state instead of fixed delays, and the tile test's timeout reports what it saw (#73). No change to the browser itself.
+- **Release:** the same browser as 0.22.1, which was tagged but not published: its publishing run stopped when `native_newtab_tiles_and_background` failed once and passed on a re-run. That test and `native_profiles_switch_add_edit_and_delete` now wait for the browser's state instead of fixed delays, and the tile test's timeout reports what it saw (#73). No change to the browser itself.
 
 ## 0.22.1 (tagged, not published)
 
