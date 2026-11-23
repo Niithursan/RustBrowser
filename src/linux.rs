@@ -5,9 +5,9 @@
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
 //! bookmarks and history library (`library_worker`), the download staging rules
 //! (`linux_downloads`) and the permission rules (`linux_permissions`). What WebView2
-//! alone provides on Windows (extensions and the shield, private-data clearing,
-//! multiple windows, profiles, sleeping tabs, password autofill) is not offered here
-//! yet: such commands answer with a notice instead.
+//! alone provides on Windows (extensions and the shield, multiple windows, profiles,
+//! sleeping tabs, password autofill) is not offered here yet: such commands answer
+//! with a notice instead. Clearing browsing data uses WebKit's own data manager.
 //!
 //! Security model, as on Windows: website views only navigate to HTTP(S) and
 //! `about:blank`, have no command bridge, get a permission only when the user allows
@@ -28,6 +28,7 @@ use rust_browser::{
     },
     library::{Action, Data, Filter},
     navigation,
+    privacy::ClearRequest,
     security::{self, Capability, Decision, Rule},
     settings::Settings,
     storage::{self, Snapshot, Store},
@@ -90,6 +91,8 @@ pub enum Event {
     DownloadRecovery(String),
     /// A website's permission request waits for the user.
     PermissionPrompt,
+    /// WebKit finished clearing website data, or could not.
+    EngineCleared(bool),
 }
 
 #[derive(Debug)]
@@ -404,6 +407,47 @@ struct Browser {
     last_render: RefCell<String>,
     run_id: u128,
     loads: u64,
+    profile: PathBuf,
+    /// WebKit's context of the website views, once the first one exists.
+    content_context: Option<webkit2gtk::WebContext>,
+    /// A clear of browsing data in progress.
+    clearing: Option<Clearing>,
+    /// The notice, while it is information rather than a problem.
+    info: String,
+}
+
+/// A clear of browsing data: its library half (history, permissions) and its
+/// WebKit half (cookies, site storage, caches) each report back.
+struct Clearing {
+    /// The library job whose reply ends the library half.
+    revision: u64,
+    library_done: bool,
+    engine_done: bool,
+    failed: bool,
+    results: Vec<String>,
+}
+
+/// The WebKit data a clear removes. HSTS is never cleared: forgetting which sites
+/// must use HTTPS would weaken later visits.
+fn engine_kinds(request: &ClearRequest) -> webkit2gtk::WebsiteDataTypes {
+    use webkit2gtk::WebsiteDataTypes as Kind;
+    let mut kinds = Kind::empty();
+    if request.cookies {
+        kinds |= Kind::COOKIES
+            | Kind::SESSION_STORAGE
+            | Kind::LOCAL_STORAGE
+            | Kind::INDEXEDDB_DATABASES
+            | Kind::WEBSQL_DATABASES
+            | Kind::OFFLINE_APPLICATION_CACHE
+            | Kind::SERVICE_WORKER_REGISTRATIONS
+            | Kind::DOM_CACHE
+            | Kind::DEVICE_ID_HASH_SALT
+            | Kind::ITP;
+    }
+    if request.cache {
+        kinds |= Kind::MEMORY_CACHE | Kind::DISK_CACHE | Kind::DOM_CACHE;
+    }
+    kinds
 }
 
 impl Browser {
@@ -487,6 +531,10 @@ impl Browser {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_nanos()),
             loads: 0,
+            profile: profile.to_path_buf(),
+            content_context: None,
+            clearing: None,
+            info: String::new(),
         };
         let restore = !private && browser.settings.restore_session;
         if restore {
@@ -546,6 +594,7 @@ impl Browser {
         {
             linux_downloads::install(&context, self.downloads.clone(), self.proxy.clone());
             self.downloads_hooked = true;
+            self.content_context = Some(context);
         }
         if url != navigation::HOME {
             view.load_url(&url)?;
@@ -811,7 +860,7 @@ impl Browser {
             active_id: active.id,
             search_engine: self.settings.search_engine,
             notice: &self.notice,
-            notice_kind: ui::notice_kind(&self.notice, ""),
+            notice_kind: ui::notice_kind(&self.notice, &self.info),
             panel: self.effective_panel(),
             menu_open: self.menu_open,
             library_panel: self.library_panel,
@@ -1370,6 +1419,7 @@ impl Browser {
                 capability,
                 confirmed,
             } => return self.revoke_permission(origin, capability, confirmed),
+            Command::ClearData(request) => return self.begin_clear(request),
             Command::CancelDownload(id) => self.downloads.borrow_mut().cancel(id),
             Command::OpenDownloadFolder(id) => {
                 let folder = self.downloads.borrow().folder(id);
@@ -1590,6 +1640,157 @@ impl Browser {
         }
         self.persist();
         Ok(())
+    }
+
+    /// Clear the chosen browsing data, as on Windows: every tab closes first so no
+    /// open page keeps or rewrites it, closed tabs are forgotten, and Settings
+    /// stays open over a new tab until both halves report back.
+    fn begin_clear(&mut self, request: ClearRequest) -> Result<(), Box<dyn Error>> {
+        request.validate()?;
+        if self.clearing.is_some() {
+            return Err("Browsing data is already being cleared.".into());
+        }
+        if self.downloads.borrow().active_count() > 0 {
+            return Err("Cancel or finish all downloads before clearing browsing data.".into());
+        }
+        self.permissions.borrow_mut().cancel_all();
+        self.finish_find();
+        self.closed.clear();
+        for tab in std::mem::take(&mut self.tabs.items) {
+            let _ = tab.content.view.set_visible(false);
+        }
+        self.open_tab(navigation::HOME.into())?;
+        self.panel = Some(Panel::Settings);
+        let mut clearing = Clearing {
+            revision: 0,
+            library_done: true,
+            engine_done: true,
+            failed: false,
+            results: Vec::new(),
+        };
+        if request.passwords || request.autofill {
+            clearing.results.push(
+                "Rust Browser on Linux does not save passwords or form data, so there were none to clear."
+                    .into(),
+            );
+        }
+        if request.session {
+            self.settings.restore_session = false;
+            let result = self
+                .store
+                .as_ref()
+                .map(|store| store.forget_session(self.settings.clone()))
+                .unwrap_or(Ok(()))
+                .and_then(|()| {
+                    rust_browser::privacy::clear_session_backups(&self.profile).map(|_| ())
+                });
+            clearing.failed |= result.is_err();
+            clearing.results.push(
+                if result.is_ok() {
+                    "Saved session URLs and session recovery files cleared; restoration is now disabled."
+                } else {
+                    "Session clearing failed or was partial; recovery files may remain."
+                }
+                .into(),
+            );
+        }
+        if request.history || request.permissions {
+            if self.private {
+                // A private window's library lives in memory and goes with it.
+                if request.permissions {
+                    self.permissions.borrow_mut().rules.clear();
+                }
+                clearing.results.push(
+                    "This private window keeps no history or permissions after it closes.".into(),
+                );
+            } else {
+                match self.submit(Action::ClearLibrary {
+                    history: request.history,
+                    permissions: request.permissions,
+                    confirmed: true,
+                }) {
+                    Ok(()) => {
+                        clearing.revision = self.revision;
+                        clearing.library_done = false;
+                        if request.permissions {
+                            self.permissions.borrow_mut().rules.clear();
+                        }
+                    }
+                    Err(_) => {
+                        clearing.failed = true;
+                        clearing
+                            .results
+                            .push("Application database clearing failed.".into());
+                    }
+                }
+            }
+        }
+        let kinds = engine_kinds(&request);
+        if !kinds.is_empty() {
+            match self
+                .content_context
+                .as_ref()
+                .and_then(webkit2gtk::WebContextExt::website_data_manager)
+            {
+                Some(manager) => {
+                    use webkit2gtk::WebsiteDataManagerExtManual;
+                    let proxy = self.proxy.clone();
+                    clearing.engine_done = false;
+                    manager.clear(
+                        kinds,
+                        gtk::glib::TimeSpan(0),
+                        None::<&gtk::gio::Cancellable>,
+                        move |result| {
+                            let _ = proxy.send_event(Event::EngineCleared(result.is_ok()));
+                        },
+                    );
+                }
+                None => {
+                    clearing.failed = true;
+                    clearing
+                        .results
+                        .push("Website data clearing could not start; its data may remain.".into());
+                }
+            }
+        }
+        self.clearing = Some(clearing);
+        self.inform("Clearing selected data. Tabs were closed.".into());
+        self.finish_clear();
+        self.persist();
+        Ok(())
+    }
+
+    /// Show `text` as information rather than a problem.
+    fn inform(&mut self, text: String) {
+        self.info.clone_from(&text);
+        self.notice = text;
+    }
+
+    /// Report the clear once both halves are done.
+    fn finish_clear(&mut self) {
+        if !self
+            .clearing
+            .as_ref()
+            .is_some_and(|c| c.library_done && c.engine_done)
+        {
+            return;
+        }
+        let Some(clear) = self.clearing.take() else {
+            return;
+        };
+        let text = format!(
+            "{} Bookmarks and downloaded files were kept. Library recovery backups were retained and may contain old history or permissions. New browsing can create new data; this is not secure disk erasure.",
+            clear.results.join(" ")
+        )
+        .trim_start()
+        .to_string();
+        // A clear that did not fully succeed is reported as a problem.
+        if clear.failed {
+            self.notice = text;
+        } else {
+            self.inform(text);
+        }
+        self.persist();
     }
 
     /// Deny permission requests whose minute ran out, and keep the toolbar's
@@ -1919,6 +2120,21 @@ impl ApplicationHandler<Event> for App {
             }
             Event::OpenTab(url) => browser.open_tab(url).map(|()| browser.persist()),
             Event::Library(reply) => {
+                if let Some(clear) = &mut browser.clearing
+                    && clear.revision == reply.revision
+                    && !clear.library_done
+                {
+                    clear.library_done = true;
+                    clear.failed |= reply.message.is_some();
+                    clear.results.push(
+                        if reply.message.is_none() {
+                            "Selected application history/permission records cleared."
+                        } else {
+                            "Application database clearing failed; records may remain."
+                        }
+                        .into(),
+                    );
+                }
                 if let Some(message) = reply.message.or(reply.summary) {
                     browser.notice = message;
                 }
@@ -1932,6 +2148,7 @@ impl ApplicationHandler<Event> for App {
                         browser.permissions.borrow_mut().rules = browser.data.permissions.clone();
                     }
                 }
+                browser.finish_clear();
                 Ok(())
             }
             Event::Paste(text) => {
@@ -1983,6 +2200,22 @@ impl ApplicationHandler<Event> for App {
             }
             // The toolbar opens the request under the site badge on its own.
             Event::PermissionPrompt => Ok(()),
+            Event::EngineCleared(ok) => {
+                if let Some(clear) = &mut browser.clearing {
+                    clear.engine_done = true;
+                    clear.failed |= !ok;
+                    clear.results.push(
+                        if ok {
+                            "Cookies, site storage and cached web content as selected were cleared."
+                        } else {
+                            "Website data clearing failed; some may remain."
+                        }
+                        .into(),
+                    );
+                }
+                browser.finish_clear();
+                Ok(())
+            }
         };
         self.after(el, result);
     }
@@ -2047,6 +2280,29 @@ pub fn run(launch: Launch) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clearing_asks_webkit_for_exactly_the_chosen_kinds() {
+        use webkit2gtk::WebsiteDataTypes as Kind;
+        let request = |cookies, cache| ClearRequest {
+            history: true,
+            cookies,
+            cache,
+            permissions: true,
+            confirmed: true,
+            ..ClearRequest::default()
+        };
+        // History and permissions live in the library, not in WebKit.
+        assert!(engine_kinds(&request(false, false)).is_empty());
+        let cookies = engine_kinds(&request(true, false));
+        assert!(cookies.contains(Kind::COOKIES | Kind::LOCAL_STORAGE | Kind::INDEXEDDB_DATABASES));
+        assert!(!cookies.contains(Kind::DISK_CACHE));
+        let cache = engine_kinds(&request(false, true));
+        assert!(cache.contains(Kind::MEMORY_CACHE | Kind::DISK_CACHE));
+        assert!(!cache.contains(Kind::COOKIES));
+        // Which sites must use HTTPS is never forgotten.
+        assert!(!engine_kinds(&request(true, true)).contains(Kind::HSTS_CACHE));
+    }
 
     #[test]
     fn options_and_links_are_read() {
