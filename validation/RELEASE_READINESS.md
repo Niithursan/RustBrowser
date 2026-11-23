@@ -6,6 +6,23 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.22.2 release candidate (2026-11-23)
+
+The v0.22.1 tag build passed (run 45236099610), but the owner's publish run (45239524988) stopped when `native_newtab_tiles_and_background` failed once; it was not published, and tags are never moved. The owner asked for a new release candidate after the test fixes' checks passed. The candidate is `main` at `cdf2bb6` (v0.22.1) plus PR #73 (two native tests wait for state instead of fixed delays; test code only) plus this pull request: version 0.22.2 and its release notes. The browser is unchanged from 0.22.1, the library schema (5) and session format are unchanged, and the installer upgrade check still starts from the published v0.21.0 (`c7c9e15`).
+
+| # | Status |
+| --- | --- |
+| A1 | Local checks on this branch are listed in the pull request; the native suites and installer lifecycle run in its CI, and the release workflow repeats everything on the tag |
+| A2 | No known open data-loss, profile-corruption or crash defect |
+| A3 | Pending CI: upgrade from the published 0.21.0; no schema change |
+| A4, A5 | Not run for this candidate (public-site survey, 30-minute soak); the browser is unchanged from the 0.22.0 candidate |
+| A6 | The owner checklist passed on the 0.22.0 candidate; 0.22.2 changes only the version, notes and two tests |
+| A7 | Section B dispositions unchanged; unsigned builds and no updater remain accepted risks |
+| A8 | README, CHANGELOG, RELEASING and `release-notes/v0.22.2.md` describe this candidate |
+| A9 | To be recorded from the tag run |
+
+The `v0.22.2` tag goes on this pull request's merge commit. Tagging and publishing remain the owner's decisions (see RELEASING.md). Nothing has been tagged or published.
+
 ## v0.22.0 release candidate (2026-11-22)
 
 The owner asked on 2026-11-22 for `main` to become a release candidate. The candidate

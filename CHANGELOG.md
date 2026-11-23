@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.22.1 (release candidate)
+## 0.22.2 (release candidate)
+
+- **Release candidate:** the same browser as 0.22.1, which was tagged but not published: its publishing run stopped when `native_newtab_tiles_and_background` failed once and passed on a re-run. That test and `native_profiles_switch_add_edit_and_delete` now wait for the browser's state instead of fixed delays, and the tile test's timeout reports what it saw (#73). No change to the browser itself.
+
+## 0.22.1 (tagged, not published)
 
 - **Security:** `cookie` (a Wry dependency) is upgraded to 0.18.3 in `Cargo.lock` for RUSTSEC-2026-0594, private cookie nonces that can repeat in processes that fork. The advisory was published while the `v0.22.0` tag build was running, and its `cargo audit` step stopped that build, so v0.22.0 was never published and its changes ship as 0.22.1 with `release-notes/v0.22.1.md`.
 - **Release candidate:** first prepared as 0.22.0; the installer's upgrade check now starts from the published v0.21.0 (`c7c9e15`) instead of the unpublished v0.20 build.
