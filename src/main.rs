@@ -11,6 +11,8 @@ mod engine;
 mod library_worker;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_downloads;
 #[cfg(windows)]
 mod native_activity;
 #[cfg(windows)]

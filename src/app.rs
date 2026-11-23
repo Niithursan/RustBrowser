@@ -4877,11 +4877,7 @@ impl ApplicationHandler<Event> for App {
                     .spawn(move || {
                         let result = native_downloads::choose_folder(owner);
                         if let Ok(Some(folder))=&result {
-                            let notice=match rust_browser::download_recovery::clean_empty_abandoned(folder){
-                                Ok(r) if r.cleaned>0 || r.preserved>0=>Some(format!("Download staging check: {} empty abandoned folders cleaned; {} nonempty or unrecognized owned folders preserved for manual review. Live transfers were kept.",r.cleaned,r.preserved)),
-                                Ok(_)=>None,
-                                Err(_)=>Some("Download staging could not be checked; existing files were preserved.".into()),
-                            };
+                            let notice=rust_browser::download_recovery::staging_notice(&rust_browser::download_recovery::clean_empty_abandoned(folder));
                             if let Some(notice)=notice {let _=proxy.send_event(Event::DownloadRecovery(notice));}
                         }
                         let _ = proxy.send_event(Event::DownloadDestination(id, result));

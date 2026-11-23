@@ -3,17 +3,20 @@
 //!
 //! It reuses everything that is not tied to WebView2: the trusted toolbar page and
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
-//! bookmarks and history library (`library_worker`). What WebView2 alone provides on
-//! Windows (extensions and the shield, downloads, permission prompts, private-data
-//! clearing, multiple windows, profiles, sleeping tabs, password autofill) is not
-//! offered here yet: such commands answer with a notice instead.
+//! bookmarks and history library (`library_worker`), and the download staging rules
+//! (`linux_downloads`). What WebView2 alone provides on Windows (extensions and the
+//! shield, permission prompts, private-data clearing, multiple windows, profiles,
+//! sleeping tabs, password autofill) is not offered here yet: such commands answer
+//! with a notice instead.
 //!
 //! Security model, as on Windows: website views only navigate to HTTP(S) and
-//! `about:blank`, have no command bridge, and are denied every permission and
-//! download; the toolbar is a separate WebKit context that may only show its own
-//! local document; a link a website opens in a new window becomes a tab.
+//! `about:blank`, have no command bridge, are denied every permission, and download
+//! only into a folder the user picks each time; the toolbar is a separate WebKit
+//! context that may only show its own local document and never downloads; a link a
+//! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
+    linux_downloads,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
@@ -69,6 +72,20 @@ pub enum Event {
     /// The clipboard's text arrived for the address field's Paste.
     Paste(String),
     StorageError,
+    /// A download has the server's filename and waits for a folder.
+    DownloadRequested(u64, String),
+    /// The folder chooser closed: the chosen folder, or none when cancelled.
+    DownloadDestination(u64, Option<PathBuf>),
+    /// WebKit stopped a download; whether the user cancelled it.
+    DownloadStopped(u64, bool),
+    /// WebKit wrote the whole file.
+    DownloadDone(u64),
+    /// The file was moved into its folder, or could not be.
+    DownloadFinished(u64, Result<PathBuf, String>),
+    /// A download was refused: not HTTP(S), already active, or too many.
+    DownloadRejected,
+    /// What checking the chosen folder for abandoned staging found.
+    DownloadRecovery(String),
 }
 
 #[derive(Debug)]
@@ -348,6 +365,12 @@ struct Browser {
     tabs: Tabs<Page>,
     closed: ClosedTabs,
     content: WebContext,
+    /// Downloads from website views; hooked to their WebKit context with the
+    /// first view.
+    downloads: linux_downloads::Shared,
+    downloads_hooked: bool,
+    /// When download progress was last read.
+    downloads_polled: Instant,
     proxy: EventLoopProxy<Event>,
     settings: Settings,
     store: Option<Store>,
@@ -430,6 +453,9 @@ impl Browser {
             tabs: Tabs::default(),
             closed: ClosedTabs::default(),
             content: WebContext::new((!private).then(|| profile.join("content"))),
+            downloads: Rc::default(),
+            downloads_hooked: false,
+            downloads_polled: Instant::now(),
             proxy,
             settings: snapshot.settings.clone(),
             store,
@@ -503,6 +529,15 @@ impl Browser {
             id,
             self.private,
         )?;
+        // wry keeps the WebKit context to itself; every website view shares it.
+        // Each view wry builds also adds its default handler, which saves to the
+        // Downloads folder unasked; `linux_downloads` overrides it per download.
+        if !self.downloads_hooked
+            && let Some(context) = view.webview().context()
+        {
+            linux_downloads::install(&context, self.downloads.clone(), self.proxy.clone());
+            self.downloads_hooked = true;
+        }
         if url != navigation::HOME {
             view.load_url(&url)?;
         }
@@ -793,7 +828,7 @@ impl Browser {
             library: &self.data,
             library_folder: self.filter.folder,
             history_enabled: self.settings.history_enabled,
-            downloads: Vec::new(),
+            downloads: self.downloads.borrow().records(),
             profiles: Vec::new(),
             profile_colors: &rust_browser::profiles::COLORS,
             can_add_profile: false,
@@ -1309,6 +1344,13 @@ impl Browser {
                 self.focus(view);
                 view.evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
             }
+            Command::CancelDownload(id) => self.downloads.borrow_mut().cancel(id),
+            Command::OpenDownloadFolder(id) => {
+                let folder = self.downloads.borrow().folder(id);
+                if let Some(folder) = folder {
+                    linux_downloads::open_folder(&folder)?;
+                }
+            }
             _ => return Err(UNSUPPORTED.into()),
         }
         Ok(())
@@ -1388,9 +1430,63 @@ impl Browser {
             }
             PageEvent::Pressed | PageEvent::FindCount(_) => {}
             PageEvent::Blocked => {
-                self.notice =
-                    "Downloads and website permissions are not available on Linux yet.".into();
+                self.notice = "A link to an app or unsupported address was blocked. Only http:// and https:// addresses open here; the page is unchanged.".into();
             }
+        }
+    }
+
+    /// A download is ready for its folder: say so in its tab, list it, and ask.
+    fn download_requested(&mut self, id: u64, suggested: &str) {
+        let view = self.downloads.borrow().view(id);
+        if let Some(tab) = view.and_then(|view| {
+            self.tabs
+                .items
+                .iter_mut()
+                .find(|t| t.content.view.webview() == view)
+        }) {
+            tab.content.state.loading = false;
+            tab.content.state.failed = false;
+            tab.content.state.message = "Download handed to manager.".into();
+        }
+        if self
+            .downloads
+            .borrow_mut()
+            .requested(id, suggested, &self.proxy)
+            && let Err(error) = self.open_library(Panel::Downloads)
+        {
+            self.notice = error.to_string();
+        }
+    }
+
+    /// The folder chooser closed. A chosen folder is first checked for staging
+    /// folders an earlier run abandoned, off the UI thread.
+    fn download_destination(&mut self, id: u64, folder: Option<PathBuf>) {
+        if let Some(folder) = folder.clone() {
+            let proxy = self.proxy.clone();
+            let _ = std::thread::Builder::new()
+                .name("download-staging-check".into())
+                .spawn(move || {
+                    use rust_browser::download_recovery::{clean_empty_abandoned, staging_notice};
+                    if let Some(notice) = staging_notice(&clean_empty_abandoned(&folder)) {
+                        let _ = proxy.send_event(Event::DownloadRecovery(notice));
+                    }
+                });
+        }
+        self.downloads.borrow_mut().destination(id, folder);
+    }
+
+    /// Refresh download progress twice a second while any transfer runs.
+    fn poll_downloads(&mut self) {
+        if self.downloads_polled.elapsed() < Duration::from_millis(500) {
+            return;
+        }
+        self.downloads_polled = Instant::now();
+        let changed = {
+            let mut downloads = self.downloads.borrow_mut();
+            downloads.active_count() > 0 && downloads.poll()
+        };
+        if changed {
+            self.render();
         }
     }
 }
@@ -1551,7 +1647,9 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
 }
 
 /// A website view: HTTP(S) and `about:blank` only, no command bridge, every
-/// permission and download refused, new windows opened as tabs.
+/// permission refused, new windows opened as tabs. Its downloads go to
+/// `linux_downloads`, hooked on the shared WebKit context, not through wry,
+/// whose handler cannot wait for a folder or report progress.
 fn content_view(
     window: &Window,
     context: &mut WebContext,
@@ -1561,7 +1659,6 @@ fn content_view(
 ) -> Result<WebView, Box<dyn Error>> {
     let (title, load, popup, blocked) =
         (proxy.clone(), proxy.clone(), proxy.clone(), proxy.clone());
-    let download = proxy.clone();
     let view = WebViewBuilder::new_with_web_context(context)
         .with_incognito(private)
         .with_devtools(false)
@@ -1581,10 +1678,6 @@ fn content_view(
                 let _ = popup.send_event(Event::OpenTab(url));
             }
             wry::NewWindowResponse::Deny
-        })
-        .with_download_started_handler(move |_, _| {
-            let _ = download.send_event(Event::Page(id, PageEvent::Blocked));
-            false
         })
         .with_document_title_changed_handler(move |text| {
             let _ = title.send_event(Event::Page(id, PageEvent::Title(text)));
@@ -1717,6 +1810,34 @@ impl ApplicationHandler<Event> for App {
                         .into();
                 Ok(())
             }
+            Event::DownloadRequested(id, suggested) => {
+                browser.download_requested(id, &suggested);
+                Ok(())
+            }
+            Event::DownloadDestination(id, folder) => {
+                browser.download_destination(id, folder);
+                Ok(())
+            }
+            Event::DownloadStopped(id, cancelled) => {
+                browser.downloads.borrow_mut().stopped(id, cancelled);
+                Ok(())
+            }
+            Event::DownloadDone(id) => {
+                browser.downloads.borrow_mut().done(id, &browser.proxy);
+                Ok(())
+            }
+            Event::DownloadFinished(id, result) => {
+                browser.downloads.borrow_mut().finished(id, result);
+                Ok(())
+            }
+            Event::DownloadRejected => {
+                browser.notice = "A download from this address is already active, or the download limit was reached.".into();
+                Ok(())
+            }
+            Event::DownloadRecovery(notice) => {
+                browser.notice = notice;
+                Ok(())
+            }
         };
         self.after(el, result);
     }
@@ -1728,6 +1849,7 @@ impl ApplicationHandler<Event> for App {
         match event {
             WindowEvent::CloseRequested => {
                 browser.persist();
+                browser.downloads.borrow_mut().shutdown();
                 el.exit();
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
@@ -1741,6 +1863,9 @@ impl ApplicationHandler<Event> for App {
         // WebKitGTK runs on GTK's main loop; service it between winit's events.
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
+        }
+        if let Some(browser) = &mut self.browser {
+            browser.poll_downloads();
         }
         el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + GTK_TICK));
     }
