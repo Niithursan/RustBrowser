@@ -2,7 +2,7 @@
 
 Only the repository owner creates release tags and approves publishing. Automation
 never creates a tag, and the release workflow publishes only when the owner runs it
-by hand with **publish** turned on. These steps are for v0.22.0, the second published
+by hand with **publish** turned on. These steps are for v0.22.1, the second published
 release; later releases follow the same steps with their own version.
 
 Builds are **not signed**. Windows SmartScreen shows a warning for them; that is
@@ -15,8 +15,8 @@ expected until a signing certificate exists (see
    passed on the merge commit. Check on GitHub: **Actions**, filter by branch `main`,
    and open the newest **CI** and **Dependency security** runs for that commit. Both
    must show a green check. Do not continue if either failed or is still running.
-2. On `main`, `Cargo.toml` says `version = "0.22.0"` and
-   `release-notes/v0.22.0.md` exists. The release workflow refuses a tag that does
+2. On `main`, `Cargo.toml` says `version = "0.22.1"` and
+   `release-notes/v0.22.1.md` exists. The release workflow refuses a tag that does
    not match the Cargo version, and refuses to publish without that notes file.
 3. Your owner checklist results for the release candidate build are recorded, including
    the clean-install check in a new Windows user account.
@@ -30,11 +30,11 @@ git fetch origin
 git switch main
 git pull --ff-only origin main
 git log -1 --format="%H %s"      # must be the release pull request's merge commit
-git tag -a v0.22.0 -m "Rust Browser v0.22.0"
-git push origin v0.22.0
+git tag -a v0.22.1 -m "Rust Browser v0.22.1"
+git push origin v0.22.1
 ```
 
-Use exactly `v0.22.0` (lower-case `v`, three numbers). The workflow refuses anything
+Use exactly `v0.22.1` (lower-case `v`, three numbers). The workflow refuses anything
 else, a tag that is not on `main`, and a tag whose commit is not the one checked out.
 
 ## 2. Check the release workflow run
@@ -42,7 +42,7 @@ else, a tag that is not on `main`, and a tag whose commit is not the one checked
 Pushing the tag starts **Windows release** automatically. This run builds and checks
 everything but does not publish.
 
-1. Open **Actions → Windows release** and select the run for `v0.22.0`.
+1. Open **Actions → Windows release** and select the run for `v0.22.1`.
 2. Wait for the **package** job to finish with a green check. It builds without
    a cache, so expect it to take much longer than a CI run (the v0.21.0 package job
    took 19 minutes; its limit is 40). It runs a clean build, every regular and
@@ -52,15 +52,15 @@ everything but does not publish.
 3. Open the run's **Summary**, then **Artifacts**, and download
    `windows-release-package`. Extract it in an empty folder. It must contain exactly
    five files:
-   - `rust-browser-v0.22.0-windows-x64.zip`
-   - `rust-browser-v0.22.0-windows-x64.zip.sha256`
-   - `rust-browser-v0.22.0-windows-x64-setup.exe`
-   - `rust-browser-v0.22.0-windows-x64-setup.exe.sha256`
-   - `rust-browser-v0.22.0-windows-x64-release.json`
+   - `rust-browser-v0.22.1-windows-x64.zip`
+   - `rust-browser-v0.22.1-windows-x64.zip.sha256`
+   - `rust-browser-v0.22.1-windows-x64-setup.exe`
+   - `rust-browser-v0.22.1-windows-x64-setup.exe.sha256`
+   - `rust-browser-v0.22.1-windows-x64-release.json`
 4. Check the checksums in PowerShell in that folder:
 
    ```powershell
-   foreach ($name in 'rust-browser-v0.22.0-windows-x64.zip', 'rust-browser-v0.22.0-windows-x64-setup.exe') {
+   foreach ($name in 'rust-browser-v0.22.1-windows-x64.zip', 'rust-browser-v0.22.1-windows-x64-setup.exe') {
        $expected = (Get-Content "$name.sha256" -Raw).Trim()
        $actual = (Get-FileHash $name -Algorithm SHA256).Hash.ToLowerInvariant() + "  $name"
        if ($expected -ceq $actual) { "OK   $name" } else { "FAIL $name" }
@@ -71,11 +71,11 @@ everything but does not publish.
    full verifier against the folder:
 
    ```powershell
-   .\packaging\windows\verify-release.ps1 -MetadataPath <folder>\rust-browser-v0.22.0-windows-x64-release.json -ArtifactDirectory <folder> -CurrentVersion 0.0.0
+   .\packaging\windows\verify-release.ps1 -MetadataPath <folder>\rust-browser-v0.22.1-windows-x64-release.json -ArtifactDirectory <folder> -CurrentVersion 0.0.0
    ```
 
-5. Open `rust-browser-v0.22.0-windows-x64-release.json` and confirm `source_commit`
-   is the tag's commit (`git rev-parse v0.22.0^{commit}`) and `version` is `0.22.0`.
+5. Open `rust-browser-v0.22.1-windows-x64-release.json` and confirm `source_commit`
+   is the tag's commit (`git rev-parse v0.22.1^{commit}`) and `version` is `0.22.1`.
 
 If anything fails, do not publish. Delete nothing; report the run ID. A fixed
 release gets a new version number and a new tag; never move an existing tag.
@@ -83,17 +83,17 @@ release gets a new version number and a new tag; never move an existing tag.
 ## 3. Publish
 
 1. Open **Actions → Windows release → Run workflow**.
-2. Branch: leave `main`. **release_tag**: `v0.22.0`. Turn on **publish**.
+2. Branch: leave `main`. **release_tag**: `v0.22.1`. Turn on **publish**.
 3. Select **Run workflow**. The package job runs again from the tag (it does not reuse
    the earlier artifact), then the **publish** job checks the five files, their
    checksums and source commit again and creates the GitHub Release with
-   `release-notes/v0.22.0.md` as its text.
-4. When it is green, open **Releases → Rust Browser v0.22.0** and check that the five
+   `release-notes/v0.22.1.md` as its text.
+4. When it is green, open **Releases → Rust Browser v0.22.1** and check that the five
    files are attached and the notes are the reviewed ones.
 
 ## 4. After publishing
 
-- Download `rust-browser-v0.22.0-windows-x64-setup.exe` from the release page and
+- Download `rust-browser-v0.22.1-windows-x64-setup.exe` from the release page and
   compare its SHA-256 with the `.sha256` file shown there.
 - Record the release run IDs and the tag commit in `validation/RELEASE_READINESS.md`
   on the next development branch.

@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.22.0 (release candidate)
+## 0.22.1 (release candidate)
 
-- **Release candidate:** version 0.22.0 with `release-notes/v0.22.0.md`; the installer's upgrade check now starts from the published v0.21.0 (`c7c9e15`) instead of the unpublished v0.20 build.
+- **Security:** `cookie` (a Wry dependency) is upgraded to 0.18.3 in `Cargo.lock` for RUSTSEC-2026-0594, private cookie nonces that can repeat in processes that fork. The advisory was published while the `v0.22.0` tag build was running, and its `cargo audit` step stopped that build, so v0.22.0 was never published and its changes ship as 0.22.1 with `release-notes/v0.22.1.md`.
+- **Release candidate:** first prepared as 0.22.0; the installer's upgrade check now starts from the published v0.21.0 (`c7c9e15`) instead of the unpublished v0.20 build.
 - **Fix:** the address field's menu (Cut, Copy, Paste, Select all) opens as a dropdown at the pointer, below the toolbar, instead of inside the toolbar view, which had become shorter than the menu and cut it off. Moving focus into it no longer resets the typed address.
 - **Fix:** tabs down the side are 36 pixels tall again. Since the equal-width tab strip (#63) gave every tab a 240-pixel flex basis, each row in the vertical tab column was 240 pixels tall.
 - **Security:** `url` is upgraded to 2.5.9 (and `Cargo.toml` now requires at least 2.5.9) for RUSTSEC-2026-0592, a stack overflow in `Url::origin()` on deeply nested `blob:` URLs that a web page could supply.
