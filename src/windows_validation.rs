@@ -4106,7 +4106,13 @@ const TILES_REPORT: &str = r#"(()=>{const cards=[...document.querySelectorAll('#
 fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
-        0 if p.at.elapsed() > Duration::from_secs(1) => {
+        // Start from a settled window, not after a fixed time.
+        0 if p.at.elapsed() > Duration::from_secs(1)
+            && p.app
+                .session
+                .as_ref()
+                .is_some_and(|s| s.windows.iter().all(loaded)) =>
+        {
             let other = url.replace("127.0.0.1", "localhost");
             let s = p.app.session.as_mut().ok_or("No session")?;
             s.command(Command::AddFavorite {
@@ -4138,7 +4144,19 @@ fn tiles_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                 p.phase = 9;
                 p.next();
             } else if p.at.elapsed() > Duration::from_secs(15) {
-                return Err("The favourite never got its site's icon".into());
+                // Say whether the engine gave the tab an icon at all, or the icon
+                // arrived and was not matched to the favourite.
+                let tab = &s.windows[0].tabs.items[0];
+                return Err(format!(
+                    "The favourite never got its site's icon (tab at {}, loading {}, tab icon {} bytes; favourites: {:?})",
+                    tab.url,
+                    tab.content.state.loading,
+                    tab.content.state.favicon.len(),
+                    favorites
+                        .iter()
+                        .map(|f| (f.url.as_str(), f.icon.len()))
+                        .collect::<Vec<_>>()
+                ));
             }
         }
         10 if p.at.elapsed() > Duration::from_secs(3)
@@ -6034,14 +6052,17 @@ fn profile_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let waited = p.at.elapsed();
     let root = p.root.clone();
     match p.phase {
-        0 if waited > Duration::from_secs(1) => {
+        // The window learns about the second profile from the shared list after
+        // it opens: wait for the title and the button to show it, not a fixed time.
+        0 => {
             let s = p.s()?;
             let title = s.last_title.borrow().clone();
-            if !title.ends_with("Rust Browser - Default") {
+            if title.ends_with("Rust Browser - Default") {
+                eval_toolbar(p, PROFILE_REPORT)?;
+                p.next();
+            } else if waited > Duration::from_secs(10) {
                 return Err(format!("The title does not name the profile: {title}"));
             }
-            eval_toolbar(p, PROFILE_REPORT)?;
-            p.next();
         }
         1 => {
             if let Some(r) = polish_report(p)? {
@@ -6051,7 +6072,11 @@ fn profile_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
                     || r["color"] != "rgb(14, 111, 124)"
                     || r["label"] != "Profile: Default"
                 {
-                    return Err(format!("Wrong profile button: {r}"));
+                    if waited > Duration::from_secs(10) {
+                        return Err(format!("Wrong profile button: {r}"));
+                    }
+                    eval_toolbar(p, PROFILE_REPORT)?;
+                    return Ok(());
                 }
                 eval_toolbar(p, "document.getElementById('profile-button').click()")?;
                 p.next();
