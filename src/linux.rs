@@ -3,20 +3,21 @@
 //!
 //! It reuses everything that is not tied to WebView2: the trusted toolbar page and
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
-//! bookmarks and history library (`library_worker`), and the download staging rules
-//! (`linux_downloads`). What WebView2 alone provides on Windows (extensions and the
-//! shield, permission prompts, private-data clearing, multiple windows, profiles,
-//! sleeping tabs, password autofill) is not offered here yet: such commands answer
-//! with a notice instead.
+//! bookmarks and history library (`library_worker`), the download staging rules
+//! (`linux_downloads`) and the permission rules (`linux_permissions`). What WebView2
+//! alone provides on Windows (extensions and the shield, private-data clearing,
+//! multiple windows, profiles, sleeping tabs, password autofill) is not offered here
+//! yet: such commands answer with a notice instead.
 //!
 //! Security model, as on Windows: website views only navigate to HTTP(S) and
-//! `about:blank`, have no command bridge, are denied every permission, and download
-//! only into a folder the user picks each time; the toolbar is a separate WebKit
+//! `about:blank`, have no command bridge, get a permission only when the user allows
+//! it (or a remembered rule does), and download only into a folder the user picks
+//! each time; the toolbar is a separate WebKit
 //! context that may only show its own local document and never downloads; a link a
 //! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
-    linux_downloads,
+    linux_downloads, linux_permissions,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
@@ -27,6 +28,7 @@ use rust_browser::{
     },
     library::{Action, Data, Filter},
     navigation,
+    security::{self, Capability, Decision, Rule},
     settings::Settings,
     storage::{self, Snapshot, Store},
     tabs::{ClosedTabs, MAX_TABS, TabId, Tabs},
@@ -38,7 +40,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use webkit2gtk::{FindControllerExt, PermissionRequestExt, WebViewExt};
+use webkit2gtk::{FindControllerExt, WebViewExt};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
@@ -86,6 +88,8 @@ pub enum Event {
     DownloadRejected,
     /// What checking the chosen folder for abandoned staging found.
     DownloadRecovery(String),
+    /// A website's permission request waits for the user.
+    PermissionPrompt,
 }
 
 #[derive(Debug)]
@@ -368,6 +372,8 @@ struct Browser {
     /// Downloads from website views; hooked to their WebKit context with the
     /// first view.
     downloads: linux_downloads::Shared,
+    /// Website permission requests and remembered answers.
+    permissions: linux_permissions::Shared,
     downloads_hooked: bool,
     /// When download progress was last read.
     downloads_polled: Instant,
@@ -454,6 +460,7 @@ impl Browser {
             closed: ClosedTabs::default(),
             content: WebContext::new((!private).then(|| profile.join("content"))),
             downloads: Rc::default(),
+            permissions: Rc::default(),
             downloads_hooked: false,
             downloads_polled: Instant::now(),
             proxy,
@@ -506,6 +513,7 @@ impl Browser {
         if browser.settings.vertical_tabs {
             browser.ensure_side(Role::Tabs)?;
         }
+        browser.claim_permissions();
         browser.layout();
         browser.refresh_library();
         Ok(browser)
@@ -526,6 +534,7 @@ impl Browser {
             &self.window,
             &mut self.content,
             self.proxy.clone(),
+            self.permissions.clone(),
             id,
             self.private,
         )?;
@@ -780,8 +789,8 @@ impl Browser {
             private: self.private,
             restore_session: self.settings.restore_session,
             security,
-            permission_prompt: None,
-            permission_seconds: None,
+            permission_prompt: self.permissions.borrow().prompt(),
+            permission_seconds: self.permissions.borrow().prompt_seconds_left(),
             busy: false,
             page,
             tabs: self
@@ -880,6 +889,7 @@ impl Browser {
     }
 
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn Error>> {
+        self.permissions.borrow_mut().cancel_tab(id);
         if let Some(tab) = self.tabs.close(id) {
             let _ = tab.content.view.set_visible(false);
             if navigation::allowed(&tab.url) {
@@ -1210,7 +1220,13 @@ impl Browser {
             }
             Command::ReopenClosedTab => {
                 let url = self.closed.pop().ok_or("No closed tab to reopen.")?;
-                self.open_tab(url)?;
+                // As on Windows: the reopened page is shown, not a panel over it,
+                // and an address that cannot open again stays reopenable.
+                self.panel = None;
+                if let Err(error) = self.open_tab(url.clone()) {
+                    self.closed.push(url);
+                    return Err(error);
+                }
                 self.persist();
             }
             Command::OpenSaved { url, new_tab } => {
@@ -1344,6 +1360,16 @@ impl Browser {
                 self.focus(view);
                 view.evaluate_script("window.focusActiveTab && window.focusActiveTab()")?;
             }
+            Command::PermissionDecision {
+                id,
+                decision,
+                remember,
+            } => return self.permission_decision(id, decision, remember),
+            Command::RevokePermission {
+                origin,
+                capability,
+                confirmed,
+            } => return self.revoke_permission(origin, capability, confirmed),
             Command::CancelDownload(id) => self.downloads.borrow_mut().cancel(id),
             Command::OpenDownloadFolder(id) => {
                 let folder = self.downloads.borrow().folder(id);
@@ -1381,6 +1407,8 @@ impl Browser {
         };
         match event {
             PageEvent::Started(url) => {
+                // A new page cannot answer the old page's requests.
+                self.permissions.borrow_mut().cancel_tab(id);
                 if navigation::allowed(&url) {
                     tab.url.clone_from(&url);
                     tab.content.state.url = url;
@@ -1475,12 +1503,114 @@ impl Browser {
         self.downloads.borrow_mut().destination(id, folder);
     }
 
+    /// Only the selected tab may ask for a permission; selecting another tab
+    /// denies what was waiting.
+    fn claim_permissions(&mut self) {
+        let next = self.tabs.active().map(|tab| tab.id);
+        let mut permissions = self.permissions.borrow_mut();
+        if permissions.active != next {
+            permissions.cancel_all();
+        }
+        permissions.active = next;
+    }
+
+    /// The user answered the request shown in the toolbar.
+    fn permission_decision(
+        &mut self,
+        id: u64,
+        decision: Decision,
+        remember: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        let prompt = self.permissions.borrow().prompt();
+        let Some(prompt) = prompt.filter(|p| p.id == id) else {
+            return Ok(());
+        };
+        let tab = self.tabs.active().filter(|t| t.id == prompt.tab);
+        let current = tab
+            .and_then(|t| t.content.view.url().ok())
+            .and_then(|url| security::origin(&url));
+        if current.as_deref() != Some(prompt.origin.as_str()) {
+            self.permissions.borrow_mut().resolve(id, Decision::Deny);
+            return Err("Permission request expired after navigation.".into());
+        }
+        if remember {
+            // A private window remembers only until it closes.
+            if !self.private {
+                self.submit(Action::SetPermission {
+                    origin: prompt.origin.clone(),
+                    capability: prompt.capability,
+                    decision: Some(decision),
+                })?;
+            }
+            self.permissions.borrow_mut().remember(Rule {
+                origin: prompt.origin,
+                capability: prompt.capability,
+                decision,
+            });
+        }
+        self.permissions.borrow_mut().resolve(id, decision);
+        // The answer was given over the page; give it the keyboard back.
+        if let Some(tab) = self.tabs.active() {
+            self.focus(&tab.content.view);
+        }
+        Ok(())
+    }
+
+    /// Forget a remembered answer. The site's tabs close, so a camera or
+    /// microphone it was given stops at once, as Settings says.
+    fn revoke_permission(
+        &mut self,
+        origin: String,
+        capability: Capability,
+        confirmed: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        if !confirmed || security::permission_origin(&origin).as_deref() != Some(origin.as_str()) {
+            return Err("Invalid or unconfirmed permission revocation.".into());
+        }
+        if !self.private {
+            self.submit(Action::SetPermission {
+                origin: origin.clone(),
+                capability,
+                decision: None,
+            })?;
+        }
+        self.permissions
+            .borrow_mut()
+            .rules
+            .retain(|r| !(r.origin == origin && r.capability == capability));
+        let closing: Vec<_> = self
+            .tabs
+            .items
+            .iter()
+            .filter(|t| security::origin(&t.url).as_deref() == Some(origin.as_str()))
+            .map(|t| t.id)
+            .collect();
+        for id in closing {
+            self.close_tab(id)?;
+        }
+        self.persist();
+        Ok(())
+    }
+
+    /// Deny permission requests whose minute ran out, and keep the toolbar's
+    /// countdown current.
+    fn expire_permissions(&mut self) {
+        let (expired, waiting) = {
+            let mut permissions = self.permissions.borrow_mut();
+            (permissions.expire(), permissions.prompt().is_some())
+        };
+        if expired || waiting {
+            self.render();
+        }
+    }
+
     /// Refresh download progress twice a second while any transfer runs.
     fn poll_downloads(&mut self) {
         if self.downloads_polled.elapsed() < Duration::from_millis(500) {
             return;
         }
         self.downloads_polled = Instant::now();
+        self.expire_permissions();
         let changed = {
             let mut downloads = self.downloads.borrow_mut();
             downloads.active_count() > 0 && downloads.poll()
@@ -1646,14 +1776,15 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
         .unwrap_or_else(|_| wry::http::Response::new((&[] as &[u8]).into()))
 }
 
-/// A website view: HTTP(S) and `about:blank` only, no command bridge, every
-/// permission refused, new windows opened as tabs. Its downloads go to
+/// A website view: HTTP(S) and `about:blank` only, no command bridge, permission
+/// requests to `linux_permissions`, new windows opened as tabs. Its downloads go to
 /// `linux_downloads`, hooked on the shared WebKit context, not through wry,
 /// whose handler cannot wait for a folder or report progress.
 fn content_view(
     window: &Window,
     context: &mut WebContext,
     proxy: EventLoopProxy<Event>,
+    permissions: linux_permissions::Shared,
     id: TabId,
     private: bool,
 ) -> Result<WebView, Box<dyn Error>> {
@@ -1692,10 +1823,16 @@ fn content_view(
         .build_as_child(window)?;
     let engine = view.webview();
     shortcuts(&engine, proxy.clone());
-    // Every permission request (camera, microphone, location, notifications) is
-    // refused until Linux has the prompt Windows has.
-    engine.connect_permission_request(|_, request| {
-        request.deny();
+    // Every request is answered (now, or after the prompt), never by WebKit.
+    let asked = proxy.clone();
+    engine.connect_permission_request(move |engine, request| {
+        let url = engine.uri();
+        if permissions
+            .borrow_mut()
+            .request(id, url.as_deref(), request)
+        {
+            let _ = asked.send_event(Event::PermissionPrompt);
+        }
         true
     });
     if let Some(finder) = engine.find_controller() {
@@ -1740,6 +1877,7 @@ impl App {
         if let Err(error) = result {
             browser.notice = error.to_string();
         }
+        browser.claim_permissions();
         browser.layout();
         browser.render();
         let _ = el;
@@ -1788,6 +1926,11 @@ impl ApplicationHandler<Event> for App {
                     && reply.revision >= browser.revision.saturating_sub(64)
                 {
                     browser.data = *data;
+                    // A private window's library is empty: its rules live only
+                    // in the permission manager.
+                    if !browser.private {
+                        browser.permissions.borrow_mut().rules = browser.data.permissions.clone();
+                    }
                 }
                 Ok(())
             }
@@ -1838,6 +1981,8 @@ impl ApplicationHandler<Event> for App {
                 browser.notice = notice;
                 Ok(())
             }
+            // The toolbar opens the request under the site badge on its own.
+            Event::PermissionPrompt => Ok(()),
         };
         self.after(el, result);
     }
