@@ -396,6 +396,19 @@ pub fn repeatable(command: &Command) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The tab strip gives each tab a 240-pixel flex basis; in the vertical tab
+    /// column (a flex column) that basis would become each tab's height.
+    #[test]
+    fn vertical_tabs_keep_their_row_height() {
+        let rule = HTML
+            .split("html[data-role=tabs] .tab{")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("vertical tab rule");
+        assert!(rule.contains("flex:0 0 auto"), "{rule}");
+        assert!(rule.contains("height:36px"), "{rule}");
+    }
+
     #[test]
     fn action_feedback_respects_reduced_motion() {
         assert!(

@@ -1,12 +1,12 @@
-# Rust Browser 0.21.0
+# Rust Browser 0.22.0
 
 A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
 **Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
 WebView2 Runtime. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
 
-v0.20 is the first published release; download it from the
-[Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
+v0.21.0 is the first published release and 0.22.0 is the next release candidate;
+download releases from the [Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
 [Install a release](#install-a-release)). It brings a new layout: tabs are cards
 with the page's icon, the toolbar has icon buttons, a bookmark star in the address
 line and one Menu (⋮) holding every other action. You can add browser extensions

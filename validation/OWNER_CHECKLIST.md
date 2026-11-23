@@ -1,4 +1,4 @@
-# Owner checklist (about 115 minutes)
+# Owner checklist (about 130 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -412,9 +412,10 @@ drawn over it; the width changes and stops at a sensible minimum and maximum; Pr
 6. Open a private window (Ctrl+Shift+N).
 7. Turn the setting off from a normal window, then open another private window.
 
-**Pass:** both windows change at once each time; the column, toolbar, page and library
-never overlap; every tab action works in the column; full screen gives the video the
-whole width under the toolbar; the private window shows tabs down the side and its
+**Pass:** both windows change at once each time; each tab in the column is one row
+tall; the column, toolbar, page and library never overlap; every tab action works in
+the column; full screen gives the video the whole screen and the column returns when
+it ends; the private window shows tabs down the side and its
 switch cannot be changed there; turning it off brings the tab strip back in both
 normal windows, and the new private window has the strip.
 
@@ -481,11 +482,57 @@ Use the bundle's disposable profile throughout (the launcher sets it).
 profile and Add profile, opens the chosen one, and closing it opens nothing; Work can
 be deleted only once its windows are closed, and it disappears after confirming.
 
+## 39. Tab menu and middle-click (3 minutes)
+
+1. Open four tabs. Right-click the second tab, then press Shift+F10 on a tab you
+   reach with Tab and the arrow keys.
+2. From the menu: Duplicate, Pin, Move right, then Close other tabs on one tab, and
+   Reopen closed tab.
+3. Middle-click a pinned tab and an ordinary tab.
+
+**Pass:** each action acts on the tab you opened the menu on, not the selected one;
+pinned tabs survive Close other tabs; middle-click closes both tabs.
+
+## 40. Bookmark menus (4 minutes)
+
+1. Bookmark two pages into a folder on the bookmarks bar (star, then choose the
+   folder), and one page straight onto the bar.
+2. Right-click the bar bookmark: open it in a new tab, a new window and a private
+   window; then rename it with Edit and copy its link into the address field.
+3. Right-click the folder: Open all in tabs, Rename, then Delete and confirm.
+
+**Pass:** each action does what it says; Delete asks first and removes the folder
+but keeps the bookmarks that were inside it.
+
+## 41. A full-screen video (3 minutes)
+
+1. Maximize the window, play a video and press its full-screen button.
+2. Wait five seconds, then press Esc.
+3. Repeat from a restored window with tabs down the side and the library open.
+
+**Pass:** the video covers the whole monitor, taskbar included, with no toolbar; for
+about four seconds a notice at the top names the site and says to press Esc; Esc
+brings back the window as it was, with its tab column and library.
+
+## 42. The blocker's own panel (3 minutes)
+
+Do this with uBlock Origin Lite added (item 28).
+
+1. Open a news site and click the shield.
+2. Change the filtering mode for the site, then close the panel by clicking the page.
+3. Click the shield twice, then switch tabs with the panel open.
+4. Right-click the shield.
+
+**Pass:** uBlock Origin Lite's own panel opens under the shield and acts on the
+current page; it closes on a click elsewhere, a second shield click, Escape and a tab
+switch; right-click shows the shield's details dropdown.
+
 ## Reporting
 
 Report every item as pass, fail or not tested, with the exact version/commit
-and executable SHA-256 from the bundle's `owner.json`. For the v0.21.0 candidate,
-items 1, 2, 3, 4, 12 to 14, 29, 30 and 35 to 38 matter most. The historical 2026-11-10 report covered only items 1 to 8
+and executable SHA-256 from the bundle's `owner.json`. For the v0.22.0 candidate,
+items 1, 2, 3, 4, 12 to 14, 28, 30, 33 and 36 to 42 matter most (the v0.21.0
+candidate passed every item on bundle `o-656195c3`). The historical 2026-11-10 report covered only items 1 to 8
 on bundle o-d8ee96f5, not the new items or a later candidate.
 For a failure, include one sentence about what happened. Share only screenshots
 without credentials, private messages, meeting links or other sensitive data.

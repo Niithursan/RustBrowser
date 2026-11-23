@@ -6,6 +6,34 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.22.0 release candidate (2026-11-22)
+
+The owner asked on 2026-11-22 for `main` to become a release candidate. The candidate
+is `main` at `c062982` (PR #70) plus this pull request: version 0.22.0, its release
+notes, the vertical-tab row fix and an installer upgrade check that now starts from
+the published v0.21.0 (`c7c9e15`). The library schema (5) and session format are
+unchanged from 0.21.0, so upgrading runs no migration. Linux work is on a separate
+branch and is not part of this candidate.
+
+Criteria status for this candidate:
+
+| # | Status |
+| --- | --- |
+| A1 | Partly passed locally on this branch: fmt, strict Clippy, every regular test (193, with the 59 native tests left to CI), the 27 workflow script tests, `cargo audit` (no advisories) and a clean release build reporting 0.22.0. The native suites and installer lifecycle run in this pull request's CI; the release workflow repeats everything on the tag |
+| A2 | No known open data-loss, profile-corruption or crash defect |
+| A3 | Pending CI: the installer test now upgrades from the published 0.21.0 Setup and payload and checks user data is kept; no schema change |
+| A4 | Not yet run for this candidate (public-site survey) |
+| A5 | Not yet run for this candidate (30-minute churn soak) |
+| A6 | Pending: owner checklist on a bundle of the exact candidate, especially the new items 39 to 42 and the corrected item 33 |
+| A7 | Section B dispositions unchanged; unsigned builds and no updater remain accepted risks |
+| A8 | README, CHANGELOG, RELEASING and `release-notes/v0.22.0.md` describe this candidate |
+| A9 | To be recorded from the owner bundle's `owner.json` and the tag run |
+
+The `v0.22.0` tag goes on this pull request's merge commit, because the publish job
+reads `release-notes/v0.22.0.md` from the tagged commit. Declaring the candidate
+final, tagging and publishing remain the owner's decisions (see RELEASING.md).
+Nothing has been tagged or published.
+
 ## v0.21.0 release candidate (2026-11-18)
 
 The owner asked for a release candidate on 2026-11-18 and chose **v0.21.0 as the
