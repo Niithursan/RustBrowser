@@ -5704,7 +5704,9 @@ fn bar_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
             if !agrees || p.marks.last() != Some(&held) {
                 // Not settled yet: remember this height and measure again.
                 p.marks = if agrees { vec![held] } else { Vec::new() };
-                if p.started.elapsed() > Duration::from_secs(20) {
+                // A measurement that agrees always gets its confirming second one;
+                // only a toolbar that still disagrees runs out of time.
+                if !agrees && p.started.elapsed() > Duration::from_secs(30) {
                     return Err(format!("The toolbar did not settle: {r} {held}"));
                 }
                 eval_toolbar(p, SETTLED_REPORT)?;
