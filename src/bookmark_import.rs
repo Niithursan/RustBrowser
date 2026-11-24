@@ -2,7 +2,7 @@
 //! Firefox, Chrome and Edge export). The file is hostile input: it is scanned as
 //! text only. Nothing in it is executed, fetched, resolved or followed; only the
 //! `HREF` of each link and the text of links and folder headings are read.
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read, path::Path};
 
 /// Largest file read (10 MiB). Real exports with thousands of bookmarks and
 /// embedded icons stay well below this.
@@ -17,6 +17,27 @@ pub const MAX_TITLE: usize = 256;
 pub const MAX_FOLDER: usize = 80;
 /// Longest address accepted (the library's limit); longer links are refused.
 pub const MAX_URL: usize = 8192;
+
+/// Read a chosen bookmarks file, refusing a folder, or a file larger than
+/// `MAX_FILE_BYTES` before reading it all. Messages are for the user.
+pub fn read_file(path: &Path) -> Result<Vec<u8>, String> {
+    let file =
+        std::fs::File::open(path).map_err(|_| "The file could not be opened.".to_string())?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "The file could not be read.".to_string())?;
+    if !metadata.is_file() {
+        return Err("Choose a file, not a folder.".into());
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(FileError::TooLarge.message());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "The file could not be read.".to_string())?;
+    Ok(bytes)
+}
 
 /// Why a whole file was refused. Nothing is imported from a refused file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
