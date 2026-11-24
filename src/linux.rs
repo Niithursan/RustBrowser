@@ -1,13 +1,14 @@
-//! The Linux front end: one browser window drawn by winit on X11 (XWayland in a
-//! Wayland session), with WebKitGTK views from wry.
+//! The Linux front end: browser windows drawn by winit on X11 (XWayland in a
+//! Wayland session), with WebKitGTK views from wry. Normal windows of a profile
+//! share one process, as on Windows; a private window runs in its own process.
 //!
 //! It reuses everything that is not tied to WebView2: the trusted toolbar page and
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
 //! bookmarks and history library (`library_worker`), the download staging rules
 //! (`linux_downloads`) and the permission rules (`linux_permissions`). What WebView2
-//! alone provides on Windows (extensions and the shield, multiple windows, profiles,
-//! sleeping tabs, password autofill) is not offered here yet: such commands answer
-//! with a notice instead. Clearing browsing data uses WebKit's own data manager.
+//! alone provides on Windows (extensions and the shield, profiles, sleeping tabs,
+//! password autofill) is not offered here yet: such commands answer with a notice
+//! instead. Clearing browsing data uses WebKit's own data manager.
 //!
 //! Security model, as on Windows: website views only navigate to HTTP(S) and
 //! `about:blank`, have no command bridge, get a permission only when the user allows
@@ -31,7 +32,7 @@ use rust_browser::{
     privacy::ClearRequest,
     security::{self, Capability, Decision, Rule},
     settings::Settings,
-    storage::{self, Snapshot, Store},
+    storage::{self, MAX_WINDOWS, Snapshot, Store, WindowSnapshot},
     tabs::{ClosedTabs, MAX_TABS, TabId, Tabs},
 };
 use std::{
@@ -63,17 +64,25 @@ const ZOOM_STEPS: [f64; 13] = [
 const FIND_LIMIT: u32 = 1000;
 const UNSUPPORTED: &str = "That is not available on Linux yet.";
 
+/// Where a command came from: a window's trusted views, or a key pressed in a
+/// tab's website view.
+#[derive(Clone, Copy, Debug)]
+pub enum Source {
+    Window(WindowId),
+    Tab(TabId),
+}
+
 /// What reaches the event loop from views, GTK handlers and worker threads.
 #[derive(Debug)]
 pub enum Event {
-    /// From the trusted toolbar view.
-    Command(Command),
+    /// From a trusted view, or a shortcut in a website view.
+    Command(Source, Command),
     Page(TabId, PageEvent),
-    /// A website asked for a new window: the address opens as a tab.
-    OpenTab(String),
+    /// A website in tab `.0` asked for a new window: the address opens as a tab.
+    OpenTab(TabId, String),
     Library(library_worker::Reply),
-    /// The clipboard's text arrived for the address field's Paste.
-    Paste(String),
+    /// The clipboard's text arrived for that window's address field.
+    Paste(WindowId, String),
     StorageError,
     /// A download has the server's filename and waits for a folder.
     DownloadRequested(u64, String),
@@ -127,11 +136,13 @@ pub struct Launch {
 /// arguments after the program name.
 pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Launch, String> {
     let mut launch = Launch::default();
+    let mut links_only = false;
     for arg in args {
         match arg.as_str() {
-            "--private" => launch.private = true,
-            "--version" => launch.version = true,
-            other if other.starts_with("--") => {
+            "--" if !links_only => links_only = true,
+            "--private" if !links_only => launch.private = true,
+            "--version" if !links_only => launch.version = true,
+            other if !links_only && other.starts_with("--") => {
                 return Err(format!("Unknown option {other}."));
             }
             link => launch
@@ -360,17 +371,55 @@ fn next_zoom(current: f64, increase: bool) -> f64 {
     }
 }
 
-struct Browser {
-    window: Window,
-    toolbar: WebView,
+/// One browser window: its views and what it shows. Fields drop in order, so the
+/// views go before the window that holds them.
+struct Win {
+    tabs: Tabs<Page>,
     /// The vertical tab column and the library column, built when first needed
     /// and hidden, not destroyed, when not shown; each with its last render.
     tabs_view: Option<(WebView, RefCell<String>)>,
     library_view: Option<(WebView, RefCell<String>)>,
+    toolbar: WebView,
+    /// Tabs closed in this window, for "Reopen closed tab".
+    closed: ClosedTabs,
+    panel: Option<Panel>,
+    /// What the library column shows, while it is open.
+    library_panel: Option<Panel>,
+    library_width: f64,
+    menu_open: bool,
+    /// Where the open dropdown is drawn in the toolbar view.
+    menu_area: Option<ClipArea>,
+    fullscreen: bool,
+    /// The tab and text of the find bar's last search.
+    find: Option<(TabId, String)>,
+    /// Until when the page that entered fullscreen is named, and its host.
+    fullscreen_notice: Option<(Instant, String)>,
+    chrome: f64,
+    notice: String,
+    /// The notice, while it is information rather than a problem.
+    info: String,
+    last_render: RefCell<String>,
+    window: Window,
+}
+
+/// The browser: its windows and what they share (one profile's store, library,
+/// settings, WebKit contexts, downloads and permissions). It dereferences to the
+/// window an event is being handled in (`current`), as on Windows.
+struct Browser {
+    // First field: windows and their views drop before the contexts below.
+    windows: Vec<Win>,
+    current: usize,
+    /// One allocator for every window, so a tab ID names one tab in one window.
+    tab_ids: Rc<Cell<TabId>>,
+    /// Window IDs, most recently focused first.
+    focus_order: Vec<WindowId>,
+    /// Tabs (address, pinned) of windows closed this run, newest first, for
+    /// "Reopen closed window". In memory only, like closed tabs.
+    closed_windows: Vec<Vec<(String, bool)>>,
+    /// Windows the last save left out for its size, already announced.
+    unsaved_windows: Vec<WindowId>,
     toolbar_context: WebContext,
     shaper: Option<Shaper>,
-    tabs: Tabs<Page>,
-    closed: ClosedTabs,
     content: WebContext,
     /// Downloads from website views; hooked to their WebKit context with the
     /// first view.
@@ -386,25 +435,10 @@ struct Browser {
     library: Worker,
     data: Data,
     filter: Filter,
+    /// The bookmarks-bar folder an open dropdown lists.
+    menu_folder: Option<i64>,
     revision: u64,
     private: bool,
-    panel: Option<Panel>,
-    /// What the library column shows, while it is open.
-    library_panel: Option<Panel>,
-    library_width: f64,
-    menu_open: bool,
-    /// Where the open dropdown is drawn in the toolbar view.
-    menu_area: Option<ClipArea>,
-    /// The bookmarks-bar folder the open dropdown lists.
-    menu_folder: Option<i64>,
-    fullscreen: bool,
-    /// The tab and text of the find bar's last search.
-    find: Option<(TabId, String)>,
-    /// Until when the page that entered fullscreen is named, and its host.
-    fullscreen_notice: Option<(Instant, String)>,
-    chrome: f64,
-    notice: String,
-    last_render: RefCell<String>,
     run_id: u128,
     loads: u64,
     profile: PathBuf,
@@ -412,8 +446,103 @@ struct Browser {
     content_context: Option<webkit2gtk::WebContext>,
     /// A clear of browsing data in progress.
     clearing: Option<Clearing>,
-    /// The notice, while it is information rather than a problem.
-    info: String,
+}
+
+impl std::ops::Deref for Browser {
+    type Target = Win;
+    fn deref(&self) -> &Win {
+        &self.windows[self.current]
+    }
+}
+
+impl std::ops::DerefMut for Browser {
+    fn deref_mut(&mut self) -> &mut Win {
+        &mut self.windows[self.current]
+    }
+}
+
+/// The order windows are saved in: `main` first, then the others most recently
+/// focused first, then any never focused.
+fn save_order<T: PartialEq>(windows: &[T], focus: &[T], main: usize) -> Vec<usize> {
+    let mut order = vec![main];
+    for index in focus
+        .iter()
+        .filter_map(|id| windows.iter().position(|w| w == id))
+        .chain(0..windows.len())
+    {
+        if !order.contains(&index) {
+            order.push(index);
+        }
+    }
+    order
+}
+
+/// A window's tabs as saved: the new-tab page and valid addresses only.
+fn window_snapshot(tabs: &Tabs<Page>) -> WindowSnapshot {
+    WindowSnapshot {
+        tabs: tabs
+            .items
+            .iter()
+            .map(|tab| {
+                if tab.url == navigation::HOME || navigation::address(&tab.url).is_ok() {
+                    tab.url.clone()
+                } else {
+                    navigation::HOME.into()
+                }
+            })
+            .collect(),
+        active: tabs.active_index(),
+        pinned: tabs.items.iter().map(|tab| tab.pinned).collect(),
+        titles: tabs
+            .items
+            .iter()
+            .map(|tab| {
+                tab.title
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(120)
+                    .collect()
+            })
+            .collect(),
+        keep_awake: Vec::new(),
+    }
+}
+
+/// How a window is named in a notice: its selected tab's title or address.
+fn window_label(tabs: &Tabs<Page>) -> String {
+    let name = tabs
+        .active()
+        .map(|tab| {
+            if tab.title.trim().is_empty() {
+                tab.url.as_str()
+            } else {
+                tab.title.as_str()
+            }
+        })
+        .unwrap_or("New tab");
+    let mut label: String = name.chars().filter(|c| !c.is_control()).take(40).collect();
+    if name.chars().count() > 40 {
+        label.push('\u{2026}');
+    }
+    label
+}
+
+/// The arguments that open a private window, showing `link` if given.
+fn private_args(link: Option<&str>) -> Vec<String> {
+    let mut args = vec!["--private".to_string()];
+    if let Some(link) = link {
+        // After `--`, so an address can never be read as an option.
+        args.extend(["--".to_string(), link.to_string()]);
+    }
+    args
+}
+
+/// Start a private window: another process of this program, with nothing saved.
+fn open_private(link: Option<&str>) -> std::io::Result<()> {
+    std::process::Command::new(std::env::current_exe()?)
+        .args(private_args(link))
+        .spawn()
+        .map(|_| ())
 }
 
 /// A clear of browsing data: its library half (history, permissions) and its
@@ -467,21 +596,6 @@ impl Browser {
             })?;
             (Some(store), snapshot)
         };
-        let window = event_loop.create_window(
-            Window::default_attributes()
-                .with_title("Rust Browser")
-                .with_decorations(false)
-                .with_inner_size(LogicalSize::new(1200.0, 820.0))
-                .with_min_inner_size(LogicalSize::new(480.0, 360.0)),
-        )?;
-        let mut toolbar_context = WebContext::new((!private).then(|| profile.join("toolbar")));
-        let toolbar = toolbar_view(
-            &window,
-            &mut toolbar_context,
-            proxy.clone(),
-            private,
-            Role::Toolbar,
-        )?;
         let library_proxy = proxy.clone();
         let library = Worker::start(
             if private {
@@ -494,14 +608,14 @@ impl Browser {
             },
         )?;
         let mut browser = Self {
-            window,
-            toolbar,
-            tabs_view: None,
-            library_view: None,
-            toolbar_context,
+            windows: Vec::new(),
+            current: 0,
+            tab_ids: Rc::new(Cell::new(1)),
+            focus_order: Vec::new(),
+            closed_windows: Vec::new(),
+            unsaved_windows: Vec::new(),
+            toolbar_context: WebContext::new((!private).then(|| profile.join("toolbar"))),
             shaper: Shaper::open(),
-            tabs: Tabs::default(),
-            closed: ClosedTabs::default(),
             content: WebContext::new((!private).then(|| profile.join("content"))),
             downloads: Rc::default(),
             permissions: Rc::default(),
@@ -513,20 +627,9 @@ impl Browser {
             library,
             data: Data::default(),
             filter: Filter::default(),
+            menu_folder: None,
             revision: 0,
             private,
-            panel: None,
-            library_panel: None,
-            library_width: LIBRARY_WIDTH,
-            menu_open: false,
-            menu_area: None,
-            menu_folder: None,
-            fullscreen: false,
-            find: None,
-            fullscreen_notice: None,
-            chrome: DEFAULT_CHROME,
-            notice: String::new(),
-            last_render: RefCell::new(String::new()),
             run_id: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_nanos()),
@@ -534,37 +637,280 @@ impl Browser {
             profile: profile.to_path_buf(),
             content_context: None,
             clearing: None,
-            info: String::new(),
         };
         let restore = !private && browser.settings.restore_session;
+        let main = restore.then(|| WindowSnapshot {
+            tabs: snapshot.tabs.clone(),
+            active: snapshot.active,
+            pinned: snapshot.pinned.clone(),
+            titles: snapshot.titles.clone(),
+            keep_awake: Vec::new(),
+        });
+        // The other saved windows open first, behind; the main one, last focused,
+        // opens last so it is in front and gets the keyboard.
+        let mut failed = None;
         if restore {
-            for (index, url) in snapshot.tabs.iter().enumerate().take(MAX_TABS) {
-                if browser.open_tab(url.clone()).is_ok()
-                    && let Some(tab) = browser.tabs.active_mut()
+            for other in snapshot.other_windows.iter().take(MAX_WINDOWS - 1) {
+                if let Err(error) =
+                    browser.open_window(event_loop, Some(other.clone()), Vec::new(), false)
                 {
-                    tab.pinned = snapshot.pinned.get(index).copied().unwrap_or(false);
-                    if let Some(title) = snapshot.titles.get(index) {
+                    failed.get_or_insert(format!("A saved window could not be reopened: {error}"));
+                }
+            }
+        }
+        browser.open_window(event_loop, main, links, true)?;
+        if let Some(notice) = failed {
+            browser.notice = notice;
+        }
+        browser.claim_permissions();
+        browser.layout_all();
+        browser.refresh_library();
+        Ok(browser)
+    }
+
+    /// Open a window with `restore`'s tabs, then `links`, or else the new-tab
+    /// page, and make it the current one. A `foreground` window is focused; one
+    /// restored behind the first goes last in the focus order.
+    fn open_window(
+        &mut self,
+        el: &ActiveEventLoop,
+        restore: Option<WindowSnapshot>,
+        links: Vec<String>,
+        foreground: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.private && !self.windows.is_empty() {
+            return Err("New windows open from a normal window. Use Ctrl+Shift+N for another private window.".into());
+        }
+        if self.windows.len() >= MAX_WINDOWS {
+            return Err(format!(
+                "At most {MAX_WINDOWS} windows can be open. Close a window to open another."
+            )
+            .into());
+        }
+        let window = el.create_window(
+            Window::default_attributes()
+                .with_title("Rust Browser")
+                .with_decorations(false)
+                .with_inner_size(LogicalSize::new(1200.0, 820.0))
+                .with_min_inner_size(LogicalSize::new(480.0, 360.0)),
+        )?;
+        let toolbar = toolbar_view(
+            &window,
+            &mut self.toolbar_context,
+            self.proxy.clone(),
+            self.private,
+            Role::Toolbar,
+        )?;
+        let id = window.id();
+        self.windows.push(Win {
+            tabs: Tabs::with_ids(self.tab_ids.clone()),
+            tabs_view: None,
+            library_view: None,
+            toolbar,
+            closed: ClosedTabs::default(),
+            panel: None,
+            library_panel: None,
+            library_width: LIBRARY_WIDTH,
+            menu_open: false,
+            menu_area: None,
+            fullscreen: false,
+            find: None,
+            fullscreen_notice: None,
+            chrome: DEFAULT_CHROME,
+            notice: String::new(),
+            info: String::new(),
+            last_render: RefCell::new(String::new()),
+            window,
+        });
+        self.current = self.windows.len() - 1;
+        if foreground {
+            self.focus_order.insert(0, id);
+        } else {
+            self.focus_order.push(id);
+        }
+        if let Err(error) = self.fill_window(restore, links) {
+            self.remove_window(self.current, false);
+            self.current = self.focused_index();
+            return Err(error);
+        }
+        if foreground {
+            self.window.focus_window();
+        }
+        Ok(())
+    }
+
+    /// Open the current (new) window's tabs and its tab column.
+    fn fill_window(
+        &mut self,
+        restore: Option<WindowSnapshot>,
+        links: Vec<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        if let Some(restore) = restore {
+            for (index, url) in restore.tabs.iter().enumerate().take(MAX_TABS) {
+                if self.open_tab(url.clone()).is_ok()
+                    && let Some(tab) = self.tabs.active_mut()
+                {
+                    tab.pinned = restore.pinned.get(index).copied().unwrap_or(false);
+                    if let Some(title) = restore.titles.get(index) {
                         tab.title.clone_from(title);
                     }
                 }
             }
-            if let Some(id) = browser.tabs.items.get(snapshot.active).map(|t| t.id) {
-                browser.tabs.select(id);
+            if let Some(id) = self.tabs.items.get(restore.active).map(|t| t.id) {
+                self.tabs.select(id);
             }
         }
         for link in links {
-            let _ = browser.open_tab(link);
+            let _ = self.open_tab(link);
         }
-        if browser.tabs.items.is_empty() {
-            browser.open_tab(navigation::HOME.into())?;
+        if self.tabs.items.is_empty() {
+            self.open_tab(navigation::HOME.into())?;
         }
-        if browser.settings.vertical_tabs {
-            browser.ensure_side(Role::Tabs)?;
+        if self.settings.vertical_tabs {
+            self.ensure_side(Role::Tabs)?;
         }
-        browser.claim_permissions();
-        browser.layout();
-        browser.refresh_library();
-        Ok(browser)
+        Ok(())
+    }
+
+    /// Take window `index` away: hide it, forget its tabs' waiting requests,
+    /// and keep its tabs for "Reopen closed window" when `remember` is set.
+    fn remove_window(&mut self, index: usize, remember: bool) {
+        let win = self.windows.remove(index);
+        if remember {
+            let tabs: Vec<(String, bool)> = win
+                .tabs
+                .items
+                .iter()
+                .filter(|t| t.url == navigation::HOME || navigation::allowed(&t.url))
+                .map(|t| (t.url.clone(), t.pinned))
+                .collect();
+            self.closed_windows.insert(0, tabs);
+            self.closed_windows.truncate(MAX_WINDOWS);
+        }
+        {
+            let mut permissions = self.permissions.borrow_mut();
+            for tab in &win.tabs.items {
+                permissions.cancel_tab(tab.id);
+                let _ = tab.content.view.set_visible(false);
+            }
+        }
+        let _ = win.toolbar.set_visible(false);
+        win.window.set_visible(false);
+        let id = win.window.id();
+        self.focus_order.retain(|w| *w != id);
+        self.unsaved_windows.retain(|w| *w != id);
+        self.current = self.current.min(self.windows.len().saturating_sub(1));
+    }
+
+    /// Close the window being handled; closing the last one ends the browser.
+    fn close_window(&mut self, el: &ActiveEventLoop) -> Result<(), Box<dyn Error>> {
+        if self.clearing.is_some() {
+            return Err("Wait for the clearing result before closing the browser.".into());
+        }
+        if self.windows.len() == 1 {
+            self.shutdown(el);
+            return Ok(());
+        }
+        let tabs = self
+            .tabs
+            .items
+            .iter()
+            .filter(|t| t.url != navigation::HOME)
+            .count();
+        self.remove_window(self.current, true);
+        self.current = self.focused_index();
+        if tabs > 0 {
+            self.inform(format!(
+                "A window with {tabs} tab{} was closed. Menu (\u{22ee}) > Reopen closed window brings it back until Rust Browser exits.",
+                if tabs == 1 { "" } else { "s" }
+            ));
+        }
+        self.persist();
+        self.window.focus_window();
+        Ok(())
+    }
+
+    /// Reopen the most recently closed window of this run.
+    fn reopen_window(&mut self, el: &ActiveEventLoop) -> Result<(), Box<dyn Error>> {
+        let tabs = self
+            .closed_windows
+            .first()
+            .cloned()
+            .ok_or("No window was closed in this session.")?;
+        let restore = WindowSnapshot {
+            pinned: tabs.iter().map(|(_, pinned)| *pinned).collect(),
+            tabs: tabs.into_iter().map(|(url, _)| url).collect(),
+            ..WindowSnapshot::default()
+        };
+        self.open_window(el, Some(restore), Vec::new(), true)?;
+        self.closed_windows.remove(0);
+        self.persist();
+        Ok(())
+    }
+
+    /// Save every window and end the browser.
+    fn shutdown(&mut self, el: &ActiveEventLoop) {
+        self.persist();
+        self.downloads.borrow_mut().shutdown();
+        el.exit();
+    }
+
+    /// The most recently focused window that is still open.
+    fn focused_index(&self) -> usize {
+        self.focus_order
+            .iter()
+            .find_map(|id| self.windows.iter().position(|w| w.window.id() == *id))
+            .unwrap_or(0)
+    }
+
+    /// Window `id` was focused.
+    fn focused(&mut self, id: WindowId) {
+        self.focus_order.retain(|w| *w != id);
+        self.focus_order.insert(0, id);
+    }
+
+    /// Handle what follows in window `id`; false when it has closed.
+    fn select_window(&mut self, id: WindowId) -> bool {
+        match self.windows.iter().position(|w| w.window.id() == id) {
+            Some(index) => {
+                self.current = index;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Handle what follows in the window holding tab `id`; false when it closed.
+    fn select_tab_window(&mut self, id: TabId) -> bool {
+        match self
+            .windows
+            .iter()
+            .position(|w| w.tabs.items.iter().any(|t| t.id == id))
+        {
+            Some(index) => {
+                self.current = index;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Run `each` in every window in turn, then return to the current one.
+    fn each_window(&mut self, mut each: impl FnMut(&mut Self)) {
+        let current = self.current;
+        for index in 0..self.windows.len() {
+            self.current = index;
+            each(self);
+        }
+        self.current = current.min(self.windows.len().saturating_sub(1));
+    }
+
+    fn layout_all(&mut self) {
+        self.each_window(|browser| browser.layout());
+    }
+
+    fn render_all(&mut self) {
+        self.each_window(|browser| browser.render());
     }
 
     /// Add a tab at `url` (an HTTP(S) address or the new-tab page) and select it.
@@ -579,7 +925,7 @@ impl Browser {
         }
         let id = self.tabs.next_id();
         let view = content_view(
-            &self.window,
+            &self.windows[self.current].window,
             &mut self.content,
             self.proxy.clone(),
             self.permissions.clone(),
@@ -736,7 +1082,7 @@ impl Browser {
             return Ok(());
         }
         let view = toolbar_view(
-            &self.window,
+            &self.windows[self.current].window,
             &mut self.toolbar_context,
             self.proxy.clone(),
             self.private,
@@ -778,22 +1124,64 @@ impl Browser {
         }
     }
 
-    fn persist(&self) {
-        let Some(store) = &self.store else {
+    /// Save every window: the most recently focused one in the format 1 fields,
+    /// the others in `other_windows`, which is left out if it would make the file
+    /// larger than every version accepts.
+    fn persist(&mut self) {
+        if self.store.is_none() || self.windows.is_empty() {
             return;
-        };
-        let restore = self.settings.restore_session;
-        let tabs: Vec<_> = self.tabs.items.iter().filter(|_| restore).collect();
-        let snapshot = Snapshot {
-            tabs: tabs.iter().map(|t| t.url.clone()).collect(),
-            active: if restore { self.tabs.active_index() } else { 0 },
-            pinned: tabs.iter().map(|t| t.pinned).collect(),
-            titles: tabs.iter().map(|t| t.title.clone()).collect(),
-            keep_awake: tabs.iter().map(|_| false).collect(),
+        }
+        let main = self.focused_index();
+        let first = window_snapshot(&self.windows[main].tabs);
+        let ids: Vec<WindowId> = self.windows.iter().map(|w| w.window.id()).collect();
+        let others: Vec<usize> = save_order(&ids, &self.focus_order, main)
+            .into_iter()
+            .skip(1)
+            .collect();
+        let mut snapshot = Snapshot {
+            version: 1,
+            tabs: first.tabs,
+            active: first.active,
             settings: self.settings.clone(),
-            ..Snapshot::default()
+            pinned: first.pinned,
+            titles: first.titles,
+            keep_awake: Vec::new(),
+            other_windows: others
+                .iter()
+                .take(MAX_WINDOWS - 1)
+                .map(|index| window_snapshot(&self.windows[*index].tabs))
+                .collect(),
         };
-        store.queue(snapshot);
+        // Least recently focused windows are left out first; say once which.
+        let dropped = storage::trim_to_fit(&mut snapshot);
+        let kept = snapshot.other_windows.len();
+        let unsaved: Vec<usize> = others.iter().copied().skip(kept).take(dropped).collect();
+        let unsaved_ids: Vec<WindowId> = unsaved.iter().map(|i| ids[*i]).collect();
+        if unsaved_ids
+            .iter()
+            .any(|id| !self.unsaved_windows.contains(id))
+        {
+            let labels: Vec<String> = unsaved
+                .iter()
+                .map(|i| window_label(&self.windows[*i].tabs))
+                .collect();
+            let (count, them) = if labels.len() == 1 {
+                ("1 window".to_string(), "It stays")
+            } else {
+                (format!("{} windows", labels.len()), "They stay")
+            };
+            self.windows[main].notice = format!(
+                "{count} will not be restored next time because the saved session would be larger than 1 MiB: {}. {them} open now; close some tabs to save every window.",
+                labels.join(", ")
+            );
+        }
+        self.unsaved_windows = unsaved_ids;
+        if let (Some(store), Some(snapshot)) = (
+            &self.store,
+            rust_browser::privacy::persistent_snapshot(snapshot, self.private),
+        ) {
+            store.queue(snapshot);
+        }
     }
 
     fn submit(&mut self, action: Action) -> Result<(), Box<dyn Error>> {
@@ -830,6 +1218,16 @@ impl Browser {
         let security = rust_browser::security::indicator(&active.url, page.loading, page.failed);
         let zoom = active.content.zoom;
         let plan = self.current_layout();
+        let (prompt, prompt_seconds) = {
+            let permissions = self.permissions.borrow();
+            match permissions
+                .prompt()
+                .filter(|p| self.tabs.items.iter().any(|t| t.id == p.tab))
+            {
+                Some(prompt) => (Some(prompt), permissions.prompt_seconds_left()),
+                None => (None, None),
+            }
+        };
         let state = ToolbarState {
             zoom_percent: ((zoom - 1.0).abs() > 0.001).then(|| (zoom * 100.0).round() as u32),
             page_tools: self.effective_panel().is_none() && navigation::allowed(&active.url),
@@ -838,8 +1236,8 @@ impl Browser {
             private: self.private,
             restore_session: self.settings.restore_session,
             security,
-            permission_prompt: self.permissions.borrow().prompt(),
-            permission_seconds: self.permissions.borrow().prompt_seconds_left(),
+            permission_prompt: prompt,
+            permission_seconds: prompt_seconds,
             busy: false,
             page,
             tabs: self
@@ -961,9 +1359,31 @@ impl Browser {
             }
             Command::MinimizeWindow => self.window.set_minimized(true),
             Command::ToggleMaximize => self.window.set_maximized(!self.window.is_maximized()),
-            Command::CloseWindow | Command::ExitBrowser => {
+            Command::CloseWindow => return self.close_window(el),
+            Command::ExitBrowser => {
+                if self.clearing.is_some() {
+                    return Err("Wait for the clearing result before closing the browser.".into());
+                }
+                self.shutdown(el);
+            }
+            Command::NewWindow => {
+                self.open_window(el, None, Vec::new(), true)?;
                 self.persist();
-                el.exit();
+            }
+            Command::OpenSavedWindow(url) => {
+                let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
+                let restore = WindowSnapshot {
+                    tabs: vec![url],
+                    ..WindowSnapshot::default()
+                };
+                self.open_window(el, Some(restore), Vec::new(), true)?;
+                self.persist();
+            }
+            Command::ReopenClosedWindow => return self.reopen_window(el),
+            Command::NewPrivateWindow => open_private(None)?,
+            Command::OpenSavedPrivate(url) => {
+                let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
+                open_private(Some(&url))?;
             }
             Command::DragWindow => {
                 let _ = self.window.drag_window();
@@ -1028,7 +1448,15 @@ impl Browser {
                 }
                 self.settings.vertical_tabs = on;
                 if on {
-                    self.ensure_side(Role::Tabs)?;
+                    let mut failed = None;
+                    self.each_window(|browser| {
+                        if let Err(error) = browser.ensure_side(Role::Tabs) {
+                            failed.get_or_insert(error.to_string());
+                        }
+                    });
+                    if let Some(error) = failed {
+                        return Err(error.into());
+                    }
                 }
                 self.persist();
             }
@@ -1389,9 +1817,10 @@ impl Browser {
             }
             Command::PasteAddress => {
                 let proxy = self.proxy.clone();
+                let window = self.window.id();
                 gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).request_text(move |_, text| {
                     if let Some(text) = text {
-                        let _ = proxy.send_event(Event::Paste(text.to_string()));
+                        let _ = proxy.send_event(Event::Paste(window, text.to_string()));
                     }
                 });
             }
@@ -1452,7 +1881,8 @@ impl Browser {
             return;
         }
         let history = self.settings.history_enabled && !self.private;
-        let Some(tab) = self.tabs.get_mut(id) else {
+        let current = self.current;
+        let Some(tab) = self.windows[current].tabs.get_mut(id) else {
             return;
         };
         match event {
@@ -1516,12 +1946,19 @@ impl Browser {
     /// A download is ready for its folder: say so in its tab, list it, and ask.
     fn download_requested(&mut self, id: u64, suggested: &str) {
         let view = self.downloads.borrow().view(id);
-        if let Some(tab) = view.and_then(|view| {
-            self.tabs
-                .items
-                .iter_mut()
-                .find(|t| t.content.view.webview() == view)
-        }) {
+        let tab = view.and_then(|view| {
+            self.windows.iter().enumerate().find_map(|(index, w)| {
+                w.tabs
+                    .items
+                    .iter()
+                    .find(|t| t.content.view.webview() == view)
+                    .map(|t| (index, t.id))
+            })
+        });
+        if let Some((index, _)) = tab {
+            self.current = index;
+        }
+        if let Some(tab) = tab.and_then(|(_, tab)| self.tabs.get_mut(tab)) {
             tab.content.state.loading = false;
             tab.content.state.failed = false;
             tab.content.state.message = "Download handed to manager.".into();
@@ -1556,7 +1993,11 @@ impl Browser {
     /// Only the selected tab may ask for a permission; selecting another tab
     /// denies what was waiting.
     fn claim_permissions(&mut self) {
-        let next = self.tabs.active().map(|tab| tab.id);
+        let next = self
+            .windows
+            .get(self.focused_index())
+            .and_then(|w| w.tabs.active())
+            .map(|tab| tab.id);
         let mut permissions = self.permissions.borrow_mut();
         if permissions.active != next {
             permissions.cancel_all();
@@ -1628,17 +2069,25 @@ impl Browser {
             .borrow_mut()
             .rules
             .retain(|r| !(r.origin == origin && r.capability == capability));
-        let closing: Vec<_> = self
-            .tabs
-            .items
-            .iter()
-            .filter(|t| security::origin(&t.url).as_deref() == Some(origin.as_str()))
-            .map(|t| t.id)
-            .collect();
-        for id in closing {
-            self.close_tab(id)?;
-        }
+        let mut failed = None;
+        self.each_window(|browser| {
+            let closing: Vec<_> = browser
+                .tabs
+                .items
+                .iter()
+                .filter(|t| security::origin(&t.url).as_deref() == Some(origin.as_str()))
+                .map(|t| t.id)
+                .collect();
+            for id in closing {
+                if let Err(error) = browser.close_tab(id) {
+                    failed.get_or_insert(error.to_string());
+                }
+            }
+        });
         self.persist();
+        if let Some(error) = failed {
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -1653,6 +2102,15 @@ impl Browser {
         if self.downloads.borrow().active_count() > 0 {
             return Err("Cancel or finish all downloads before clearing browsing data.".into());
         }
+        // No other window may keep a page open, and none can be reopened.
+        self.closed_windows.clear();
+        let keep = self.current;
+        for index in (0..self.windows.len()).rev() {
+            if index != keep {
+                self.remove_window(index, false);
+            }
+        }
+        self.current = 0;
         self.permissions.borrow_mut().cancel_all();
         self.finish_find();
         self.closed.clear();
@@ -1801,7 +2259,7 @@ impl Browser {
             (permissions.expire(), permissions.prompt().is_some())
         };
         if expired || waiting {
-            self.render();
+            self.render_all();
         }
     }
 
@@ -1817,7 +2275,7 @@ impl Browser {
             downloads.active_count() > 0 && downloads.poll()
         };
         if changed {
-            self.render();
+            self.render_all();
         }
     }
 }
@@ -1856,16 +2314,17 @@ fn toolbar_view(
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_ipc_handler({
             let proxy = proxy.clone();
+            let source = Source::Window(window.id());
             move |request| {
                 if request.body().len() <= 16384
                     && let Ok(command) = serde_json::from_str::<Command>(request.body())
                 {
-                    let _ = proxy.send_event(Event::Command(command));
+                    let _ = proxy.send_event(Event::Command(source, command));
                 }
             }
         })
         .build_as_child(window)?;
-    shortcuts(&view.webview(), proxy);
+    shortcuts(&view.webview(), proxy, Source::Window(window.id()));
     Ok(view)
 }
 
@@ -1902,7 +2361,7 @@ fn repeated(held: &Cell<Option<u16>>, keycode: u16) -> bool {
 /// The browser's shortcuts on a view, as Windows registers them on every
 /// WebView2 controller: they run before the page sees the key. Escape also
 /// reaches the page (fullscreen, selects and dialogs), and Ctrl+wheel zooms.
-fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>) {
+fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>, source: Source) {
     use gtk::{gdk::ModifierType, glib::Propagation, prelude::WidgetExt};
     let held = Rc::new(Cell::new(None));
     let released = Rc::clone(&held);
@@ -1919,7 +2378,7 @@ fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>) {
             return Propagation::Proceed;
         };
         if !repeated(&held, key.hardware_keycode()) || ui::repeatable(&command) {
-            let _ = keys.send_event(Event::Command(command));
+            let _ = keys.send_event(Event::Command(source, command));
         }
         if code == 0x1b {
             Propagation::Proceed
@@ -1950,7 +2409,7 @@ fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>) {
             } else {
                 Command::ZoomOut
             };
-            let _ = proxy.send_event(Event::Command(command));
+            let _ = proxy.send_event(Event::Command(source, command));
         }
         Propagation::Stop
     });
@@ -2007,7 +2466,7 @@ fn content_view(
         })
         .with_new_window_req_handler(move |url, _| {
             if navigation::allowed(&url) {
-                let _ = popup.send_event(Event::OpenTab(url));
+                let _ = popup.send_event(Event::OpenTab(id, url));
             }
             wry::NewWindowResponse::Deny
         })
@@ -2023,7 +2482,7 @@ fn content_view(
         })
         .build_as_child(window)?;
     let engine = view.webview();
-    shortcuts(&engine, proxy.clone());
+    shortcuts(&engine, proxy.clone(), Source::Tab(id));
     // Every request is answered (now, or after the prompt), never by WebKit.
     let asked = proxy.clone();
     engine.connect_permission_request(move |engine, request| {
@@ -2078,10 +2537,12 @@ impl App {
         if let Err(error) = result {
             browser.notice = error.to_string();
         }
+        if el.exiting() {
+            return;
+        }
         browser.claim_permissions();
-        browser.layout();
-        browser.render();
-        let _ = el;
+        browser.layout_all();
+        browser.render_all();
     }
 }
 
@@ -2112,13 +2573,29 @@ impl ApplicationHandler<Event> for App {
         let Some(browser) = &mut self.browser else {
             return;
         };
+        // Events not tied to a window are shown in the focused one.
+        browser.current = browser.focused_index();
         let result = match event {
-            Event::Command(command) => browser.command(el, command),
+            Event::Command(source, command) => {
+                let found = match source {
+                    Source::Window(id) => browser.select_window(id),
+                    Source::Tab(id) => browser.select_tab_window(id),
+                };
+                if !found {
+                    return;
+                }
+                browser.command(el, command)
+            }
             Event::Page(id, event) => {
-                browser.page_event(id, event);
+                if browser.select_tab_window(id) {
+                    browser.page_event(id, event);
+                }
                 Ok(())
             }
-            Event::OpenTab(url) => browser.open_tab(url).map(|()| browser.persist()),
+            Event::OpenTab(id, url) => {
+                browser.select_tab_window(id);
+                browser.open_tab(url).map(|()| browser.persist())
+            }
             Event::Library(reply) => {
                 if let Some(clear) = &mut browser.clearing
                     && clear.revision == reply.revision
@@ -2151,7 +2628,10 @@ impl ApplicationHandler<Event> for App {
                 browser.finish_clear();
                 Ok(())
             }
-            Event::Paste(text) => {
+            Event::Paste(window, text) => {
+                if !browser.select_window(window) {
+                    return;
+                }
                 let text = navigation::paste_text(&text);
                 serde_json::to_string(&text)
                     .map_err(Into::into)
@@ -2220,15 +2700,22 @@ impl ApplicationHandler<Event> for App {
         self.after(el, result);
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let Some(browser) = &mut self.browser else {
             return;
         };
+        if !browser.select_window(id) {
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => {
+                let result = browser.close_window(el);
+                self.after(el, result);
+            }
+            WindowEvent::Focused(true) => {
+                browser.focused(id);
                 browser.persist();
-                browser.downloads.borrow_mut().shutdown();
-                el.exit();
+                self.after(el, Ok(()));
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.after(el, Ok(()));
@@ -2315,6 +2802,31 @@ mod tests {
         assert!(args(&["--unknown"]).is_err());
         assert!(args(&["javascript:alert(1)"]).is_err());
         assert!(args(&["file:///etc/passwd"]).is_err());
+        // After `--`, everything is a link, even what looks like an option.
+        let launch = args(&["--", "https://example.com/"]).unwrap();
+        assert!(!launch.private);
+        assert_eq!(launch.links, ["https://example.com/"]);
+        assert!(args(&["--", "--private"]).is_err());
+    }
+
+    #[test]
+    fn a_private_window_starts_with_its_link_after_the_options() {
+        let launch = parse_args(private_args(None)).unwrap();
+        assert!(launch.private && launch.links.is_empty());
+        let launch = parse_args(private_args(Some("https://example.com/a"))).unwrap();
+        assert!(launch.private);
+        assert_eq!(launch.links, ["https://example.com/a"]);
+    }
+
+    #[test]
+    fn windows_are_saved_main_first_then_by_recent_focus() {
+        // Windows 10, 20, 30, 40; 30 then 10 were focused, 20 and 40 never.
+        let windows = [10, 20, 30, 40];
+        assert_eq!(save_order(&windows, &[30, 10], 2), [2, 0, 1, 3]);
+        // The main window is first even when not first in the focus order, and
+        // closed windows still in the focus order are skipped.
+        assert_eq!(save_order(&windows, &[99, 10, 30], 3), [3, 0, 2, 1]);
+        assert_eq!(save_order(&[7], &[], 0), [0]);
     }
 
     #[test]
