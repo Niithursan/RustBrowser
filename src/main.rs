@@ -19,6 +19,8 @@ mod linux_handoff;
 mod linux_permissions;
 #[cfg(target_os = "linux")]
 mod linux_picker;
+#[cfg(target_os = "linux")]
+mod linux_shield;
 #[cfg(windows)]
 mod native_activity;
 #[cfg(windows)]

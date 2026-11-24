@@ -921,6 +921,7 @@ impl Session {
                                 .take(1024)
                                 .collect(),
                             blocks,
+                            disabled: false,
                         });
                 }
                 self.inform(format!(

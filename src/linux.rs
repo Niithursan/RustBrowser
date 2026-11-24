@@ -24,7 +24,7 @@
 //! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
-    linux_downloads, linux_handoff, linux_permissions,
+    linux_downloads, linux_handoff, linux_permissions, linux_shield,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
@@ -119,6 +119,15 @@ pub enum Event {
     BookmarkFile(Option<PathBuf>),
     /// The chosen bookmarks file, read and parsed, or why it was refused.
     BookmarksRead(Result<rust_browser::bookmark_import::Parsed, String>),
+    /// The extension folder chooser closed: the chosen folder, or none.
+    ExtensionFolder(Option<PathBuf>),
+    /// An extension's blocking rules, translated off the UI thread, or why not.
+    ExtensionRules(
+        String,
+        Result<rust_browser::content_rules::Translated, String>,
+    ),
+    /// A shield filter finished loading or compiling (`Shield::finished`).
+    ShieldReady,
 }
 
 #[derive(Debug)]
@@ -515,6 +524,13 @@ struct Browser {
     background_at: Instant,
     /// The file chooser of Bookmarks > Import, while it is open.
     import_chooser: Option<gtk::FileChooserNative>,
+    /// Extensions' blocking rules as WebKit content filters.
+    shield: linux_shield::Shield,
+    /// Extensions whose kept filter could not load and are being compiled
+    /// again from their folder.
+    rebuilding: std::collections::HashSet<String>,
+    /// The folder chooser of Settings > Extensions, while it is open.
+    extension_chooser: Option<gtk::FileChooserNative>,
 }
 
 impl std::ops::Deref for Browser {
@@ -596,6 +612,15 @@ fn window_label(tabs: &Tabs<Page>) -> String {
     label
 }
 
+/// "1 blocking rule", "2 blocking rules".
+fn blocking_rules(count: usize) -> String {
+    if count == 1 {
+        "1 blocking rule".into()
+    } else {
+        format!("{count} blocking rules")
+    }
+}
+
 /// Start profile `id` in another process of this program (`launch::profile_args`):
 /// a private window, or a profile that hands over to the browser already
 /// holding it. Its exit is collected, so no finished process stays behind.
@@ -664,6 +689,15 @@ impl Browser {
                 (Some(store), snapshot)
             }
         };
+        let shield_proxy = proxy.clone();
+        let shield = linux_shield::Shield::new(
+            (!private)
+                .then(|| profile.join("content-filters"))
+                .as_deref(),
+            Rc::new(move || {
+                let _ = shield_proxy.send_event(Event::ShieldReady);
+            }),
+        );
         let library_proxy = proxy.clone();
         let library = Worker::start(
             if private {
@@ -714,6 +748,9 @@ impl Browser {
             started: Instant::now(),
             background_at: Instant::now(),
             import_chooser: None,
+            shield,
+            rebuilding: std::collections::HashSet::new(),
+            extension_chooser: None,
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -741,6 +778,7 @@ impl Browser {
         }
         browser.refresh_profiles();
         if !private {
+            browser.load_shield();
             browser.start_handoff();
             let root = browser.profiles_root.clone();
             let id = browser.profile_id.clone();
@@ -1139,6 +1177,333 @@ impl Browser {
     }
 
     /// Bookmarks > Import: ask for an exported bookmarks file.
+    /// Whether the user's extension `id` is added and on.
+    fn extension_on(settings: &Settings, id: &str) -> bool {
+        settings
+            .extensions
+            .iter()
+            .any(|e| e.id == id && !e.disabled)
+    }
+
+    /// Give a website view the filters of the extensions that are on. Private
+    /// windows never use extensions.
+    fn shield_view(&self, view: &WebView) {
+        if self.private {
+            return;
+        }
+        let settings = &self.settings;
+        linux_shield::apply(
+            &view.webview(),
+            self.shield.active(|id| Self::extension_on(settings, id)),
+        );
+    }
+
+    /// Give every website view the filters of the extensions that are on.
+    fn apply_shield(&self) {
+        for win in &self.windows {
+            for tab in &win.tabs.items {
+                if let Some(view) = &tab.content.view {
+                    self.shield_view(view);
+                }
+            }
+        }
+    }
+
+    /// Load the kept filters of the extensions that are on.
+    fn load_shield(&mut self) {
+        let on: Vec<String> = self
+            .settings
+            .extensions
+            .iter()
+            .filter(|e| !e.disabled)
+            .map(|e| e.id.clone())
+            .collect();
+        for id in on {
+            self.shield.load(&id);
+        }
+    }
+
+    /// The extensions for Settings > Extensions and the shield.
+    fn extension_rows(&self) -> Vec<ui::ExtensionRow> {
+        self.settings
+            .extensions
+            .iter()
+            .map(|e| ui::ExtensionRow {
+                id: e.id.clone(),
+                name: e.name.clone(),
+                version: e.version.clone(),
+                folder: e.folder.clone(),
+                state: if e.disabled {
+                    "off"
+                } else if self.shield.failed.contains(&e.id) {
+                    "missing"
+                } else {
+                    "on"
+                },
+                blocks: e.blocks,
+                popup: false,
+            })
+            .collect()
+    }
+
+    /// Settings > Extensions > Add from folder: choose the folder.
+    fn choose_extension_folder(&mut self) -> Result<(), Box<dyn Error>> {
+        use gtk::prelude::NativeDialogExt;
+        if self.private {
+            return Err(
+                "Add extensions from a normal window; private windows never use extensions.".into(),
+            );
+        }
+        if self.settings.extensions.len() >= rust_browser::settings::MAX_EXTENSIONS {
+            return Err(format!(
+                "At most {} extensions can be added. Remove one first.",
+                rust_browser::settings::MAX_EXTENSIONS
+            )
+            .into());
+        }
+        if self.shield.adding.is_some() {
+            return Err("Wait until the extension being added is ready.".into());
+        }
+        if self.extension_chooser.is_some() {
+            return Err("Choose the extension's folder in the window that is already open.".into());
+        }
+        let chooser = gtk::FileChooserNative::new(
+            Some("Add extension (its folder, with manifest.json)"),
+            None::<&gtk::Window>,
+            gtk::FileChooserAction::SelectFolder,
+            Some("Add"),
+            Some("Cancel"),
+        );
+        // GTK would open on Recent, where no folder can be chosen.
+        {
+            use gtk::prelude::FileChooserExt;
+            chooser.set_current_folder(gtk::glib::home_dir());
+        }
+        let proxy = self.proxy.clone();
+        chooser.connect_response(move |chooser, response| {
+            use gtk::prelude::FileChooserExt;
+            let folder = (response == gtk::ResponseType::Accept)
+                .then(|| chooser.filename())
+                .flatten();
+            let _ = proxy.send_event(Event::ExtensionFolder(folder));
+        });
+        chooser.show();
+        self.extension_chooser = Some(chooser);
+        Ok(())
+    }
+
+    /// Read an extension's rules off the UI thread; `Event::ExtensionRules`
+    /// brings them back.
+    fn read_extension_rules(&self, id: String, folder: PathBuf) -> Result<(), Box<dyn Error>> {
+        let proxy = self.proxy.clone();
+        std::thread::Builder::new()
+            .name("extension-rules".into())
+            .spawn(move || {
+                let result = rust_browser::content_rules::read_extension(&folder);
+                let _ = proxy.send_event(Event::ExtensionRules(id, result));
+            })
+            .map_err(|_| "Could not start reading the extension's rules.")?;
+        Ok(())
+    }
+
+    /// The extension folder chooser closed. A chosen folder is checked here;
+    /// its rules are then read off the UI thread and compiled by WebKit.
+    fn extension_folder(&mut self, folder: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+        use gtk::prelude::NativeDialogExt;
+        use rust_browser::extension_manifest as manifest;
+        if let Some(chooser) = self.extension_chooser.take() {
+            chooser.destroy();
+        }
+        let Some(folder) = folder else {
+            return Ok(());
+        };
+        if self.private || self.shield.adding.is_some() {
+            return Ok(());
+        }
+        let folder = folder.canonicalize().unwrap_or(folder);
+        let (version, blocks) = manifest::check_folder(&folder)?;
+        let value = manifest::read_manifest(&folder)?;
+        rust_browser::content_rules::enabled_rulesets(&folder, &value)?;
+        let name = manifest::display_name(&folder, &value)
+            .or_else(|| {
+                folder
+                    .file_name()
+                    .map(|n| n.to_string_lossy().chars().take(80).collect())
+            })
+            .unwrap_or_else(|| "Extension".into());
+        let id = linux_shield::extension_id(&folder)
+            .ok_or("This folder cannot be added: its path cannot be read.")?;
+        if self.settings.extensions.iter().any(|e| e.id == id) {
+            return Err(format!("{name} is already added.").into());
+        }
+        let shown: String = folder
+            .to_string_lossy()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(1024)
+            .collect();
+        self.read_extension_rules(id.clone(), folder)?;
+        self.inform(format!("Reading the blocking rules of {name}."));
+        self.shield.adding = Some(linux_shield::Adding {
+            id,
+            name,
+            version,
+            folder: shown,
+            blocks,
+            rules: 0,
+            skipped: 0,
+        });
+        Ok(())
+    }
+
+    /// An extension's rules were read: WebKit compiles them next.
+    fn extension_rules(
+        &mut self,
+        id: String,
+        result: Result<rust_browser::content_rules::Translated, String>,
+    ) {
+        let adding = self.shield.adding.as_mut().filter(|a| a.id == id);
+        match (result, adding) {
+            (Ok(rules), Some(adding)) => {
+                adding.rules = rules.used;
+                adding.skipped = rules.skipped;
+                let text = format!(
+                    "Preparing {} of {}. This takes a few seconds; you can keep browsing.",
+                    blocking_rules(rules.used),
+                    adding.name
+                );
+                self.shield.compile(&id, rules.json);
+                self.inform(text);
+            }
+            (Ok(rules), None) => {
+                if self.settings.extensions.iter().any(|e| e.id == id) {
+                    self.shield.compile(&id, rules.json);
+                }
+            }
+            (Err(error), Some(adding)) => {
+                self.notice = format!("{} was not added. {error}", adding.name);
+                self.shield.adding = None;
+            }
+            (Err(error), None) => {
+                self.rebuilding.remove(&id);
+                self.shield.failed.insert(id.clone());
+                if let Some(e) = self.settings.extensions.iter().find(|e| e.id == id) {
+                    self.notice = format!(
+                        "The blocking rules of {} could not be prepared again, so it blocks nothing. {error} Remove it and add it again.",
+                        e.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// Filters finished loading or compiling: add the new extension, prepare
+    /// again what could not load, and update every website view.
+    fn shield_ready(&mut self) {
+        for (id, error) in self.shield.finished() {
+            let adding = self.shield.adding.as_ref().is_some_and(|a| a.id == id);
+            match error {
+                None if adding => {
+                    let Some(added) = self.shield.adding.take() else {
+                        continue;
+                    };
+                    self.settings
+                        .extensions
+                        .push(rust_browser::settings::SavedExtension {
+                            id: added.id,
+                            name: added.name.clone(),
+                            version: added.version,
+                            folder: added.folder,
+                            blocks: Some(added.blocks),
+                            disabled: false,
+                        });
+                    self.persist();
+                    let left_out = if added.skipped == 0 {
+                        String::new()
+                    } else {
+                        format!(
+                            " {} of its rules (such as replaced scripts) cannot be used on Linux.",
+                            added.skipped
+                        )
+                    };
+                    self.inform(format!(
+                        "Extension added: {}. It brings {} to normal windows.{left_out} Its scripts never run.",
+                        added.name,
+                        blocking_rules(added.rules)
+                    ));
+                }
+                None => {
+                    self.rebuilding.remove(&id);
+                }
+                Some(error) if adding => {
+                    if let Some(added) = self.shield.adding.take() {
+                        self.notice = format!(
+                            "{} was not added: WebKit could not prepare its rules ({error}).",
+                            added.name
+                        );
+                    }
+                }
+                Some(error) => {
+                    let Some(saved) = self.settings.extensions.iter().find(|e| e.id == id) else {
+                        continue;
+                    };
+                    // A kept filter that cannot load (removed, or kept by another
+                    // WebKit version) is prepared again from the folder, once.
+                    if self.rebuilding.insert(id.clone()) {
+                        let folder = PathBuf::from(&saved.folder);
+                        if self.read_extension_rules(id.clone(), folder).is_ok() {
+                            continue;
+                        }
+                    }
+                    self.rebuilding.remove(&id);
+                    self.shield.failed.insert(id);
+                    self.notice = format!(
+                        "The blocking rules of {} could not be prepared, so it blocks nothing ({error}). Remove it and add it again.",
+                        saved.name
+                    );
+                }
+            }
+        }
+        self.apply_shield();
+    }
+
+    fn set_extension_enabled(&mut self, id: &str, enabled: bool) -> Result<(), Box<dyn Error>> {
+        let saved = self
+            .settings
+            .extensions
+            .iter_mut()
+            .find(|e| e.id == id && !self.private)
+            .ok_or("That extension is not one you added.")?;
+        saved.disabled = !enabled;
+        let name = saved.name.clone();
+        self.persist();
+        if enabled {
+            self.shield.load(id);
+        }
+        self.apply_shield();
+        self.inform(format!(
+            "{name} is now {}. This lasts after a restart.",
+            if enabled { "on" } else { "off" }
+        ));
+        Ok(())
+    }
+
+    fn remove_extension(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        let at = self
+            .settings
+            .extensions
+            .iter()
+            .position(|e| e.id == id && !self.private)
+            .ok_or("That extension is not one you added.")?;
+        self.settings.extensions.remove(at);
+        self.shield.remove(id);
+        self.rebuilding.remove(id);
+        self.persist();
+        self.apply_shield();
+        self.inform("Extension removed.".into());
+        Ok(())
+    }
+
     fn choose_bookmarks_file(&mut self) -> Result<(), Box<dyn Error>> {
         use gtk::prelude::{FileChooserExt, NativeDialogExt};
         if self.private {
@@ -1229,6 +1594,9 @@ impl Browser {
             id,
             self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         );
+        if let Ok(view) = &built {
+            self.shield_view(view);
+        }
         let now = self.started.elapsed();
         let Some(tab) = self.windows[self.current].tabs.get_mut(id) else {
             return Ok(());
@@ -1366,6 +1734,7 @@ impl Browser {
             id,
             self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         )?;
+        self.shield_view(&view);
         // wry keeps the WebKit context to itself; every website view shares it.
         // Each view wry builds also adds its default handler, which saves to the
         // Downloads folder unasked; `linux_downloads` overrides it per download.
@@ -1716,9 +2085,10 @@ impl Browser {
                 }),
             controls_in_library: !self.fullscreen
                 && plan.library.is_some_and(|(_, y, _, _)| y == 0.0),
+            // WebKit reports nothing about what its filters block.
             blocked: None,
             count_blocked: false,
-            extensions: Vec::new(),
+            extensions: self.extension_rows(),
             extension_popup: None,
             library: &self.data,
             library_folder: self.filter.folder,
@@ -1963,6 +2333,16 @@ impl Browser {
             }
             Command::DeleteProfile(id) => self.delete_profile(&id)?,
             Command::ImportBookmarks => self.choose_bookmarks_file()?,
+            Command::AddExtension => self.choose_extension_folder()?,
+            Command::SetExtensionEnabled { id, enabled } => {
+                return self.set_extension_enabled(&id, enabled);
+            }
+            Command::RemoveExtension(id) => return self.remove_extension(&id),
+            Command::SetCountBlocked(_) => {
+                return Err(
+                    "Linux cannot count blocked requests: WebKit does not report them.".into(),
+                );
+            }
             Command::KeepAwake => {
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.keep_awake = !tab.keep_awake;
@@ -2927,7 +3307,7 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
 
 /// What differs in the shared toolbar document on Linux: each Windows text, and
 /// what Linux shows instead.
-const LINUX_TEXT: [[&str; 2]; 2] = [
+const LINUX_TEXT: [[&str; 2]; 7] = [
     // What Settings says sleeping does.
     [
         "Sleeping keeps inactive pages intact while freeing background activity.",
@@ -2937,6 +3317,30 @@ const LINUX_TEXT: [[&str; 2]; 2] = [
     [
         "byId('notice-diagnostics').hidden=!s.notice||",
         "byId('notice-diagnostics').hidden=true||",
+    ], // WebKit reports nothing about what it blocks, so there is no count.
+    [
+        r#"<label class="settings-label"><input type="checkbox" id="count-blocked">Count blocked requests</label><p class="muted">The shield shows how many requests your extensions blocked on each page; counting slows page loading a little.</p>"#,
+        r#"<input type="checkbox" id="count-blocked" hidden>"#,
+    ],
+    // What an extension can do on Linux.
+    [
+        r#"An extension can read and change every site you open in normal windows, including passwords you type, so add only extensions you trust."#,
+        r#"On Linux only an extension's declarative blocking rules are used, as WebKit content filters in normal windows: its scripts, buttons and settings pages never run. Add only content blockers you trust."#,
+    ],
+    // How its rules are used.
+    [
+        r#"Private windows and this toolbar never run them, and extension buttons and settings pages are not available here."#,
+        r#"The rulesets it turns on by default are prepared once, which takes a few seconds, and kept in this profile. Private windows never use them."#,
+    ],
+    // What the shield cannot tell or do on Linux.
+    [
+        r#"limits='The browser engine reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. '+(popup?'Click the shield to open '+popup.name+'\'s own panel, where it can be turned off or tuned for this site.':'Rust Browser cannot turn blocking off for one site: an extension can only be turned on or off everywhere. Use the extension\'s own settings for site exceptions.')"#,
+        r#"limits='WebKit applies the blocking rules taken from your extensions and does not report what it blocked, so no count is shown. Rules that replace scripts or hide page elements are not used on Linux. An extension can only be turned on or off everywhere.'"#,
+    ],
+    // No switch to point to.
+    [
+        r#"count=!s.counting?'Counting blocked requests is off (Settings > Extensions).'"#,
+        r#"count=!s.counting?''"#,
     ],
 ];
 
@@ -3125,6 +3529,15 @@ impl ApplicationHandler<Event> for App {
         let result = match event {
             Event::BookmarkFile(file) => {
                 browser.bookmark_file(file);
+                Ok(())
+            }
+            Event::ExtensionFolder(folder) => browser.extension_folder(folder),
+            Event::ExtensionRules(id, result) => {
+                browser.extension_rules(id, result);
+                Ok(())
+            }
+            Event::ShieldReady => {
+                browser.shield_ready();
                 Ok(())
             }
             Event::BookmarksRead(result) => match result {

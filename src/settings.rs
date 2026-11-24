@@ -124,6 +124,10 @@ pub struct SavedExtension {
     /// for extensions added before 0.21 until their folder is read again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocks: Option<bool>,
+    /// Linux only: the user turned it off. WebView2 keeps this itself on
+    /// Windows, where it stays false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 impl Default for Settings {

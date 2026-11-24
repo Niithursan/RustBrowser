@@ -271,6 +271,32 @@ The client does not check the server's process, as Windows does: the file
 ownership and permission checks above stand in for it. As on Windows, a process
 running as the same user is outside this boundary.
 
+### Shield on Linux
+
+WebKitGTK cannot run extensions. On Linux, Add from folder reads only an
+extension's declarative blocking rules (`declarativeNetRequest` rulesets, as
+uBlock Origin Lite ships them). `content_rules` translates them into WebKit
+content-blocker rules, and WebKit compiles and applies them itself, before a
+request leaves the browser. None of the extension's code ever runs: no
+scripts, pages, buttons or settings.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| Hostile or damaged extension folder | The manifest is at most 1 MiB and must name a Manifest V2 or V3 extension. Rulesets must be relative `.json` files inside the folder with no parent steps or backslashes. There are at most 100 rulesets, 32 MiB each and 128 MiB in all. A localized name is read only from `_locales/<default_locale>/messages.json` with a checked locale name. Anything else refuses the folder | `only_enabled_rulesets_inside_the_folder_are_read`, `a_localized_name_is_read_from_the_default_locale`, `an_extension_folder_is_read_and_translated` |
+| A rule blocks more than the extension would (a broken site) | A rule WebKit cannot express exactly is left out, never widened: redirects, header changes, regular expressions, request methods, excluded request domains, unknown resource types or conditions, and an exception list with a domain WebKit cannot take. Only lists that narrow a rule drop entries WebKit cannot take. A top-level visit is never blocked by a rule that does not ask for it, and an allow never lets a blocked top document load | `what_webkit_cannot_express_is_skipped_not_widened`, `blocks_after_a_top_document_block_are_not_merged`, `domain_lists_narrow_safely_and_drop_covered_subdomains` |
+| Filter text escapes its pattern | Every filter character that is not a letter, digit or `/` is escaped, and non-ASCII or control characters refuse the rule | `filters_become_webkit_patterns` |
+| Web content changes the rules | Only Settings > Extensions in a normal window adds, turns on or off, or removes an extension. The toolbar commands name only saved extension IDs (32 letters `a` to `p`, derived from the folder's path as Chromium does), which are also the only identifiers given to WebKit's store | `ids_match_chromium_and_are_the_only_identifiers` |
+| Memory safety at the C boundary | `linux_shield` calls WebKit's content-filter API through `webkit2gtk::ffi`, on the UI thread only. Each asynchronous call's callback reclaims its boxed closure exactly once, and every filter reference is counted and released (`Filter` clones take a reference, and `Drop` releases one) | `webkit_compiles_translated_rules` (compiles, refuses a non-rule list, loads again) |
+
+Private windows never use the filters. The compiled filter is kept in the
+profile's `content-filters` folder, about 60 MB for uBlock Origin Lite's default
+lists (117,031 WebKit rules from 17,811 of its rules, prepared in about 6
+seconds on WebKit's own thread). It is deleted when the extension is removed or
+the profile is deleted. WebKit reports nothing about what it blocked, so Linux
+shows no count. A page that starts loading at startup before the kept filter
+has loaded may load unfiltered; in the container checks the first page was
+already filtered.
+
 ## v0.16 content tools and recovery
 
 Find, zoom and print target a visible website content controller. They are refused
