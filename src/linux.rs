@@ -6,9 +6,11 @@
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
 //! bookmarks and history library (`library_worker`), the download staging rules
 //! (`linux_downloads`) and the permission rules (`linux_permissions`). What WebView2
-//! alone provides on Windows (extensions and the shield, profiles, sleeping tabs,
-//! password autofill) is not offered here yet: such commands answer with a notice
-//! instead. Clearing browsing data uses WebKit's own data manager.
+//! alone provides on Windows (extensions and the shield, profiles, password
+//! autofill) is not offered here yet: such commands answer with a notice
+//! instead. Clearing browsing data uses WebKit's own data manager. WebKitGTK
+//! cannot freeze a page as WebView2 does, so a sleeping tab's view is closed
+//! and its back/forward list kept; selecting it loads the page again.
 //!
 //! A later launch of a normal window hands its links (or a request for a window)
 //! to the browser already holding the profile through `linux_handoff`, and exits.
@@ -26,6 +28,7 @@ use crate::{
 };
 use gtk::prelude::WidgetExt as _;
 use rust_browser::{
+    background::{Lifecycle, Phase, Protection},
     handoff::{Request, Status},
     layout::{
         ClipArea, FULLSCREEN_NOTICE, Full, LIBRARY_MAX, LIBRARY_MIN, LIBRARY_WIDTH, Layout,
@@ -46,7 +49,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use webkit2gtk::{FindControllerExt, WebViewExt};
+use webkit2gtk::{BackForwardListExt, FindControllerExt, MediaCaptureState, WebViewExt};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, LogicalSize},
@@ -127,9 +130,29 @@ pub enum PageEvent {
 
 /// One tab's website view and what the toolbar shows about it.
 struct Page {
-    view: WebView,
+    /// The website view; `None` while the tab sleeps.
+    view: Option<WebView>,
+    /// A sleeping tab's back/forward list as WebKit saved it, restored when the
+    /// tab wakes.
+    saved: Option<webkit2gtk::WebViewSessionState>,
     state: State,
     zoom: f64,
+    lifecycle: Lifecycle,
+}
+
+impl Page {
+    /// The view of an awake tab. The selected tab is always awake.
+    fn awake(&self) -> Result<&WebView, &'static str> {
+        self.view
+            .as_ref()
+            .ok_or("This tab is asleep. Select it, or use Wake tab, to wake it.")
+    }
+
+    fn hide(&self) {
+        if let Some(view) = &self.view {
+            let _ = view.set_visible(false);
+        }
+    }
 }
 
 /// Launch options from the command line.
@@ -463,6 +486,10 @@ struct Browser {
     clearing: Option<Clearing>,
     /// Listens for later launches of this profile (normal windows only).
     handoff: Option<linux_handoff::Server>,
+    /// When the browser started: the clock of the tabs' sleep timers.
+    started: Instant,
+    /// When background tabs were last checked.
+    background_at: Instant,
 }
 
 impl std::ops::Deref for Browser {
@@ -521,7 +548,7 @@ fn window_snapshot(tabs: &Tabs<Page>) -> WindowSnapshot {
                     .collect()
             })
             .collect(),
-        keep_awake: Vec::new(),
+        keep_awake: tabs.items.iter().map(|tab| tab.keep_awake).collect(),
     }
 }
 
@@ -659,6 +686,8 @@ impl Browser {
             content_context: None,
             clearing: None,
             handoff: None,
+            started: Instant::now(),
+            background_at: Instant::now(),
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -666,7 +695,7 @@ impl Browser {
             active: snapshot.active,
             pinned: snapshot.pinned.clone(),
             titles: snapshot.titles.clone(),
-            keep_awake: Vec::new(),
+            keep_awake: snapshot.keep_awake.clone(),
         });
         // The other saved windows open first, behind; the main one, last focused,
         // opens last so it is in front and gets the keyboard.
@@ -838,6 +867,7 @@ impl Browser {
                     && let Some(tab) = self.tabs.active_mut()
                 {
                     tab.pinned = restore.pinned.get(index).copied().unwrap_or(false);
+                    tab.keep_awake = restore.keep_awake.get(index).copied().unwrap_or(false);
                     if let Some(title) = restore.titles.get(index) {
                         tab.title.clone_from(title);
                     }
@@ -878,7 +908,7 @@ impl Browser {
             let mut permissions = self.permissions.borrow_mut();
             for tab in &win.tabs.items {
                 permissions.cancel_tab(tab.id);
-                let _ = tab.content.view.set_visible(false);
+                tab.content.hide();
             }
         }
         let _ = win.toolbar.set_visible(false);
@@ -994,6 +1024,143 @@ impl Browser {
         self.current = current.min(self.windows.len().saturating_sub(1));
     }
 
+    /// Wake each window's selected tab if it sleeps. A tab whose waking failed
+    /// waits for Wake tab rather than being retried after every event.
+    fn wake_selected(&mut self) {
+        self.each_window(|browser| {
+            if let Err(error) = browser.wake_active(false) {
+                browser.notice = error.to_string();
+            }
+        });
+    }
+
+    /// Build the selected tab's view again and restore its back/forward list, so
+    /// WebKit loads its page anew where it was. With `retry`, also after a
+    /// failed wake.
+    fn wake_active(&mut self, retry: bool) -> Result<(), Box<dyn Error>> {
+        let Some(tab) = self.tabs.active() else {
+            return Ok(());
+        };
+        let phase = tab.content.lifecycle.phase;
+        if tab.content.view.is_some() || !(phase == Phase::Sleeping || retry) {
+            return Ok(());
+        }
+        let (id, url) = (tab.id, tab.url.clone());
+        let built = content_view(
+            &self.windows[self.current].window,
+            &mut self.content,
+            self.proxy.clone(),
+            self.permissions.clone(),
+            id,
+            self.private_anchor.as_ref().map(|anchor| anchor.webview()),
+        );
+        let now = self.started.elapsed();
+        let Some(tab) = self.windows[self.current].tabs.get_mut(id) else {
+            return Ok(());
+        };
+        let view = match built {
+            Ok(view) => view,
+            Err(error) => {
+                tab.content.lifecycle.resumed(false);
+                return Err(format!(
+                    "This tab could not wake ({error}). Use Wake tab to try again."
+                )
+                .into());
+            }
+        };
+        if url != navigation::HOME {
+            let engine = view.webview();
+            let restored = tab.content.saved.take().is_some_and(|state| {
+                engine.restore_session_state(&state);
+                engine
+                    .back_forward_list()
+                    .and_then(|list| list.current_item())
+                    .map(|item| engine.go_to_back_forward_list_item(&item))
+                    .is_some()
+            });
+            if !restored && let Err(error) = view.load_url(&url) {
+                tab.content.lifecycle.resumed(false);
+                return Err(format!(
+                    "This tab could not wake ({error}). Use Wake tab to try again."
+                )
+                .into());
+            }
+            tab.content.state.loading = true;
+        }
+        if (tab.content.zoom - 1.0).abs() > 0.001 {
+            let _ = view.zoom(tab.content.zoom);
+        }
+        tab.content.saved = None;
+        tab.content.view = Some(view);
+        tab.content.lifecycle.resumed(true);
+        tab.content.lifecycle.visible(true, now);
+        Ok(())
+    }
+
+    /// Once a second, let hidden tabs sleep as Settings says. Returns whether a
+    /// tab fell asleep.
+    fn background_tick(&mut self) -> bool {
+        if self.background_at.elapsed() < Duration::from_secs(1) {
+            return false;
+        }
+        self.background_at = Instant::now();
+        let mut changed = false;
+        self.each_window(|browser| changed |= browser.background_window());
+        changed
+    }
+
+    /// Sleep decisions for the tabs of the window being handled. A sleeping tab
+    /// keeps its address, title and icon; its view goes, and with it the web
+    /// process WebKit ran it in.
+    fn background_window(&mut self) -> bool {
+        let now = self.started.elapsed();
+        let delay = Duration::from_secs(self.settings.suspend_after_seconds);
+        let enabled = self.settings.automatic_suspension;
+        let shared = Protection {
+            downloads: self.downloads.borrow().active_count() > 0,
+            permissions: self.permissions.borrow().prompt().is_some(),
+            busy: self.clearing.is_some(),
+            ..Protection::default()
+        };
+        let active = self.tabs.active().map(|t| t.id);
+        let mut changed = false;
+        for tab in &mut self.windows[self.current].tabs.items {
+            tab.content.lifecycle.visible(Some(tab.id) == active, now);
+            let Some(view) = &tab.content.view else {
+                continue;
+            };
+            let engine = view.webview();
+            let protection = Protection {
+                active: Some(tab.id) == active,
+                pinned: tab.pinned,
+                keep_awake: tab.keep_awake,
+                loading: tab.content.state.loading,
+                capture: [
+                    engine.camera_capture_state(),
+                    engine.microphone_capture_state(),
+                    engine.display_capture_state(),
+                ]
+                .iter()
+                .any(|state| *state != MediaCaptureState::None),
+                audio: engine.is_playing_audio(),
+                ..shared
+            };
+            let Some(ticket) = tab
+                .content
+                .lifecycle
+                .request(now, delay, enabled, protection)
+            else {
+                continue;
+            };
+            tab.content.saved = engine.session_state();
+            tab.content.hide();
+            tab.content.view = None;
+            tab.content.lifecycle.complete(ticket, true, now);
+            changed = true;
+        }
+        changed
+    }
+
     fn layout_all(&mut self) {
         self.each_window(|browser| browser.layout());
     }
@@ -1045,9 +1212,11 @@ impl Browser {
         self.tabs.push(
             url,
             Page {
-                view,
+                view: Some(view),
+                saved: None,
                 state,
                 zoom: 1.0,
+                lifecycle: Lifecycle::default(),
             },
         )?;
         Ok(())
@@ -1124,9 +1293,12 @@ impl Browser {
         let active = self.tabs.active().map(|t| t.id);
         for tab in &self.tabs.items {
             let page = plan.page.filter(|_| Some(tab.id) == active);
-            let _ = tab.content.view.set_visible(page.is_some());
+            let Some(view) = &tab.content.view else {
+                continue;
+            };
+            let _ = view.set_visible(page.is_some());
             if let Some(page) = page {
-                let _ = tab.content.view.set_bounds(rect(page));
+                let _ = view.set_bounds(rect(page));
             }
         }
         for (side, place) in [
@@ -1237,7 +1409,7 @@ impl Browser {
             settings: self.settings.clone(),
             pinned: first.pinned,
             titles: first.titles,
-            keep_awake: Vec::new(),
+            keep_awake: first.keep_awake,
             other_windows: others
                 .iter()
                 .take(MAX_WINDOWS - 1)
@@ -1341,8 +1513,8 @@ impl Browser {
                     title: &tab.title,
                     active: tab.id == active.id,
                     pinned: tab.pinned,
-                    keep_awake: false,
-                    phase: rust_browser::background::Phase::Awake,
+                    keep_awake: tab.keep_awake,
+                    phase: tab.content.lifecycle.phase,
                     loading: tab.content.state.loading,
                     favicon: &tab.content.state.favicon,
                 })
@@ -1415,7 +1587,7 @@ impl Browser {
                 .items
                 .iter()
                 .find(|t| t.id == id)
-                .and_then(|t| t.content.view.webview().find_controller())
+                .and_then(|t| t.content.view.as_ref()?.webview().find_controller())
         {
             finder.search_finish();
         }
@@ -1430,7 +1602,7 @@ impl Browser {
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn Error>> {
         self.permissions.borrow_mut().cancel_tab(id);
         if let Some(tab) = self.tabs.close(id) {
-            let _ = tab.content.view.set_visible(false);
+            tab.content.hide();
             if navigation::allowed(&tab.url) {
                 self.closed.push(tab.url);
             }
@@ -1589,6 +1761,24 @@ impl Browser {
                 self.persist();
             }
             Command::RefreshDiagnostics | Command::RefreshProfiles => {}
+            Command::KeepAwake => {
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.keep_awake = !tab.keep_awake;
+                }
+                self.persist();
+            }
+            Command::WakeTab => self.wake_active(true)?,
+            Command::SetAutomaticSuspension(on) => {
+                self.settings.automatic_suspension = on;
+                self.persist();
+            }
+            Command::SetSuspendDelay(seconds) => {
+                if !(15..=3600).contains(&seconds) {
+                    return Err("Choose a sleep delay between 15 and 3600 seconds.".into());
+                }
+                self.settings.suspend_after_seconds = seconds;
+                self.persist();
+            }
             Command::Navigate(input) => {
                 let url = navigation::resolve(&input, self.settings.search_engine)?;
                 self.panel = None;
@@ -1597,7 +1787,7 @@ impl Browser {
                 tab.content.state.url.clone_from(&url);
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
-                tab.content.view.load_url(&url)?;
+                tab.content.awake()?.load_url(&url)?;
                 self.persist();
             }
             Command::Home => {
@@ -1609,13 +1799,15 @@ impl Browser {
                         url: navigation::HOME.into(),
                         ..State::default()
                     };
-                    let _ = tab.content.view.load_url("about:blank");
+                    if let Ok(view) = tab.content.awake() {
+                        let _ = view.load_url("about:blank");
+                    }
                 }
                 self.persist();
             }
             Command::Back | Command::Forward | Command::Reload | Command::Stop => {
                 let tab = self.tabs.active().ok_or("No tab is selected.")?;
-                let engine = tab.content.view.webview();
+                let engine = tab.content.awake()?.webview();
                 match command {
                     Command::Back if engine.can_go_back() => engine.go_back(),
                     Command::Forward if engine.can_go_forward() => engine.go_forward(),
@@ -1659,7 +1851,7 @@ impl Browser {
                 let id = tab.id;
                 let finder = tab
                     .content
-                    .view
+                    .awake()?
                     .webview()
                     .find_controller()
                     .ok_or("Find in page is unavailable.")?;
@@ -1691,7 +1883,7 @@ impl Browser {
                     Command::ZoomOut => next_zoom(tab.content.zoom, false),
                     _ => 1.0,
                 };
-                tab.content.view.zoom(zoom)?;
+                tab.content.awake()?.zoom(zoom)?;
                 tab.content.zoom = zoom;
             }
             Command::PrintPage => {
@@ -1699,7 +1891,7 @@ impl Browser {
                     .active()
                     .ok_or("No tab is selected.")?
                     .content
-                    .view
+                    .awake()?
                     .print()?;
             }
             Command::NewTab => {
@@ -1895,8 +2087,9 @@ impl Browser {
                     self.focus(&self.toolbar);
                     self.toolbar
                         .evaluate_script("document.getElementById('home-query').focus()")?;
-                } else if let Some(tab) = self.tabs.active() {
-                    self.focus(&tab.content.view);
+                } else if let Some(view) = self.tabs.active().and_then(|t| t.content.view.as_ref())
+                {
+                    self.focus(view);
                 }
             }
             // The address field's menu. Only its selection is copied, so it is
@@ -1993,9 +2186,11 @@ impl Browser {
                 if navigation::allowed(&url) {
                     tab.url.clone_from(&url);
                     tab.content.state.url.clone_from(&url);
-                    let engine = tab.content.view.webview();
-                    tab.content.state.back = engine.can_go_back();
-                    tab.content.state.forward = engine.can_go_forward();
+                    if let Some(view) = &tab.content.view {
+                        let engine = view.webview();
+                        tab.content.state.back = engine.can_go_back();
+                        tab.content.state.forward = engine.can_go_forward();
+                    }
                     if history {
                         self.loads += 1;
                         let action = Action::Record {
@@ -2043,7 +2238,7 @@ impl Browser {
                 w.tabs
                     .items
                     .iter()
-                    .find(|t| t.content.view.webview() == view)
+                    .find(|t| t.content.view.as_ref().is_some_and(|v| v.webview() == view))
                     .map(|t| (index, t.id))
             })
         });
@@ -2110,7 +2305,7 @@ impl Browser {
         };
         let tab = self.tabs.active().filter(|t| t.id == prompt.tab);
         let current = tab
-            .and_then(|t| t.content.view.url().ok())
+            .and_then(|t| t.content.view.as_ref()?.url().ok())
             .and_then(|url| security::origin(&url));
         if current.as_deref() != Some(prompt.origin.as_str()) {
             self.permissions.borrow_mut().resolve(id, Decision::Deny);
@@ -2133,8 +2328,8 @@ impl Browser {
         }
         self.permissions.borrow_mut().resolve(id, decision);
         // The answer was given over the page; give it the keyboard back.
-        if let Some(tab) = self.tabs.active() {
-            self.focus(&tab.content.view);
+        if let Some(view) = self.tabs.active().and_then(|t| t.content.view.as_ref()) {
+            self.focus(view);
         }
         Ok(())
     }
@@ -2207,7 +2402,7 @@ impl Browser {
         self.finish_find();
         self.closed.clear();
         for tab in std::mem::take(&mut self.tabs.items) {
-            let _ = tab.content.view.set_visible(false);
+            tab.content.hide();
         }
         self.open_tab(navigation::HOME.into())?;
         self.panel = Some(Panel::Settings);
@@ -2515,17 +2710,28 @@ const TOOLBAR_URL: &str = "rust-browser://toolbar/";
 
 /// What the trusted scheme serves: the toolbar document at `/`, nothing else.
 fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static, [u8]>> {
-    let (status, body): (u16, &'static [u8]) = if path == "/" {
-        (200, ui::HTML.as_bytes())
+    let (status, body): (u16, std::borrow::Cow<'static, [u8]>) = if path == "/" {
+        (200, linux_document().into_bytes().into())
     } else {
-        (404, b"")
+        (404, (&[] as &[u8]).into())
     };
     wry::http::Response::builder()
         .status(status)
         .header("Content-Type", "text/html; charset=utf-8")
         .header("Cache-Control", "no-store")
-        .body(body.into())
+        .body(body)
         .unwrap_or_else(|_| wry::http::Response::new((&[] as &[u8]).into()))
+}
+
+/// What Settings says sleeping does, on Windows and on Linux.
+const SLEEP_TEXT: [&str; 2] = [
+    "Sleeping keeps inactive pages intact while freeing background activity.",
+    "Sleeping closes an inactive page to free its memory. Selecting the tab loads it again where it was, usually with what you typed in its forms; anything else the page held, such as a playing video or an unsent chat message, may be lost.",
+];
+
+/// The shared toolbar document, with what differs on Linux.
+fn linux_document() -> String {
+    ui::HTML.replacen(SLEEP_TEXT[0], SLEEP_TEXT[1], 1)
 }
 
 /// A private window's anchor: a hidden, empty view in a new in-memory WebKit
@@ -2655,6 +2861,7 @@ impl App {
         if el.exiting() {
             return;
         }
+        browser.wake_selected();
         browser.claim_permissions();
         browser.layout_all();
         browser.render_all();
@@ -2855,6 +3062,9 @@ impl ApplicationHandler<Event> for App {
         }
         if let Some(browser) = &mut self.browser {
             browser.poll_downloads();
+            if browser.background_tick() {
+                browser.render_all();
+            }
         }
         el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + GTK_TICK));
     }
@@ -3017,7 +3227,12 @@ mod tests {
     fn the_trusted_scheme_serves_only_the_toolbar_document() {
         let page = toolbar_document("/");
         assert_eq!(page.status(), 200);
-        assert_eq!(page.body().as_ref(), ui::HTML.as_bytes());
+        assert_eq!(page.body().as_ref(), linux_document().as_bytes());
+        // Settings describes sleeping as Linux does it; the Windows sentence it
+        // replaces must still be in the shared document.
+        assert_eq!(ui::HTML.matches(SLEEP_TEXT[0]).count(), 1);
+        assert!(linux_document().contains(SLEEP_TEXT[1]));
+        assert!(!linux_document().contains(SLEEP_TEXT[0]));
         assert_eq!(toolbar_document("/other").status(), 404);
         assert_eq!(toolbar_document("/../etc/passwd").status(), 404);
         // Short enough for wry to deliver the toolbar's IPC messages.
