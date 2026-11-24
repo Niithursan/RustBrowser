@@ -1,5 +1,6 @@
 pub mod background;
 pub mod bookmark_import;
+pub mod content_rules;
 pub mod diagnostics;
 pub mod download_recovery;
 pub mod downloads;

@@ -89,6 +89,70 @@ pub fn read_manifest(folder: &Path) -> Result<serde_json::Value, String> {
         .map_err(|_| "This folder's manifest.json is not valid JSON.".to_string())
 }
 
+/// The ID Chromium (and WebView2) gives an unpacked extension, from the SHA-256
+/// digest of its folder's path in hex: the first 32 hex digits, each `0` to `f`
+/// written as `a` to `p`.
+pub fn id_from_sha256_hex(hex: &str) -> Option<String> {
+    let id: String = hex
+        .chars()
+        .take(32)
+        .map(|c| c.to_digit(16).map(|d| char::from(b'a' + d as u8)))
+        .collect::<Option<_>>()?;
+    valid_id(&id).then_some(id)
+}
+
+/// Largest `messages.json` read for a localized name.
+const MAX_MESSAGES: u64 = 4 * 1024 * 1024;
+
+/// The name to show for the extension in `folder`: the manifest's `name`, or,
+/// for a `__MSG_key__` name, that message in the manifest's default locale.
+/// At most 80 characters, without control characters.
+pub fn display_name(folder: &Path, manifest: &serde_json::Value) -> Option<String> {
+    let name = manifest.get("name")?.as_str()?;
+    let shown = match name
+        .strip_prefix("__MSG_")
+        .and_then(|key| key.strip_suffix("__"))
+    {
+        None => name.to_string(),
+        Some(key) => {
+            let locale = manifest
+                .get("default_locale")
+                .and_then(|l| l.as_str())
+                .filter(|l| {
+                    !l.is_empty()
+                        && l.len() <= 16
+                        && l.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                })?;
+            let path = folder.join("_locales").join(locale).join("messages.json");
+            let metadata = std::fs::metadata(&path).ok()?;
+            if !metadata.is_file() || metadata.len() > MAX_MESSAGES {
+                return None;
+            }
+            let bytes = std::fs::read(&path).ok()?;
+            let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes);
+            let messages: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+            // Message keys are case-insensitive.
+            messages
+                .as_object()?
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))?
+                .1
+                .get("message")?
+                .as_str()?
+                .to_string()
+        }
+    };
+    let shown: String = shown
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(80)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    (!shown.is_empty()).then_some(shown)
+}
+
 /// Check that `folder` holds an unpacked extension before WebView2 sees it.
 /// Returns the manifest's version for display and whether it asks to block
 /// requests.
@@ -224,6 +288,54 @@ mod tests {
         );
         std::fs::write(root.join("manifest.json"), big).unwrap();
         assert!(check_folder(&root).is_err(), "too large");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ids_come_from_the_path_digest_as_chromium_makes_them() {
+        assert_eq!(
+            id_from_sha256_hex("0123456789abcdef0123456789ABCDEF00ff").as_deref(),
+            Some("abcdefghijklmnopabcdefghijklmnop")
+        );
+        assert_eq!(id_from_sha256_hex("0123"), None);
+        assert_eq!(id_from_sha256_hex(&"g".repeat(64)), None);
+    }
+
+    #[test]
+    fn a_localized_name_is_read_from_the_default_locale() {
+        let root = std::env::temp_dir().join(format!(
+            "rust-browser-ext-name-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("_locales/en")).unwrap();
+        std::fs::write(
+            root.join("_locales/en/messages.json"),
+            "\u{feff}{\"extName\":{\"message\":\"uBlock Origin Lite\"}}",
+        )
+        .unwrap();
+        let name = |json: &str| display_name(&root, &serde_json::from_str(json).unwrap());
+        assert_eq!(
+            name(r#"{"name":" Plain\u0007 "}"#).as_deref(),
+            Some("Plain")
+        );
+        assert_eq!(
+            name(r#"{"name":"__MSG_EXTNAME__","default_locale":"en"}"#).as_deref(),
+            Some("uBlock Origin Lite")
+        );
+        assert_eq!(
+            name(r#"{"name":"__MSG_other__","default_locale":"en"}"#),
+            None
+        );
+        assert_eq!(name(r#"{"name":"__MSG_extName__"}"#), None);
+        assert_eq!(
+            name(r#"{"name":"__MSG_extName__","default_locale":"../en"}"#),
+            None
+        );
+        assert_eq!(name(r#"{"name":""}"#), None);
         let _ = std::fs::remove_dir_all(root);
     }
 }
