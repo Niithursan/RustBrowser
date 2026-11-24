@@ -45,6 +45,8 @@ mod native_shield;
 mod native_validation;
 #[cfg(windows)]
 mod native_window;
+#[cfg(any(windows, target_os = "linux"))]
+mod picker;
 #[cfg(all(windows, test))]
 mod servo_validation;
 #[cfg(any(windows, target_os = "linux"))]
@@ -181,10 +183,9 @@ fn startup_failed() -> std::process::ExitCode {
     std::process::ExitCode::FAILURE
 }
 
-/// Which profile this launch opens. A named profile must exist. Without one, a
-/// launch with links (another app opening a page) or a private window uses the
-/// last used profile, and a plain launch shows the picker when there is more than
-/// one profile. `Ok(None)`: the picker was closed or started another process.
+/// Which profile this launch opens (`profiles::choose_start`), showing the
+/// picker when it asks. `Ok(None)`: the picker was closed or started another
+/// process.
 #[cfg(windows)]
 fn choose_profile(
     root: &std::path::Path,
@@ -192,42 +193,29 @@ fn choose_profile(
     private: bool,
     plain: bool,
 ) -> Result<Option<String>, std::process::ExitCode> {
-    use rust_browser::profiles::{self, DEFAULT_ID};
-    let registry = profiles::load(root);
-    let refuse = |message: &str| {
-        tell(
-            "Rust Browser",
-            &format!(
-                "{message}
+    use rust_browser::profiles::{self, Start};
+    match profiles::choose_start(named, profiles::load(root), private, plain) {
+        Start::Open(id) => Ok(Some(id)),
+        Start::Refuse(message) => {
+            tell(
+                "Rust Browser",
+                &format!(
+                    "{message}
 
 Nothing was opened or changed."
-            ),
-            true,
-        );
-        Err(std::process::ExitCode::from(2))
-    };
-    match (named, registry) {
-        (Some(id), Ok(registry)) if registry.get(&id).is_some() => Ok(Some(id)),
-        (Some(id), Err(_)) if id == DEFAULT_ID => Ok(Some(id)),
-        (Some(_), Ok(_)) => {
-            refuse("That profile no longer exists. Open Rust Browser and choose a profile.")
+                ),
+                true,
+            );
+            Err(std::process::ExitCode::from(2))
         }
-        (Some(_), Err(_)) => refuse(
-            "Rust Browser could not read its list of profiles. The Default profile can still be opened.",
-        ),
-        (None, Ok(registry)) if plain && !private && registry.profiles.len() > 1 => {
-            match native_picker::choose(root, &registry) {
-                Ok(Some(id)) => match app::open_profile(&id, false) {
-                    Ok(()) => Ok(None),
-                    Err(_) => Err(startup_failed()),
-                },
-                Ok(None) => Ok(None),
-                Err(()) => Err(startup_failed()),
-            }
-        }
-        (None, Ok(registry)) => Ok(Some(registry.last_used().to_string())),
-        // A damaged list never blocks the Default profile.
-        (None, Err(_)) => Ok(Some(DEFAULT_ID.to_string())),
+        Start::Pick(registry) => match native_picker::choose(root, &registry) {
+            Ok(Some(id)) => match app::open_profile(&id, false) {
+                Ok(()) => Ok(None),
+                Err(_) => Err(startup_failed()),
+            },
+            Ok(None) => Ok(None),
+            Err(()) => Err(startup_failed()),
+        },
     }
 }
 

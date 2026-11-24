@@ -379,6 +379,43 @@ pub fn is_open(root: &Path, id: &str) -> bool {
     matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock))
 }
 
+/// Which profile a launch opens.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Start {
+    Open(String),
+    /// Ask with the "Who's browsing?" picker, which lists these profiles.
+    Pick(Registry),
+    /// Start nothing, and tell the user why.
+    Refuse(&'static str),
+}
+
+/// Which profile a launch opens. A named profile must exist. Without one, a
+/// launch with links (another app opening a page) or a private window uses the
+/// last used profile, and a plain launch asks with the picker when there is more
+/// than one profile. A damaged list never blocks the Default profile.
+pub fn choose_start(
+    named: Option<String>,
+    registry: io::Result<Registry>,
+    private: bool,
+    plain: bool,
+) -> Start {
+    match (named, registry) {
+        (Some(id), Ok(registry)) if registry.get(&id).is_some() => Start::Open(id),
+        (Some(id), Err(_)) if id == DEFAULT_ID => Start::Open(id),
+        (Some(_), Ok(_)) => {
+            Start::Refuse("That profile no longer exists. Open Rust Browser and choose a profile.")
+        }
+        (Some(_), Err(_)) => Start::Refuse(
+            "Rust Browser could not read its list of profiles. The Default profile can still be opened.",
+        ),
+        (None, Ok(registry)) if plain && !private && registry.profiles.len() > 1 => {
+            Start::Pick(registry)
+        }
+        (None, Ok(registry)) => Start::Open(registry.last_used().to_string()),
+        (None, Err(_)) => Start::Open(DEFAULT_ID.to_string()),
+    }
+}
+
 /// Record that profile `id` was just opened.
 pub fn mark_used(root: &Path, id: &str) -> io::Result<()> {
     update(root, |registry| {
@@ -547,5 +584,44 @@ mod tests {
         assert!(delete(&root, DEFAULT_ID).is_err());
         assert!(delete(&root, "p2").is_err());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_launch_opens_the_named_or_last_profile_and_asks_only_when_plain() {
+        let one = Registry::default();
+        let mut two = Registry::default();
+        two.create("Work", COLORS[1]).unwrap();
+        two.last_used = "p2".into();
+        let damaged = || Err(io::Error::new(io::ErrorKind::InvalidData, "damaged"));
+        let open = |id: &str| Start::Open(id.into());
+        // A named profile must exist; a damaged list still opens Default.
+        assert_eq!(
+            choose_start(Some("p2".into()), Ok(two.clone()), false, true),
+            open("p2")
+        );
+        assert!(matches!(
+            choose_start(Some("p3".into()), Ok(two.clone()), false, true),
+            Start::Refuse(_)
+        ));
+        assert_eq!(
+            choose_start(Some(DEFAULT_ID.into()), damaged(), false, true),
+            open(DEFAULT_ID)
+        );
+        assert!(matches!(
+            choose_start(Some("p2".into()), damaged(), false, true),
+            Start::Refuse(_)
+        ));
+        // Only a plain, normal launch with several profiles asks.
+        assert_eq!(
+            choose_start(None, Ok(two.clone()), false, true),
+            Start::Pick(two.clone())
+        );
+        assert_eq!(
+            choose_start(None, Ok(two.clone()), false, false),
+            open("p2")
+        );
+        assert_eq!(choose_start(None, Ok(two), true, true), open("p2"));
+        assert_eq!(choose_start(None, Ok(one), false, true), open(DEFAULT_ID));
+        assert_eq!(choose_start(None, damaged(), false, true), open(DEFAULT_ID));
     }
 }

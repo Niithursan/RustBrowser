@@ -1324,16 +1324,10 @@ pub fn open_profile_at(id: &str, private: bool, link: Option<&str>) -> std::io::
     }
     #[cfg(not(test))]
     {
-        let mut command = std::process::Command::new(std::env::current_exe()?);
-        command.arg(format!("--profile={id}"));
-        if private {
-            command.arg("--private");
-        }
-        if let Some(link) = link {
-            // After `--`, so an address can never be read as an option.
-            command.arg("--").arg(link);
-        }
-        command.spawn().map(|_| ())
+        std::process::Command::new(std::env::current_exe()?)
+            .args(rust_browser::launch::profile_args(id, private, link))
+            .spawn()
+            .map(|_| ())
     }
 }
 
