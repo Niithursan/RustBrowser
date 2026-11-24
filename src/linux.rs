@@ -54,7 +54,9 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Fullscreen, ResizeDirection, Window, WindowId},
 };
-use wry::{PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder, WebViewExtUnix};
+use wry::{
+    PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtUnix, WebViewExtUnix,
+};
 
 /// How often GTK (which runs WebKitGTK) is serviced while winit waits.
 const GTK_TICK: Duration = Duration::from_millis(8);
@@ -415,7 +417,11 @@ struct Win {
 /// settings, WebKit contexts, downloads and permissions). It dereferences to the
 /// window an event is being handled in (`current`), as on Windows.
 struct Browser {
-    // First field: windows and their views drop before the contexts below.
+    /// A private window's hidden anchor view: every website view is related to
+    /// it, so they share its one in-memory WebKit context (sign-ins, storage,
+    /// downloads) and nothing is written to disk.
+    private_anchor: Option<WebView>,
+    // Windows and their views drop before the contexts below.
     windows: Vec<Win>,
     current: usize,
     /// One allocator for every window, so a tab ID names one tab in one window.
@@ -622,6 +628,7 @@ impl Browser {
             },
         )?;
         let mut browser = Self {
+            private_anchor: None,
             windows: Vec::new(),
             current: 0,
             tab_ids: Rc::new(Cell::new(1)),
@@ -1006,13 +1013,16 @@ impl Browser {
             return Err("The 64-tab limit has been reached.".into());
         }
         let id = self.tabs.next_id();
+        if self.private && self.private_anchor.is_none() {
+            self.private_anchor = Some(private_anchor(&self.windows[self.current].window)?);
+        }
         let view = content_view(
             &self.windows[self.current].window,
             &mut self.content,
             self.proxy.clone(),
             self.permissions.clone(),
             id,
-            self.private,
+            self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         )?;
         // wry keeps the WebKit context to itself; every website view shares it.
         // Each view wry builds also adds its default handler, which saves to the
@@ -2518,6 +2528,24 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
         .unwrap_or_else(|_| wry::http::Response::new((&[] as &[u8]).into()))
 }
 
+/// A private window's anchor: a hidden, empty view in a new in-memory WebKit
+/// context, which its website views are related to. wry would otherwise give
+/// each private view a context of its own, so tabs would not share a sign-in
+/// and only the first tab's downloads would reach `linux_downloads`.
+fn private_anchor(window: &Window) -> Result<WebView, Box<dyn Error>> {
+    Ok(WebViewBuilder::new()
+        .with_incognito(true)
+        .with_devtools(false)
+        .with_clipboard(false)
+        .with_autoplay(false)
+        .with_visible(false)
+        .with_permission_handler(|_| wry::PermissionResponse::Deny)
+        .with_download_started_handler(|_, _| false)
+        .with_navigation_handler(|url| url == "about:blank")
+        .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
+        .build_as_child(window)?)
+}
+
 /// A website view: HTTP(S) and `about:blank` only, no command bridge, permission
 /// requests to `linux_permissions`, new windows opened as tabs. Its downloads go to
 /// `linux_downloads`, hooked on the shared WebKit context, not through wry,
@@ -2528,12 +2556,15 @@ fn content_view(
     proxy: EventLoopProxy<Event>,
     permissions: linux_permissions::Shared,
     id: TabId,
-    private: bool,
+    related: Option<webkit2gtk::WebView>,
 ) -> Result<WebView, Box<dyn Error>> {
     let (title, load, popup, blocked) =
         (proxy.clone(), proxy.clone(), proxy.clone(), proxy.clone());
-    let view = WebViewBuilder::new_with_web_context(context)
-        .with_incognito(private)
+    let mut builder = WebViewBuilder::new_with_web_context(context);
+    if let Some(related) = related {
+        builder = builder.with_related_view(related);
+    }
+    let view = builder
         .with_devtools(false)
         .with_clipboard(false)
         .with_autoplay(false)
