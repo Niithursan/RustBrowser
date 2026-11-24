@@ -57,6 +57,24 @@ pub struct Settings {
     /// Show the bookmarks bar under the address line in normal windows (v0.21).
     /// On when missing, so existing profiles see their bookmarks.
     pub bookmarks_bar: bool,
+    /// Linux only: sites (hosts) where the shield's filters are paused. On
+    /// Windows an extension's own panel keeps its site exceptions.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub shield_paused_sites: Vec<String>,
+}
+
+/// Most sites the shield can be paused on.
+pub const MAX_PAUSED_SITES: usize = 1000;
+
+/// A host as a page address gives it (lowercase name, IPv4 or bracketed IPv6).
+pub fn valid_site(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 255
+        && host.bytes().all(|b| {
+            b.is_ascii_lowercase()
+                || b.is_ascii_digit()
+                || matches!(b, b'.' | b'-' | b'[' | b']' | b':')
+        })
 }
 
 /// New-tab page backgrounds. Each is drawn by the page from the current theme's
@@ -149,6 +167,7 @@ impl Default for Settings {
             newtab_background: Background::Plain,
             count_blocked: true,
             bookmarks_bar: true,
+            shield_paused_sites: Vec::new(),
         }
     }
 }
@@ -190,6 +209,11 @@ impl Settings {
         {
             return Err("Invalid saved extensions.".into());
         }
+        if self.shield_paused_sites.len() > MAX_PAUSED_SITES
+            || !self.shield_paused_sites.iter().all(|h| valid_site(h))
+        {
+            return Err("Invalid sites with ad blocking paused.".into());
+        }
         let mut urls = std::collections::HashSet::new();
         for item in &self.favorites {
             if item.title.trim().is_empty()
@@ -204,5 +228,37 @@ impl Settings {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paused_sites_are_plain_hosts_and_bounded() {
+        for host in ["example.com", "127.0.0.1", "[::1]", "a-b.example"] {
+            assert!(valid_site(host), "{host}");
+        }
+        for host in [
+            "",
+            "Example.com",
+            "a b",
+            "a/b",
+            "\u{e9}.test",
+            &"a".repeat(256),
+        ] {
+            assert!(!valid_site(host), "{host:?}");
+        }
+        let mut settings = Settings::default();
+        settings.shield_paused_sites = vec!["example.com".into()];
+        assert!(settings.validate().is_ok());
+        settings.shield_paused_sites.push("Bad Host".into());
+        assert!(settings.validate().is_err());
+        settings.shield_paused_sites = vec!["a.test".into(); MAX_PAUSED_SITES + 1];
+        assert!(settings.validate().is_err());
+        // Older files have no list; an empty one is not written.
+        let json = serde_json::to_string(&Settings::default()).unwrap();
+        assert!(!json.contains("shield_paused_sites"));
     }
 }

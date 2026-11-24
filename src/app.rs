@@ -2813,6 +2813,8 @@ impl Session {
             controls_in_library: self.fullscreen.is_none()
                 && layout.library.is_some_and(|(_, y, _, _)| y == 0.0),
             count_blocked: self.settings.count_blocked,
+            // An extension's own panel keeps its site exceptions on Windows.
+            shield_site: None,
             blocked: if self.counts_blocked() {
                 active.content.engine.blocked.count()
             } else {
@@ -3140,6 +3142,13 @@ impl Session {
             Command::SetTheme(theme) => self.settings.theme = theme,
             Command::SetNewtabBackground(background) => {
                 self.settings.newtab_background = background;
+            }
+            Command::SetSiteBlocking(on) => {
+                return Err(format!(
+                    "Use the extension's own panel to turn blocking {} for a site.",
+                    if on { "on" } else { "off" }
+                )
+                .into());
             }
             Command::SetCountBlocked(on) => {
                 if self.private {

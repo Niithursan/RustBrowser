@@ -1246,28 +1246,81 @@ impl Browser {
             .any(|e| e.id == id && !e.disabled)
     }
 
-    /// Give a website view the filters of the extensions that are on. Private
-    /// windows never use extensions.
-    fn shield_view(&self, view: &WebView) {
+    /// The host of `url`, for the shield's per-site switch: websites only.
+    fn site(url: &str) -> Option<String> {
+        url::Url::parse(url)
+            .ok()
+            .filter(|u| matches!(u.scheme(), "http" | "https"))
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+    }
+
+    /// Whether the shield is paused on the site of `url`.
+    fn site_paused(&self, url: &str) -> bool {
+        Self::site(url).is_some_and(|host| self.settings.shield_paused_sites.contains(&host))
+    }
+
+    /// Give a website view showing `url` the filters of the extensions that
+    /// are on, or none on a site where blocking is paused. Private windows
+    /// never use extensions.
+    fn shield_view(&self, view: &WebView, url: &str) {
         if self.private {
             return;
         }
         let settings = &self.settings;
+        let paused = self.site_paused(url);
         linux_shield::apply(
             &view.webview(),
-            self.shield.active(|id| Self::extension_on(settings, id)),
+            self.shield
+                .active(move |id| !paused && Self::extension_on(settings, id)),
         );
     }
 
-    /// Give every website view the filters of the extensions that are on.
+    /// Give every website view the filters its site should have.
     fn apply_shield(&self) {
         for win in &self.windows {
             for tab in &win.tabs.items {
                 if let Some(view) = &tab.content.view {
-                    self.shield_view(view);
+                    self.shield_view(view, &tab.url);
                 }
             }
         }
+    }
+
+    /// The shield's per-site switch: block on the selected tab's site, or
+    /// pause blocking there. The page loads again to show the difference.
+    fn set_site_blocking(&mut self, on: bool) -> Result<(), Box<dyn Error>> {
+        if self.private {
+            return Err("Private windows never use extensions.".into());
+        }
+        let (url, view) = match self.tabs.active() {
+            Some(tab) => (
+                tab.url.clone(),
+                tab.content.view.as_ref().map(WebView::webview),
+            ),
+            None => return Err("No tab is open.".into()),
+        };
+        let host = Self::site(&url).ok_or("Open a website to change blocking for its site.")?;
+        let sites = &mut self.settings.shield_paused_sites;
+        sites.retain(|site| *site != host);
+        if !on {
+            if sites.len() >= rust_browser::settings::MAX_PAUSED_SITES {
+                return Err(
+                    "Blocking is paused on too many sites. Turn it back on for some first.".into(),
+                );
+            }
+            sites.push(host.clone());
+        }
+        self.persist();
+        self.apply_shield();
+        if let Some(view) = view {
+            view.reload();
+        }
+        self.inform(if on {
+            format!("Blocking is on for {host}.")
+        } else {
+            format!("Blocking is paused on {host}. Its pages load everything.")
+        });
+        Ok(())
     }
 
     /// Load the kept filters of the extensions that are on.
@@ -1657,7 +1710,7 @@ impl Browser {
             self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         );
         if let Ok(view) = &built {
-            self.shield_view(view);
+            self.shield_view(view, &url);
         }
         let now = self.started.elapsed();
         let Some(tab) = self.windows[self.current].tabs.get_mut(id) else {
@@ -1796,7 +1849,7 @@ impl Browser {
             id,
             self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         )?;
-        self.shield_view(&view);
+        self.shield_view(&view, &url);
         // wry keeps the WebKit context to itself; every website view shares it.
         // Each view wry builds also adds its default handler, which saves to the
         // Downloads folder unasked; `linux_downloads` overrides it per download.
@@ -2098,6 +2151,7 @@ impl Browser {
                 None => (None, None),
             }
         };
+        let site = (!self.private).then(|| Self::site(&active.url)).flatten();
         let state = ToolbarState {
             zoom_percent: ((zoom - 1.0).abs() > 0.001).then(|| (zoom * 100.0).round() as u32),
             page_tools: self.effective_panel().is_none() && navigation::allowed(&active.url),
@@ -2150,6 +2204,10 @@ impl Browser {
             // WebKit reports nothing about what its filters block.
             blocked: None,
             count_blocked: false,
+            shield_site: site.as_deref().map(|host| ui::ShieldSite {
+                host,
+                paused: self.settings.shield_paused_sites.iter().any(|s| s == host),
+            }),
             extensions: self.extension_rows(),
             extension_popup: None,
             library: &self.data,
@@ -2406,6 +2464,7 @@ impl Browser {
                 return self.set_extension_enabled(&id, enabled);
             }
             Command::RemoveExtension(id) => return self.remove_extension(&id),
+            Command::SetSiteBlocking(on) => return self.set_site_blocking(on),
             Command::SetCountBlocked(_) => {
                 return Err(
                     "Linux cannot count blocked requests: WebKit does not report them.".into(),
@@ -2814,6 +2873,17 @@ impl Browser {
                     .evaluate_script("typeof closeDropdown==='function'&&closeDropdown(false)");
             }
             return;
+        }
+        // A page about to load gets the filters its site should have.
+        if let PageEvent::Started(url) = &event
+            && let Some(view) = self
+                .tabs
+                .items
+                .iter()
+                .find(|t| t.id == id)
+                .and_then(|t| t.content.view.as_ref())
+        {
+            self.shield_view(view, url);
         }
         let history = self.settings.history_enabled && !self.private;
         let current = self.current;
@@ -3418,7 +3488,7 @@ const LINUX_TEXT: [[&str; 2]; 6] = [
     // What the shield cannot tell or do on Linux.
     [
         r#"limits='The browser engine reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. '+(popup?'Click the shield to open '+popup.name+'\'s own panel, where it can be turned off or tuned for this site.':'Rust Browser cannot turn blocking off for one site: an extension can only be turned on or off everywhere. Use the extension\'s own settings for site exceptions.')"#,
-        r#"limits='WebKit applies the blocking rules taken from your extensions and does not report what it blocked, so no count is shown. Rules that replace scripts or hide page elements are not used on Linux. An extension can only be turned on or off everywhere.'"#,
+        r#"limits='WebKit applies the blocking rules taken from your extensions and does not report what it blocked, so no count is shown. Rules that replace scripts or hide page elements are not used on Linux. The switch above turns blocking off for this site only.'"#,
     ],
     // No switch to point to.
     [

@@ -70,6 +70,8 @@ pub enum Command {
     SetNewtabBackground(rust_browser::settings::Background),
     /// Whether the shield counts requests extensions block.
     SetCountBlocked(bool),
+    /// Linux: block requests on the selected tab's site (true), or pause it.
+    SetSiteBlocking(bool),
     /// Show the bookmarks bar under the address line (Settings > Appearance).
     SetBookmarksBar(bool),
     /// A folder on the bookmarks bar (or inside its dropdown): list its contents
@@ -254,6 +256,13 @@ pub struct ProfileRow<'a> {
     pub open: bool,
 }
 
+/// The site the shield's per-site switch acts on.
+#[derive(Serialize)]
+pub struct ShieldSite<'a> {
+    pub host: &'a str,
+    pub paused: bool,
+}
+
 /// One extension in Privacy & security > Extensions.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ExtensionRow {
@@ -322,6 +331,10 @@ pub struct ToolbarState<'a> {
     pub blocked: Option<u32>,
     /// The "Count blocked requests" switch.
     pub count_blocked: bool,
+    /// Linux: the selected tab's site and whether blocking is paused there,
+    /// for the shield's per-site switch; never sent on Windows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shield_site: Option<ShieldSite<'a>>,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     /// The extension whose popup is open under the shield, if any.
