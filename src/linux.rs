@@ -2767,6 +2767,13 @@ impl Browser {
             }
             Command::RemoveExtension(id) => return self.remove_extension(&id),
             Command::SetSiteBlocking(on) => return self.set_site_blocking(on),
+            Command::OpenDefaultApps => {
+                crate::linux_default::make_default()?;
+                if !crate::linux_default::is_default() {
+                    return Err("Rust Browser's launcher was added, but your desktop still opens web links with another browser. Choose Rust Browser in your desktop's default applications settings.".into());
+                }
+                self.inform("Rust Browser is now your default browser for web links, and is listed with your applications.".into());
+            }
             // Never sent on Linux: extension pages cannot run, so the shield
             // offers no popup.
             Command::OpenExtensionPopup { id, right, top } => {
@@ -3181,7 +3188,6 @@ impl Browser {
                     linux_downloads::open_folder(&folder)?;
                 }
             }
-            _ => return Err(UNSUPPORTED.into()),
         }
         Ok(())
     }
@@ -3810,7 +3816,12 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
 
 /// What differs in the shared toolbar document on Linux: each Windows text, and
 /// what Linux shows instead.
-const LINUX_TEXT: [[&str; 2]; 7] = [
+const LINUX_TEXT: [[&str; 2]; 8] = [
+    // How the default browser is chosen.
+    [
+        "Windows lets only you choose your default browser: this opens Windows Settings at Default apps, where you pick Rust Browser for web links.",
+        "Rust Browser adds itself to your applications and becomes the browser that opens web links from other apps. Your desktop's default applications settings can change this at any time.",
+    ],
     // Where saved passwords and form data are kept.
     [
         "Saved passwords and form data are kept by WebView2 in this profile, protected by Windows for your account. Rust Browser cannot list, show, export or import them; remove them with Clear browsing data.",

@@ -12,6 +12,8 @@ mod library_worker;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+mod linux_default;
+#[cfg(target_os = "linux")]
 mod linux_downloads;
 #[cfg(target_os = "linux")]
 mod linux_forms;

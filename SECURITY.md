@@ -271,6 +271,20 @@ The client does not check the server's process, as Windows does: the file
 ownership and permission checks above stand in for it. As on Windows, a process
 running as the same user is outside this boundary.
 
+### Default browser on Linux
+
+Make default browser (Settings > System) runs only when the user presses it. It
+writes one launcher, `rust-browser.desktop`, to the user's applications folder
+(`$XDG_DATA_HOME/applications` or `~/.local/share/applications`), whole and then
+renamed. It then sets it through GIO as the user's default for `http` and
+`https` links in `~/.config/mimeapps.list`. It claims no file types, needs no
+administrator rights and changes nothing for other users. A program path with
+characters the launcher's command line would have to escape (quotes,
+backslashes, `$`, `%`, backticks or control characters) is refused rather than
+escaped (`paths_a_command_line_would_need_to_escape_are_refused`). Links from
+other apps arrive as command-line arguments and pass the same checks and
+hand-off as any other launch.
+
 ### Saved passwords and form data on Linux
 
 WebKitGTK has no password manager, so Linux has its own, behind the same
