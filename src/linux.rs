@@ -3215,6 +3215,29 @@ fn lock_or_hand_off(profile: &Path, links: &[String]) -> Result<Option<std::fs::
     }
 }
 
+/// winit's Xlib error handler is process-wide and records every X error as one
+/// of its own, whichever connection it came from; its next call then panics.
+/// WebKit's GL code makes harmless errors on GDK's connection when a window
+/// manager handles the window (a `GLXBadWindow` under Openbox, Mutter or
+/// WSLg's Weston), which ended the browser at its first title change. Errors
+/// on other connections are now marked handled, so winit sees only its own.
+fn keep_other_x_errors_from_winit(event_loop: &EventLoop<Event>) {
+    use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+    let Some(own) = event_loop
+        .display_handle()
+        .ok()
+        .and_then(|handle| match handle.as_raw() {
+            RawDisplayHandle::Xlib(xlib) => xlib.display.map(|d| d.as_ptr() as usize),
+            _ => None,
+        })
+    else {
+        return;
+    };
+    winit::platform::x11::register_xlib_error_hook(Box::new(move |display, _| {
+        display as usize != own
+    }));
+}
+
 /// Start the Linux browser. Returns a message for the user when it cannot.
 pub fn run(launch: Launch) -> Result<(), String> {
     use winit::platform::x11::EventLoopBuilderExtX11;
@@ -3239,6 +3262,7 @@ pub fn run(launch: Launch) -> Result<(), String> {
         .with_x11()
         .build()
         .map_err(|e| e.to_string())?;
+    keep_other_x_errors_from_winit(&event_loop);
     let mut app = App {
         proxy: event_loop.create_proxy(),
         profile,
