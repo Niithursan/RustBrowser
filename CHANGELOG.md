@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Linux, built from source:** Rust Browser now runs on Linux with WebKitGTK through Wry (X11, or XWayland on Wayland), with the same toolbar, tabs, windows and private windows, library, bookmark import, downloads, site permissions, sleeping tabs, profiles and launch picker, data clearing, local diagnostics and links handed from a second launch as on Windows. There is no Linux release or package yet; see "Linux (from source)" in the README.
+- **Linux ad blocking:** the same unpacked extension folder (such as uBlock Origin Lite) adds its declarative blocking rules as a WebKit content filter, with a per-site switch in the shield's panel. WebKitGTK cannot run extensions, so there is no extension panel and no blocked-request count.
+- **Linux passwords and form filling:** saved in the desktop keyring (Secret Service, through the new `libsecret` dependency), offered for saving after a sign-in, and filled only when chosen from the key button in the address field.
+- **Linux default browser:** Settings > System > Make default browser registers a launcher and sets it for web links.
+- **Shared code:** the profile start decision, the picker page, extension manifest reading and the view layout moved out of the Windows-only code; Windows behaves as before.
+
 ## 0.22.2 (published 2026-11-23)
 
 - **Release:** the same browser as 0.22.1, which was tagged but not published: its publishing run stopped when `native_newtab_tiles_and_background` failed once and passed on a re-run. That test and `native_profiles_switch_add_edit_and_delete` now wait for the browser's state instead of fixed delays, and the tile test's timeout reports what it saw (#73). No change to the browser itself.
