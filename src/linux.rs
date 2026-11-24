@@ -30,6 +30,7 @@ use crate::{
 use gtk::prelude::WidgetExt as _;
 use rust_browser::{
     background::{Lifecycle, Phase, Protection},
+    diagnostics::{self, Code as DiagnosticCode},
     handoff::{Request, Status},
     layout::{
         ClipArea, FULLSCREEN_NOTICE, Full, LIBRARY_MAX, LIBRARY_MIN, LIBRARY_WIDTH, Layout,
@@ -128,6 +129,10 @@ pub enum Event {
     ),
     /// A shield filter finished loading or compiling (`Shield::finished`).
     ShieldReady,
+    /// The local diagnostics record changed.
+    Diagnostics(diagnostics::Report),
+    /// A trusted view's web process ended; it was loaded again.
+    ToolbarCrashed,
 }
 
 #[derive(Debug)]
@@ -141,6 +146,10 @@ pub enum PageEvent {
     Pressed,
     /// How many matches the page has for the find bar's text.
     FindCount(u32),
+    /// The page could not load (not when the user or a download stopped it).
+    Failed,
+    /// The page's web process ended (crashed or was killed).
+    Crashed,
 }
 
 /// One tab's website view and what the toolbar shows about it.
@@ -494,6 +503,11 @@ struct Browser {
     downloads_polled: Instant,
     proxy: EventLoopProxy<Event>,
     settings: Settings,
+    /// Local diagnostics (kinds of events only). Declared before `store`, so it
+    /// is dropped, and records a clean exit, while the profile lock is held.
+    diagnostics: diagnostics::Recorder,
+    /// Whether the notice about an unclean last exit was shown.
+    unclean_exit_shown: bool,
     store: Option<Store>,
     library: Worker,
     data: Data,
@@ -694,6 +708,12 @@ impl Browser {
                 (Some(store), snapshot)
             }
         };
+        let diagnostic_proxy = proxy.clone();
+        let diagnostics =
+            diagnostics::Recorder::start((!private).then_some(profile), move |report| {
+                let _ = diagnostic_proxy.send_event(Event::Diagnostics(report));
+            })
+            .unwrap_or_else(|_| diagnostics::Recorder::disabled());
         let shield_proxy = proxy.clone();
         let shield = linux_shield::Shield::new(
             (!private)
@@ -731,6 +751,8 @@ impl Browser {
             downloads_polled: Instant::now(),
             proxy,
             settings: snapshot.settings.clone(),
+            diagnostics,
+            unclean_exit_shown: false,
             store,
             library,
             data: Data::default(),
@@ -795,6 +817,7 @@ impl Browser {
                     profiles::sweep_deleted(&root);
                 });
         }
+        browser.diagnostics.record(DiagnosticCode::Started);
         browser.claim_permissions();
         browser.layout_all();
         browser.refresh_library();
@@ -1607,6 +1630,7 @@ impl Browser {
     fn wake_selected(&mut self) {
         self.each_window(|browser| {
             if let Err(error) = browser.wake_active(false) {
+                browser.diagnostics.record(DiagnosticCode::TabResumeFailed);
                 browser.notice = error.to_string();
             }
         });
@@ -2077,7 +2101,7 @@ impl Browser {
         let state = ToolbarState {
             zoom_percent: ((zoom - 1.0).abs() > 0.001).then(|| (zoom * 100.0).round() as u32),
             page_tools: self.effective_panel().is_none() && navigation::allowed(&active.url),
-            diagnostics: None,
+            diagnostics: (self.panel == Some(Panel::Settings)).then(|| self.diagnostics.snapshot()),
             settings: &self.settings,
             private: self.private,
             restore_session: self.settings.restore_session,
@@ -2353,7 +2377,8 @@ impl Browser {
                 self.settings.favorites.remove(index);
                 self.persist();
             }
-            Command::RefreshDiagnostics => {}
+            Command::RefreshDiagnostics => self.diagnostics.refresh()?,
+            Command::ClearDiagnostics { confirmed } => self.diagnostics.clear(confirmed)?,
             Command::RefreshProfiles => self.refresh_profiles(),
             Command::OpenProfile(id) => {
                 self.refresh_profiles();
@@ -2839,6 +2864,19 @@ impl Browser {
                     .collect();
                 self.persist();
             }
+            PageEvent::Failed => {
+                tab.content.state.loading = false;
+                tab.content.state.failed = true;
+                self.diagnostics.record(DiagnosticCode::NavigationFailed);
+            }
+            PageEvent::Crashed => {
+                tab.content.state.loading = false;
+                tab.content.state.failed = true;
+                self.diagnostics.record(DiagnosticCode::RendererFailed);
+                if self.tabs.active().is_some_and(|t| t.id == id) {
+                    self.notice = "This page stopped working. Reload it to try again.".into();
+                }
+            }
             PageEvent::Fullscreen(on) => {
                 let host = fullscreen_host(&tab.url);
                 if self.tabs.active().is_some_and(|t| t.id == id) {
@@ -3236,7 +3274,13 @@ fn toolbar_view(
             }
         })
         .build_as_child(window)?;
-    shortcuts(&view.webview(), proxy, Source::Window(window.id()));
+    let engine = view.webview();
+    shortcuts(&engine, proxy.clone(), Source::Window(window.id()));
+    // Its own document is local, so loading it again restores it.
+    engine.connect_web_process_terminated(move |engine, _| {
+        engine.reload();
+        let _ = proxy.send_event(Event::ToolbarCrashed);
+    });
     Ok(view)
 }
 
@@ -3350,17 +3394,13 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
 
 /// What differs in the shared toolbar document on Linux: each Windows text, and
 /// what Linux shows instead.
-const LINUX_TEXT: [[&str; 2]; 7] = [
+const LINUX_TEXT: [[&str; 2]; 6] = [
     // What Settings says sleeping does.
     [
         "Sleeping keeps inactive pages intact while freeing background activity.",
         "Sleeping closes an inactive page to free its memory. Selecting the tab loads it again where it was, usually with what you typed in its forms; anything else the page held, such as a playing video or an unsent chat message, may be lost.",
     ],
-    // Linux keeps no diagnostics, so a problem notice offers none.
-    [
-        "byId('notice-diagnostics').hidden=!s.notice||",
-        "byId('notice-diagnostics').hidden=true||",
-    ], // WebKit reports nothing about what it blocks, so there is no count.
+    // WebKit reports nothing about what it blocks, so there is no count.
     [
         r#"<label class="settings-label"><input type="checkbox" id="count-blocked">Count blocked requests</label><p class="muted">The shield shows how many requests your extensions blocked on each page; counting slows page loading a little.</p>"#,
         r#"<input type="checkbox" id="count-blocked" hidden>"#,
@@ -3485,6 +3525,20 @@ fn content_view(
             let _ = failed.send_event(Event::Page(id, PageEvent::FindCount(0)));
         });
     }
+    let failed = proxy.clone();
+    engine.connect_load_failed(move |_, _, _, error| {
+        // A load the user stopped, or one that became a download, did not fail.
+        let stopped = error.matches(webkit2gtk::NetworkError::Cancelled)
+            || error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange);
+        if !stopped {
+            let _ = failed.send_event(Event::Page(id, PageEvent::Failed));
+        }
+        false
+    });
+    let crashed = proxy.clone();
+    engine.connect_web_process_terminated(move |_, _| {
+        let _ = crashed.send_event(Event::Page(id, PageEvent::Crashed));
+    });
     let pressed = proxy.clone();
     engine.connect_button_press_event(move |_, _| {
         let _ = pressed.send_event(Event::Page(id, PageEvent::Pressed));
@@ -3634,6 +3688,7 @@ impl ApplicationHandler<Event> for App {
                     );
                 }
                 if let Some(message) = reply.message {
+                    browser.diagnostics.record(DiagnosticCode::LibraryFailed);
                     browser.notice = message;
                 }
                 // What an import did is information, as on Windows.
@@ -3670,6 +3725,9 @@ impl ApplicationHandler<Event> for App {
                     })
             }
             Event::StorageError => {
+                browser
+                    .diagnostics
+                    .record(DiagnosticCode::SessionSaveFailed);
                 browser.notice =
                     "Error: Session could not be saved. Check profile access and disk space."
                         .into();
@@ -3684,6 +3742,9 @@ impl ApplicationHandler<Event> for App {
                 Ok(())
             }
             Event::DownloadStopped(id, cancelled) => {
+                if !cancelled {
+                    browser.diagnostics.record(DiagnosticCode::DownloadStopped);
+                }
                 browser.downloads.borrow_mut().stopped(id, cancelled);
                 Ok(())
             }
@@ -3692,6 +3753,9 @@ impl ApplicationHandler<Event> for App {
                 Ok(())
             }
             Event::DownloadFinished(id, result) => {
+                if result.is_err() {
+                    browser.diagnostics.record(DiagnosticCode::DownloadFailed);
+                }
                 browser.downloads.borrow_mut().finished(id, result);
                 Ok(())
             }
@@ -3705,7 +3769,23 @@ impl ApplicationHandler<Event> for App {
             }
             // The toolbar opens the request under the site badge on its own.
             Event::PermissionPrompt => Ok(()),
+            Event::Diagnostics(report) => {
+                if report.previous_exit_unclean && !browser.unclean_exit_shown {
+                    browser.unclean_exit_shown = true;
+                    browser.notice = "Rust Browser did not close properly last time. Your tabs were reopened from the last save; anything typed into pages since then may be lost.".into();
+                }
+                Ok(())
+            }
+            Event::ToolbarCrashed => {
+                browser.diagnostics.record(DiagnosticCode::ToolbarFailed);
+                Ok(())
+            }
             Event::EngineCleared(ok) => {
+                if !ok {
+                    browser
+                        .diagnostics
+                        .record(DiagnosticCode::EngineClearFailed);
+                }
                 if let Some(clear) = &mut browser.clearing {
                     clear.engine_done = true;
                     clear.failed |= !ok;
