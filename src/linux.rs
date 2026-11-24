@@ -6,11 +6,12 @@
 //! its command protocol (`ui`), tabs, navigation, sessions, settings and the
 //! bookmarks and history library (`library_worker`), the download staging rules
 //! (`linux_downloads`) and the permission rules (`linux_permissions`). What WebView2
-//! alone provides on Windows (extensions and the shield, profiles, password
-//! autofill) is not offered here yet: such commands answer with a notice
-//! instead. Clearing browsing data uses WebKit's own data manager. WebKitGTK
-//! cannot freeze a page as WebView2 does, so a sleeping tab's view is closed
-//! and its back/forward list kept; selecting it loads the page again.
+//! alone provides on Windows (extensions and the shield, password autofill) is
+//! not offered here yet: such commands answer with a notice instead. Clearing
+//! browsing data uses WebKit's own data manager. WebKitGTK cannot freeze a page
+//! as WebView2 does, so a sleeping tab's view is closed and its back/forward
+//! list kept; selecting it loads the page again. Profiles work as on Windows:
+//! each runs in its own process, in its own folder (`profiles::dir`).
 //!
 //! A later launch of a normal window hands its links (or a request for a window)
 //! to the browser already holding the profile through `linux_handoff`, and exits.
@@ -37,6 +38,7 @@ use rust_browser::{
     library::{Action, Data, Filter},
     navigation,
     privacy::ClearRequest,
+    profiles::{self, Registry, Start},
     security::{self, Capability, Decision, Rule},
     settings::Settings,
     storage::{self, MAX_WINDOWS, Snapshot, Store, WindowSnapshot},
@@ -164,11 +166,14 @@ impl Page {
 pub struct Launch {
     pub private: bool,
     pub version: bool,
+    /// The profile to open (`profiles::valid_id`); `None` lets the browser
+    /// choose (the picker, or the last used profile).
+    pub profile: Option<String>,
     pub links: Vec<String>,
 }
 
-/// Read `--private`, `--version` and links (website addresses only) from the
-/// arguments after the program name.
+/// Read `--private`, `--version`, `--profile=<id>` and links (website addresses
+/// only) from the arguments after the program name.
 pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Launch, String> {
     let mut launch = Launch::default();
     let mut links_only = false;
@@ -177,6 +182,13 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Launch, Stri
             "--" if !links_only => links_only = true,
             "--private" if !links_only => launch.private = true,
             "--version" if !links_only => launch.version = true,
+            other if !links_only && other.starts_with("--profile=") && launch.profile.is_none() => {
+                let id = &other["--profile=".len()..];
+                if !profiles::valid_id(id) {
+                    return Err("The command line names a profile that is not valid.".into());
+                }
+                launch.profile = Some(id.to_string());
+            }
             other if !links_only && other.starts_with("--") => {
                 return Err(format!("Unknown option {other}."));
             }
@@ -484,6 +496,13 @@ struct Browser {
     run_id: u128,
     loads: u64,
     profile: PathBuf,
+    /// This browser's profile, and the folder holding the list of profiles (the
+    /// Default profile's folder).
+    profile_id: String,
+    profiles_root: PathBuf,
+    /// Every profile as last read, and the other profiles with a window open.
+    profiles: Registry,
+    profiles_open: Vec<String>,
     /// WebKit's context of the website views, once the first one exists.
     content_context: Option<webkit2gtk::WebContext>,
     /// A clear of browsing data in progress.
@@ -577,22 +596,17 @@ fn window_label(tabs: &Tabs<Page>) -> String {
     label
 }
 
-/// The arguments that open a private window, showing `link` if given.
-fn private_args(link: Option<&str>) -> Vec<String> {
-    let mut args = vec!["--private".to_string()];
-    if let Some(link) = link {
-        // After `--`, so an address can never be read as an option.
-        args.extend(["--".to_string(), link.to_string()]);
-    }
-    args
-}
-
-/// Start a private window: another process of this program, with nothing saved.
-fn open_private(link: Option<&str>) -> std::io::Result<()> {
-    std::process::Command::new(std::env::current_exe()?)
-        .args(private_args(link))
-        .spawn()
-        .map(|_| ())
+/// Start profile `id` in another process of this program (`launch::profile_args`):
+/// a private window, or a profile that hands over to the browser already
+/// holding it. Its exit is collected, so no finished process stays behind.
+fn open_profile(id: &str, private: bool, link: Option<&str>) -> std::io::Result<()> {
+    let mut child = std::process::Command::new(std::env::current_exe()?)
+        .args(rust_browser::launch::profile_args(id, private, link))
+        .spawn()?;
+    let _ = std::thread::Builder::new()
+        .name("profile-process".into())
+        .spawn(move || child.wait());
+    Ok(())
 }
 
 /// A clear of browsing data: its library half (history, permissions) and its
@@ -633,10 +647,11 @@ impl Browser {
     fn open(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
-        profile: &Path,
+        start: Opening,
         lock: Option<std::fs::File>,
         links: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
+        let profile = start.folder.as_path();
         // Only a normal window holds the profile's lock.
         let private = lock.is_none();
         let (store, snapshot) = match lock {
@@ -689,6 +704,10 @@ impl Browser {
                 .map_or(0, |d| d.as_nanos()),
             loads: 0,
             profile: profile.to_path_buf(),
+            profile_id: start.id,
+            profiles_root: start.root,
+            profiles: Registry::default(),
+            profiles_open: Vec::new(),
             content_context: None,
             clearing: None,
             handoff: None,
@@ -720,13 +739,101 @@ impl Browser {
         if let Some(notice) = failed {
             browser.notice = notice;
         }
+        browser.refresh_profiles();
         if !private {
             browser.start_handoff();
+            let root = browser.profiles_root.clone();
+            let id = browser.profile_id.clone();
+            let _ = std::thread::Builder::new()
+                .name("profiles".into())
+                .spawn(move || {
+                    let _ = profiles::mark_used(&root, &id);
+                    profiles::sweep_deleted(&root);
+                });
         }
         browser.claim_permissions();
         browser.layout_all();
         browser.refresh_library();
         Ok(browser)
+    }
+
+    /// Read the list of profiles again (another profile may have changed it).
+    fn refresh_profiles(&mut self) {
+        if let Ok(registry) = profiles::load(&self.profiles_root) {
+            self.profiles = registry;
+        }
+        self.profiles_open = self
+            .profiles
+            .profiles
+            .iter()
+            .filter(|p| p.id != self.profile_id)
+            .filter(|p| profiles::is_open(&self.profiles_root, &p.id))
+            .map(|p| p.id.clone())
+            .collect();
+    }
+
+    /// Every profile for the toolbar, this browser's first.
+    fn profile_rows(&self) -> Vec<ui::ProfileRow<'_>> {
+        let mut rows: Vec<_> = self
+            .profiles
+            .profiles
+            .iter()
+            .map(|p| ui::ProfileRow {
+                id: &p.id,
+                name: &p.name,
+                color: &p.color,
+                current: p.id == self.profile_id,
+                open: self.profiles_open.contains(&p.id),
+            })
+            .collect();
+        rows.sort_by_key(|row| !row.current);
+        rows
+    }
+
+    /// This profile's name, when there is more than one profile to tell apart.
+    fn profile_name(&self) -> Option<&str> {
+        (self.profiles.profiles.len() > 1)
+            .then(|| self.profiles.get(&self.profile_id))
+            .flatten()
+            .map(|p| p.name.as_str())
+    }
+
+    /// Run a change to the list of profiles and keep the result.
+    fn change_profiles<T>(
+        &mut self,
+        change: impl FnOnce(&mut Registry) -> std::io::Result<T>,
+    ) -> Result<T, Box<dyn Error>> {
+        if self.private {
+            return Err("Manage profiles from a normal window.".into());
+        }
+        let result = profiles::update(&self.profiles_root, change);
+        self.refresh_profiles();
+        Ok(result?)
+    }
+
+    /// Delete another profile and its data (its WebKit folders can be large, so
+    /// they are removed off the UI thread).
+    fn delete_profile(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        if id == self.profile_id {
+            return Err("Switch to another profile to delete this one.".into());
+        }
+        if self.private {
+            return Err("Manage profiles from a normal window.".into());
+        }
+        let name = self
+            .profiles
+            .get(id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let trash = profiles::delete(&self.profiles_root, id);
+        self.refresh_profiles();
+        if let Some(trash) = trash? {
+            let _ = std::thread::Builder::new()
+                .name("profile-delete".into())
+                .spawn(move || std::fs::remove_dir_all(trash));
+        }
+        self.inform(format!("Deleted the profile {name} and its data."));
+        Ok(())
     }
 
     /// Listen for later launches of this profile. If that is not possible, keep
@@ -1617,9 +1724,9 @@ impl Browser {
             library_folder: self.filter.folder,
             history_enabled: self.settings.history_enabled,
             downloads: self.downloads.borrow().records(),
-            profiles: Vec::new(),
-            profile_colors: &rust_browser::profiles::COLORS,
-            can_add_profile: false,
+            profiles: self.profile_rows(),
+            profile_colors: &profiles::COLORS,
+            can_add_profile: !self.private && self.profiles.profiles.len() < profiles::MAX_PROFILES,
         };
         if let Ok(json) = serde_json::to_string(&state) {
             let sides = [&self.tabs_view, &self.library_view]
@@ -1639,10 +1746,15 @@ impl Browser {
                 }
             }
         }
+        // With more than one profile, the title (task switcher, panel) names it.
+        let app = match self.profile_name() {
+            Some(name) => format!("Rust Browser - {name}"),
+            None => "Rust Browser".into(),
+        };
         let title = if active.title.is_empty() {
-            "Rust Browser".to_string()
+            app
         } else {
-            format!("{} - Rust Browser", active.title)
+            format!("{} - {app}", active.title)
         };
         self.window.set_title(&title);
     }
@@ -1712,10 +1824,10 @@ impl Browser {
                 self.persist();
             }
             Command::ReopenClosedWindow => return self.reopen_window(el),
-            Command::NewPrivateWindow => open_private(None)?,
+            Command::NewPrivateWindow => open_profile(&self.profile_id, true, None)?,
             Command::OpenSavedPrivate(url) => {
                 let url = rust_browser::library::bookmark_url(&url).map_err(|e| e.to_string())?;
-                open_private(Some(&url))?;
+                open_profile(&self.profile_id, true, Some(&url))?;
             }
             Command::DragWindow => {
                 let _ = self.window.drag_window();
@@ -1828,7 +1940,28 @@ impl Browser {
                 self.settings.favorites.remove(index);
                 self.persist();
             }
-            Command::RefreshDiagnostics | Command::RefreshProfiles => {}
+            Command::RefreshDiagnostics => {}
+            Command::RefreshProfiles => self.refresh_profiles(),
+            Command::OpenProfile(id) => {
+                self.refresh_profiles();
+                if self.profiles.get(&id).is_none() {
+                    return Err("That profile no longer exists.".into());
+                }
+                open_profile(&id, false, None)?;
+            }
+            Command::AddProfile { name, color } => {
+                let profile = self.change_profiles(|r| {
+                    let name = name.unwrap_or_else(|| r.suggested_name());
+                    let color = color.unwrap_or_else(|| r.suggested_color().into());
+                    r.create(&name, &color)
+                })?;
+                open_profile(&profile.id, false, None)?;
+                self.inform(format!("Opening the new profile {}.", profile.name));
+            }
+            Command::EditProfile { id, name, color } => {
+                self.change_profiles(|r| r.edit(&id, &name, &color))?;
+            }
+            Command::DeleteProfile(id) => self.delete_profile(&id)?,
             Command::ImportBookmarks => self.choose_bookmarks_file()?,
             Command::KeepAwake => {
                 if let Some(tab) = self.tabs.active_mut() {
@@ -2922,9 +3055,19 @@ fn content_view(
     Ok(view)
 }
 
+/// The profile a launch opens.
+struct Opening {
+    id: String,
+    /// The Default profile's folder, which holds the list of profiles.
+    root: PathBuf,
+    /// This profile's own folder (`profiles::dir`).
+    folder: PathBuf,
+}
+
 struct App {
     proxy: EventLoopProxy<Event>,
-    profile: PathBuf,
+    /// The profile to open, until the browser opens.
+    opening: Option<Opening>,
     /// The profile's lock, for a normal window, until the browser opens.
     lock: Option<std::fs::File>,
     launch: Option<Launch>,
@@ -2955,13 +3098,13 @@ impl ApplicationHandler<Event> for App {
         if self.browser.is_some() {
             return;
         }
-        let Some(launch) = self.launch.take() else {
+        let (Some(launch), Some(opening)) = (self.launch.take(), self.opening.take()) else {
             return;
         };
         match Browser::open(
             el,
             self.proxy.clone(),
-            &self.profile,
+            opening,
             self.lock.take(),
             launch.links,
         ) {
@@ -3221,7 +3364,7 @@ fn lock_or_hand_off(profile: &Path, links: &[String]) -> Result<Option<std::fs::
 /// manager handles the window (a `GLXBadWindow` under Openbox, Mutter or
 /// WSLg's Weston), which ended the browser at its first title change. Errors
 /// on other connections are now marked handled, so winit sees only its own.
-fn keep_other_x_errors_from_winit(event_loop: &EventLoop<Event>) {
+fn keep_other_x_errors_from_winit<T>(event_loop: &EventLoop<T>) {
     use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
     let Some(own) = event_loop
         .display_handle()
@@ -3238,19 +3381,9 @@ fn keep_other_x_errors_from_winit(event_loop: &EventLoop<Event>) {
     }));
 }
 
-/// Start the Linux browser. Returns a message for the user when it cannot.
-pub fn run(launch: Launch) -> Result<(), String> {
+/// Start GTK and winit on X11: the one event loop this process may have.
+pub(crate) fn event_loop<T: 'static>() -> Result<EventLoop<T>, String> {
     use winit::platform::x11::EventLoopBuilderExtX11;
-    let profile = storage::profile_dir().map_err(|e| e.to_string())?;
-    let lock = if launch.private {
-        None
-    } else {
-        match lock_or_hand_off(&profile, &launch.links)? {
-            Some(lock) => Some(lock),
-            // The running browser opened it.
-            None => return Ok(()),
-        }
-    };
     // wry's child views need X11; under Wayland this runs on XWayland.
     // SAFETY: called on the main thread before GTK, winit or any other thread
     // starts, so nothing reads the environment concurrently.
@@ -3258,14 +3391,47 @@ pub fn run(launch: Launch) -> Result<(), String> {
         std::env::set_var("GDK_BACKEND", "x11");
     }
     gtk::init().map_err(|_| "GTK could not start. Is a display available?".to_string())?;
-    let event_loop = EventLoop::<Event>::with_user_event()
+    let event_loop = EventLoop::<T>::with_user_event()
         .with_x11()
         .build()
         .map_err(|e| e.to_string())?;
     keep_other_x_errors_from_winit(&event_loop);
+    Ok(event_loop)
+}
+
+/// Start the Linux browser. Returns a message for the user when it cannot.
+pub fn run(mut launch: Launch) -> Result<(), String> {
+    let root = storage::profile_dir().map_err(|e| e.to_string())?;
+    let plain = launch.links.is_empty();
+    let id = match profiles::choose_start(
+        launch.profile.take(),
+        profiles::load(&root),
+        launch.private,
+        plain,
+    ) {
+        Start::Open(id) => id,
+        Start::Refuse(message) => return Err(format!("{message} Nothing was opened or changed.")),
+        Start::Pick(registry) => {
+            return match crate::linux_picker::choose(&root, &registry)? {
+                Some(id) => open_profile(&id, false, None).map_err(|e| e.to_string()),
+                None => Ok(()),
+            };
+        }
+    };
+    let folder = profiles::dir(&root, &id).map_err(|e| e.to_string())?;
+    let lock = if launch.private {
+        None
+    } else {
+        match lock_or_hand_off(&folder, &launch.links)? {
+            Some(lock) => Some(lock),
+            // The running browser opened it.
+            None => return Ok(()),
+        }
+    };
+    let event_loop = event_loop::<Event>()?;
     let mut app = App {
         proxy: event_loop.create_proxy(),
-        profile,
+        opening: Some(Opening { id, root, folder }),
         lock,
         launch: Some(launch),
         browser: None,
@@ -3323,12 +3489,37 @@ mod tests {
     }
 
     #[test]
-    fn a_private_window_starts_with_its_link_after_the_options() {
-        let launch = parse_args(private_args(None)).unwrap();
+    fn a_profile_process_starts_with_its_link_after_the_options() {
+        use rust_browser::launch::profile_args;
+        let launch = parse_args(profile_args("p2", true, None)).unwrap();
         assert!(launch.private && launch.links.is_empty());
-        let launch = parse_args(private_args(Some("https://example.com/a"))).unwrap();
-        assert!(launch.private);
+        assert_eq!(launch.profile.as_deref(), Some("p2"));
+        let launch = parse_args(profile_args(
+            "default",
+            false,
+            Some("https://example.com/a"),
+        ))
+        .unwrap();
+        assert!(!launch.private);
+        assert_eq!(launch.profile.as_deref(), Some("default"));
         assert_eq!(launch.links, ["https://example.com/a"]);
+    }
+
+    #[test]
+    fn a_profile_is_one_strict_option() {
+        let args = |list: &[&str]| parse_args(list.iter().map(|s| s.to_string()));
+        for bad in [
+            "--profile=",
+            "--profile=../x",
+            "--profile=p0",
+            "--profile=Work",
+        ] {
+            assert!(args(&[bad]).is_err(), "{bad}");
+        }
+        assert!(args(&["--profile=p2", "--profile=p3"]).is_err());
+        assert!(args(&["--profile", "p2"]).is_err());
+        // After `--` it is a link, and not a valid one.
+        assert!(args(&["--", "--profile=p2"]).is_err());
     }
 
     #[test]
