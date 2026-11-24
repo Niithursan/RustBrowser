@@ -12,6 +12,8 @@ pub enum Panel {
     NewTab,
 }
 
+/// The toolbar's starting height on Windows (Linux starts from `DEFAULT_CHROME`).
+#[cfg(windows)]
 pub const HEIGHT: f64 = 136.0;
 pub const HTML: &str = include_str!("toolbar.html");
 
@@ -72,6 +74,15 @@ pub enum Command {
     SetCountBlocked(bool),
     /// Linux: block requests on the selected tab's site (true), or pause it.
     SetSiteBlocking(bool),
+    /// Linux: answer the offer to save a submitted login.
+    AnswerPasswordOffer {
+        id: u64,
+        answer: OfferAnswer,
+    },
+    /// Linux: fill the page's login form with the saved login of this username.
+    FillLogin(String),
+    /// Linux: fill the page's empty contact fields with saved details.
+    FillContact,
     /// Show the bookmarks bar under the address line (Settings > Appearance).
     SetBookmarksBar(bool),
     /// A folder on the bookmarks bar (or inside its dropdown): list its contents
@@ -256,6 +267,37 @@ pub struct ProfileRow<'a> {
     pub open: bool,
 }
 
+/// How the user answered the offer to save a login.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OfferAnswer {
+    Save,
+    /// Never offer for this site again.
+    Never,
+    NotNow,
+}
+
+/// The selected tab's site in the password panel.
+#[derive(Serialize)]
+pub struct PasswordState<'a> {
+    pub host: &'a str,
+    /// A submitted login waiting for an answer.
+    pub offer: Option<PasswordOffer<'a>>,
+    /// Usernames saved for this site, to fill.
+    pub logins: &'a [String],
+    /// Saved contact details can fill a form on this page.
+    pub contact: bool,
+}
+
+/// A submitted login the browser offers to save. Never its password.
+#[derive(Serialize)]
+pub struct PasswordOffer<'a> {
+    pub id: u64,
+    pub username: &'a str,
+    /// A password is already saved for this username and differs.
+    pub update: bool,
+}
+
 /// The site the shield's per-site switch acts on.
 #[derive(Serialize)]
 pub struct ShieldSite<'a> {
@@ -335,6 +377,10 @@ pub struct ToolbarState<'a> {
     /// for the shield's per-site switch; never sent on Windows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shield_site: Option<ShieldSite<'a>>,
+    /// Linux: saved logins and form filling for the selected tab's site; never
+    /// sent on Windows, where WebView2 shows its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passwords: Option<PasswordState<'a>>,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     /// The extension whose popup is open under the shield, if any.

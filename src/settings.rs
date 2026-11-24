@@ -61,10 +61,21 @@ pub struct Settings {
     /// Windows an extension's own panel keeps its site exceptions.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shield_paused_sites: Vec<String>,
+    /// Linux only: origins where the user chose never to save passwords. On
+    /// Windows WebView2 keeps its own list.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub password_never_sites: Vec<String>,
 }
 
 /// Most sites the shield can be paused on.
 pub const MAX_PAUSED_SITES: usize = 1000;
+
+/// An origin as a URL serializes it (`https://host[:port]`).
+pub fn valid_origin(origin: &str) -> bool {
+    url::Url::parse(origin).is_ok_and(|url| {
+        matches!(url.scheme(), "http" | "https") && url.origin().ascii_serialization() == origin
+    })
+}
 
 /// A host as a page address gives it (lowercase name, IPv4 or bracketed IPv6).
 pub fn valid_site(host: &str) -> bool {
@@ -168,6 +179,7 @@ impl Default for Settings {
             count_blocked: true,
             bookmarks_bar: true,
             shield_paused_sites: Vec::new(),
+            password_never_sites: Vec::new(),
         }
     }
 }
@@ -214,6 +226,11 @@ impl Settings {
         {
             return Err("Invalid sites with ad blocking paused.".into());
         }
+        if self.password_never_sites.len() > MAX_PAUSED_SITES
+            || !self.password_never_sites.iter().all(|o| valid_origin(o))
+        {
+            return Err("Invalid sites that never save passwords.".into());
+        }
         let mut urls = std::collections::HashSet::new();
         for item in &self.favorites {
             if item.title.trim().is_empty()
@@ -250,13 +267,28 @@ mod tests {
         ] {
             assert!(!valid_site(host), "{host:?}");
         }
-        let mut settings = Settings::default();
-        settings.shield_paused_sites = vec!["example.com".into()];
+        let mut settings = Settings {
+            shield_paused_sites: vec!["example.com".into()],
+            ..Settings::default()
+        };
         assert!(settings.validate().is_ok());
         settings.shield_paused_sites.push("Bad Host".into());
         assert!(settings.validate().is_err());
         settings.shield_paused_sites = vec!["a.test".into(); MAX_PAUSED_SITES + 1];
         assert!(settings.validate().is_err());
+        let never = Settings {
+            password_never_sites: vec!["https://a.test".into(), "http://localhost:8000".into()],
+            ..Settings::default()
+        };
+        assert!(never.validate().is_ok());
+        for bad in [
+            "https://a.test/",
+            "a.test",
+            "ftp://a.test",
+            "https://A.test",
+        ] {
+            assert!(!valid_origin(bad), "{bad}");
+        }
         // Older files have no list; an empty one is not written.
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(!json.contains("shield_paused_sites"));

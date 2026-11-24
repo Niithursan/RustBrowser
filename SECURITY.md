@@ -271,6 +271,30 @@ The client does not check the server's process, as Windows does: the file
 ownership and permission checks above stand in for it. As on Windows, a process
 running as the same user is outside this boundary.
 
+### Saved passwords and form data on Linux
+
+WebKitGTK has no password manager, so Linux has its own, behind the same
+Settings switches as Windows ("Offer to save passwords", "Fill in forms
+automatically"; both off by default, never in private windows). Logins and
+contact details are kept in the desktop keyring (the Secret Service: GNOME
+Keyring, KWallet and others, through libsecret), which encrypts them and unlocks
+them with the user's login. Rust Browser writes no cryptography of its own and
+keeps nothing in the profile's files.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| A page forges a login to save, or calls the fill | The form helper (`linux_forms.js`) runs in its own WebKit script world in the top frame. Page scripts run in another world and see neither its message handler nor its fill functions | Checked in the container: a probe page saw `handler=hidden fill=undefined` |
+| A fill reaches the wrong site | Every message names its origin, which must be the view's own. Logins are kept per origin (`https://host[:port]`, or HTTP on loopback only) and listed only for that origin. A fill goes to the tab only if it still shows that origin | `passwords_are_kept_only_for_secure_or_local_sites`, `only_bounded_well_formed_messages_are_read` |
+| A page script reads a filled password | Nothing is filled on page load. A login or contact details are filled only when the user chooses them from the key button in the address field. Values reach the page as call arguments, never as script text | GUI check in the container (fill after choosing) |
+| Saving more than the user meant | A submitted login is only offered (Save, Never for this site, Not now). Its password stays in memory until it is answered, its tab closes or five minutes pass, and it never reaches the toolbar page. Contact details are saved only from a submitted form, only for known fields (name, email, phone, organization, address), never passwords or card fields | `contact_details_merge_known_fields_only`, `the_script_reports_only_what_the_browser_reads` |
+| Profiles see each other's logins | Every keyring item carries a digest of its profile's folder, and every search names it | `profiles_have_separate_items` |
+| Visiting a page prompts for the keyring | Listing usernames and checking for contact details never unlock the keyring. Only saving, filling and a submitted login's check do | Design |
+
+Clear browsing data removes this profile's saved passwords or contact details
+from the keyring (checked in the container with `secret-tool`). Without a
+running keyring nothing is saved, and the browser says so when asked to save or
+fill.
+
 ### Shield on Linux
 
 WebKitGTK cannot run extensions. On Linux, Add from folder reads only an

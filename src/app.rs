@@ -2815,6 +2815,8 @@ impl Session {
             count_blocked: self.settings.count_blocked,
             // An extension's own panel keeps its site exceptions on Windows.
             shield_site: None,
+            // WebView2 offers to save and fill passwords itself.
+            passwords: None,
             blocked: if self.counts_blocked() {
                 active.content.engine.blocked.count()
             } else {
@@ -3143,6 +3145,17 @@ impl Session {
             Command::SetNewtabBackground(background) => {
                 self.settings.newtab_background = background;
             }
+            Command::AnswerPasswordOffer { id, answer } => {
+                // Never sent here: the toolbar shows no offer on Windows.
+                let _ = (id, answer);
+                return Err("WebView2 offers to save passwords itself.".into());
+            }
+            Command::FillLogin(username) => {
+                // Never sent here, like the offer above.
+                let _ = username;
+                return Err("WebView2 fills saved passwords itself.".into());
+            }
+            Command::FillContact => return Err("WebView2 fills forms itself.".into()),
             Command::SetSiteBlocking(on) => {
                 return Err(format!(
                     "Use the extension's own panel to turn blocking {} for a site.",

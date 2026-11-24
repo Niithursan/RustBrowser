@@ -24,7 +24,7 @@
 //! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
-    linux_downloads, linux_handoff, linux_permissions, linux_shield,
+    linux_downloads, linux_forms, linux_handoff, linux_keyring, linux_permissions, linux_shield,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
@@ -133,7 +133,56 @@ pub enum Event {
     Diagnostics(diagnostics::Report),
     /// A trusted view's web process ended; it was loaded again.
     ToolbarCrashed,
+    /// The form helper in tab `.0` reported something.
+    Forms(TabId, linux_forms::Message),
+    /// The usernames saved for the origin tab `.0` shows.
+    Logins(TabId, String, Result<Vec<String>, String>),
+    /// What the keyring holds for a submitted login's username (offer `.0`).
+    OfferChecked(u64, Result<Option<String>, String>),
+    /// A saved password to fill into tab `.0`'s page at an origin, for a username.
+    FillPassword(TabId, String, String, Result<Option<String>, String>),
+    /// Saved contact details to fill into tab `.0`'s page, at an origin.
+    FillContact(TabId, String, Result<Option<String>, String>),
+    /// Saved contact details, to merge newly submitted ones into.
+    MergeContact(
+        std::collections::BTreeMap<String, String>,
+        Result<Option<String>, String>,
+    ),
+    /// Whether contact details are saved.
+    ContactSaved(bool),
+    /// A keyring change finished: what to tell the user, or why it failed.
+    KeyringDone(Result<String, String>),
+    /// Saved passwords (true) or contact details were cleared, or not.
+    KeyringCleared(bool, Result<(), String>),
 }
+
+/// What the form helper found on a tab's page.
+#[derive(Default)]
+struct Forms {
+    login: bool,
+    contact: bool,
+    /// Usernames saved for the page's origin.
+    logins: Vec<String>,
+}
+
+/// A submitted login the browser offers to save. Its password is kept in
+/// memory only until the user answers, the tab closes or five minutes pass.
+struct Offer {
+    id: u64,
+    tab: TabId,
+    origin: String,
+    host: String,
+    username: String,
+    password: String,
+    /// A different password is saved for this username.
+    update: bool,
+    /// The keyring was checked; a login already saved is not offered.
+    checked: bool,
+    at: Instant,
+}
+
+/// How long an unanswered offer to save a login is kept.
+const OFFER_LIFETIME: Duration = Duration::from_secs(300);
 
 #[derive(Debug)]
 pub enum PageEvent {
@@ -162,6 +211,7 @@ struct Page {
     state: State,
     zoom: f64,
     lifecycle: Lifecycle,
+    forms: Forms,
 }
 
 impl Page {
@@ -547,6 +597,14 @@ struct Browser {
     extension_chooser: Option<gtk::FileChooserNative>,
     /// The window menu (right-click on the caption space), while it is shown.
     window_menu: Option<gtk::Menu>,
+    /// Saved passwords and contact details, in the desktop keyring.
+    keyring: linux_keyring::Keyring,
+    /// A submitted login waiting for the user's answer.
+    offer: Option<Offer>,
+    /// The last offer number handed out.
+    offers: u64,
+    /// Whether contact details are saved, once known.
+    contact_saved: Option<bool>,
 }
 
 impl std::ops::Deref for Browser {
@@ -660,6 +718,8 @@ struct Clearing {
     revision: u64,
     library_done: bool,
     engine_done: bool,
+    /// Keyring clears still running.
+    keyring_pending: u8,
     failed: bool,
     results: Vec<String>,
 }
@@ -779,6 +839,10 @@ impl Browser {
             rebuilding: std::collections::HashSet::new(),
             extension_chooser: None,
             window_menu: None,
+            keyring: linux_keyring::Keyring::for_profile(profile),
+            offer: None,
+            offers: 0,
+            contact_saved: None,
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -1286,6 +1350,228 @@ impl Browser {
         }
     }
 
+    /// Install the form helper in a normal window's website view.
+    fn watch_forms(&self, view: &WebView, id: TabId) {
+        if self.private {
+            return;
+        }
+        let proxy = self.proxy.clone();
+        linux_forms::install(&view.webview(), move |message| {
+            let _ = proxy.send_event(Event::Forms(id, message));
+        });
+    }
+
+    /// What the form helper of tab `id` reported.
+    fn forms(&mut self, id: TabId, message: linux_forms::Message) {
+        use linux_forms::Message;
+        let (save, fill) = (self.settings.save_passwords, self.settings.autofill);
+        match message {
+            Message::Fields {
+                origin,
+                login,
+                contact,
+            } => {
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.content.forms.login = login;
+                    tab.content.forms.contact = contact;
+                }
+                if login && save {
+                    let proxy = self.proxy.clone();
+                    let asked = origin.clone();
+                    self.keyring.usernames(&origin, move |result| {
+                        let _ = proxy.send_event(Event::Logins(id, asked, result));
+                    });
+                }
+                if contact && fill && self.contact_saved.is_none() {
+                    let proxy = self.proxy.clone();
+                    self.keyring.has_contact(move |saved| {
+                        let _ = proxy.send_event(Event::ContactSaved(saved));
+                    });
+                }
+            }
+            Message::Login {
+                origin,
+                username,
+                password,
+            } => {
+                if !save || self.settings.password_never_sites.contains(&origin) {
+                    return;
+                }
+                let host = url::Url::parse(&origin)
+                    .ok()
+                    .and_then(|u| u.host_str().map(str::to_string))
+                    .unwrap_or_else(|| origin.clone());
+                self.offers += 1;
+                let id_offer = self.offers;
+                let proxy = self.proxy.clone();
+                self.keyring.password(&origin, &username, move |result| {
+                    let _ = proxy.send_event(Event::OfferChecked(id_offer, result));
+                });
+                self.offer = Some(Offer {
+                    id: id_offer,
+                    tab: id,
+                    origin,
+                    host,
+                    username,
+                    password,
+                    update: false,
+                    checked: false,
+                    at: Instant::now(),
+                });
+            }
+            Message::Contact { values, .. } => {
+                if fill {
+                    let proxy = self.proxy.clone();
+                    self.keyring.contact(move |saved| {
+                        let _ = proxy.send_event(Event::MergeContact(values, saved));
+                    });
+                }
+            }
+        }
+    }
+
+    /// The keyring answered whether a submitted login is already saved.
+    fn offer_checked(&mut self, id: u64, saved: Result<Option<String>, String>) {
+        let Some(offer) = self.offer.as_mut().filter(|o| o.id == id) else {
+            return;
+        };
+        match saved {
+            Ok(Some(password)) if password == offer.password => self.offer = None,
+            Ok(Some(_)) => {
+                offer.update = true;
+                offer.checked = true;
+            }
+            // Offered even when the keyring cannot be read: saving says why.
+            Ok(None) | Err(_) => offer.checked = true,
+        }
+    }
+
+    fn answer_offer(&mut self, id: u64, answer: ui::OfferAnswer) -> Result<(), Box<dyn Error>> {
+        let Some(offer) = self.offer.take_if(|o| o.id == id) else {
+            return Ok(());
+        };
+        match answer {
+            ui::OfferAnswer::NotNow => {}
+            ui::OfferAnswer::Never => {
+                let never = &mut self.settings.password_never_sites;
+                if never.len() >= rust_browser::settings::MAX_PAUSED_SITES {
+                    return Err("Too many sites never save passwords.".into());
+                }
+                if !never.contains(&offer.origin) {
+                    never.push(offer.origin);
+                }
+                self.persist();
+                self.inform(format!(
+                    "Rust Browser will not offer to save passwords for {}.",
+                    offer.host
+                ));
+            }
+            ui::OfferAnswer::Save => {
+                let proxy = self.proxy.clone();
+                let text = format!("Password saved for {} in your keyring.", offer.host);
+                self.keyring.save_login(
+                    &offer.origin,
+                    &offer.username,
+                    &offer.password,
+                    move |r| {
+                        let _ = proxy.send_event(Event::KeyringDone(r.map(|()| text)));
+                    },
+                );
+                for win in &mut self.windows {
+                    for tab in &mut win.tabs.items {
+                        let forms = &mut tab.content.forms;
+                        if linux_forms::origin(&tab.url).as_deref() == Some(&offer.origin)
+                            && !forms.logins.contains(&offer.username)
+                        {
+                            forms.logins.push(offer.username.clone());
+                            forms.logins.sort();
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Fill the selected tab's login form with the saved login of `username`.
+    fn fill_login(&mut self, username: String) -> Result<(), Box<dyn Error>> {
+        let tab = self.tabs.active().ok_or("No tab is open.")?;
+        let origin = linux_forms::origin(&tab.url).ok_or("This page cannot be filled.")?;
+        if !self.settings.save_passwords || !tab.content.forms.logins.contains(&username) {
+            return Err("No password is saved for that username here.".into());
+        }
+        let (id, proxy) = (tab.id, self.proxy.clone());
+        let asked = origin.clone();
+        self.keyring
+            .password(&origin, &username.clone(), move |result| {
+                let _ = proxy.send_event(Event::FillPassword(id, asked, username, result));
+            });
+        Ok(())
+    }
+
+    /// Fill the selected tab's contact fields with the saved details.
+    fn fill_contact(&mut self) -> Result<(), Box<dyn Error>> {
+        let tab = self.tabs.active().ok_or("No tab is open.")?;
+        let origin = linux_forms::origin(&tab.url).ok_or("This page cannot be filled.")?;
+        if !self.settings.autofill || !tab.content.forms.contact {
+            return Err("This page has no form Rust Browser can fill.".into());
+        }
+        let (id, proxy) = (tab.id, self.proxy.clone());
+        self.keyring.contact(move |result| {
+            let _ = proxy.send_event(Event::FillContact(id, origin, result));
+        });
+        Ok(())
+    }
+
+    /// The view of tab `id` if it still shows `origin`: a fill never reaches
+    /// a page the user has since left.
+    fn view_at(&self, id: TabId, origin: &str) -> Option<webkit2gtk::WebView> {
+        self.windows
+            .iter()
+            .flat_map(|w| &w.tabs.items)
+            .find(|t| t.id == id)
+            .and_then(|t| t.content.view.as_ref())
+            .map(WebView::webview)
+            .filter(|view| {
+                view.uri()
+                    .and_then(|uri| linux_forms::origin(&uri))
+                    .as_deref()
+                    == Some(origin)
+            })
+    }
+
+    /// The password panel's view of the selected tab, when it has something
+    /// to show.
+    fn password_state<'a>(
+        &'a self,
+        active: &'a rust_browser::tabs::Tab<Page>,
+        host: &'a Option<String>,
+    ) -> Option<ui::PasswordState<'a>> {
+        if self.private || !(self.settings.save_passwords || self.settings.autofill) {
+            return None;
+        }
+        let offer = self
+            .offer
+            .as_ref()
+            .filter(|o| o.tab == active.id && o.checked && self.settings.save_passwords);
+        let host = offer.map(|o| o.host.as_str()).or(host.as_deref())?;
+        let forms = &active.content.forms;
+        Some(ui::PasswordState {
+            host,
+            offer: offer.map(|o| ui::PasswordOffer {
+                id: o.id,
+                username: &o.username,
+                update: o.update,
+            }),
+            logins: if self.settings.save_passwords && forms.login {
+                &forms.logins
+            } else {
+                &[]
+            },
+            contact: self.settings.autofill && forms.contact && self.contact_saved == Some(true),
+        })
+    }
+
     /// The shield's per-site switch: block on the selected tab's site, or
     /// pause blocking there. The page loads again to show the difference.
     fn set_site_blocking(&mut self, on: bool) -> Result<(), Box<dyn Error>> {
@@ -1711,6 +1997,7 @@ impl Browser {
         );
         if let Ok(view) = &built {
             self.shield_view(view, &url);
+            self.watch_forms(view, id);
         }
         let now = self.started.elapsed();
         let Some(tab) = self.windows[self.current].tabs.get_mut(id) else {
@@ -1763,6 +2050,14 @@ impl Browser {
         }
         self.background_at = Instant::now();
         let mut changed = false;
+        if self
+            .offer
+            .as_ref()
+            .is_some_and(|o| o.at.elapsed() > OFFER_LIFETIME)
+        {
+            self.offer = None;
+            changed = true;
+        }
         self.each_window(|browser| changed |= browser.background_window());
         changed
     }
@@ -1850,6 +2145,7 @@ impl Browser {
             self.private_anchor.as_ref().map(|anchor| anchor.webview()),
         )?;
         self.shield_view(&view, &url);
+        self.watch_forms(&view, id);
         // wry keeps the WebKit context to itself; every website view shares it.
         // Each view wry builds also adds its default handler, which saves to the
         // Downloads folder unasked; `linux_downloads` overrides it per download.
@@ -1876,6 +2172,7 @@ impl Browser {
                 state,
                 zoom: 1.0,
                 lifecycle: Lifecycle::default(),
+                forms: Forms::default(),
             },
         )?;
         Ok(())
@@ -2152,6 +2449,7 @@ impl Browser {
             }
         };
         let site = (!self.private).then(|| Self::site(&active.url)).flatten();
+        let secure_host = linux_forms::origin(&active.url).and(Self::site(&active.url));
         let state = ToolbarState {
             zoom_percent: ((zoom - 1.0).abs() > 0.001).then(|| (zoom * 100.0).round() as u32),
             page_tools: self.effective_panel().is_none() && navigation::allowed(&active.url),
@@ -2208,6 +2506,7 @@ impl Browser {
                 host,
                 paused: self.settings.shield_paused_sites.iter().any(|s| s == host),
             }),
+            passwords: self.password_state(active, &secure_host),
             extensions: self.extension_rows(),
             extension_popup: None,
             library: &self.data,
@@ -2271,6 +2570,9 @@ impl Browser {
 
     fn close_tab(&mut self, id: TabId) -> Result<(), Box<dyn Error>> {
         self.permissions.borrow_mut().cancel_tab(id);
+        if self.offer.as_ref().is_some_and(|o| o.tab == id) {
+            self.offer = None;
+        }
         if let Some(tab) = self.tabs.close(id) {
             tab.content.hide();
             if navigation::allowed(&tab.url) {
@@ -2465,10 +2767,39 @@ impl Browser {
             }
             Command::RemoveExtension(id) => return self.remove_extension(&id),
             Command::SetSiteBlocking(on) => return self.set_site_blocking(on),
-            Command::SetCountBlocked(_) => {
-                return Err(
-                    "Linux cannot count blocked requests: WebKit does not report them.".into(),
-                );
+            // Never sent on Linux: extension pages cannot run, so the shield
+            // offers no popup.
+            Command::OpenExtensionPopup { id, right, top } => {
+                let _ = (id, right, top);
+                return Err(UNSUPPORTED.into());
+            }
+            Command::SetSavePasswords(on) => {
+                if self.private {
+                    return Err("Private windows never save passwords.".into());
+                }
+                self.settings.save_passwords = on;
+                if !on {
+                    self.offer = None;
+                }
+                self.persist();
+            }
+            Command::SetAutofill(on) => {
+                if self.private {
+                    return Err("Private windows never fill in forms.".into());
+                }
+                self.settings.autofill = on;
+                self.persist();
+            }
+            Command::AnswerPasswordOffer { id, answer } => return self.answer_offer(id, answer),
+            Command::FillLogin(username) => return self.fill_login(username),
+            Command::FillContact => return self.fill_contact(),
+            // The switch is hidden on Linux; turning counting off changes nothing.
+            Command::SetCountBlocked(on) => {
+                if on {
+                    return Err(
+                        "Linux cannot count blocked requests: WebKit does not report them.".into(),
+                    );
+                }
             }
             Command::KeepAwake => {
                 if let Some(tab) = self.tabs.active_mut() {
@@ -2900,6 +3231,7 @@ impl Browser {
                 }
                 tab.content.state.loading = true;
                 tab.content.state.failed = false;
+                tab.content.forms = Forms::default();
             }
             PageEvent::Finished(url) => {
                 tab.content.state.loading = false;
@@ -3143,14 +3475,28 @@ impl Browser {
             revision: 0,
             library_done: true,
             engine_done: true,
+            keyring_pending: 0,
             failed: false,
             results: Vec::new(),
         };
-        if request.passwords || request.autofill {
-            clearing.results.push(
-                "Rust Browser on Linux does not save passwords or form data, so there were none to clear."
-                    .into(),
-            );
+        if (request.passwords || request.autofill) && self.private {
+            clearing
+                .results
+                .push("Private windows never save passwords or form data.".into());
+        } else {
+            self.offer = None;
+            for (wanted, passwords) in [(request.passwords, true), (request.autofill, false)] {
+                if wanted {
+                    clearing.keyring_pending += 1;
+                    let proxy = self.proxy.clone();
+                    self.keyring.clear(passwords, move |result| {
+                        let _ = proxy.send_event(Event::KeyringCleared(passwords, result));
+                    });
+                }
+            }
+            if request.autofill {
+                self.contact_saved = Some(false);
+            }
         }
         if request.session {
             self.settings.restore_session = false;
@@ -3249,7 +3595,7 @@ impl Browser {
         if !self
             .clearing
             .as_ref()
-            .is_some_and(|c| c.library_done && c.engine_done)
+            .is_some_and(|c| c.library_done && c.engine_done && c.keyring_pending == 0)
         {
             return;
         }
@@ -3464,7 +3810,12 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
 
 /// What differs in the shared toolbar document on Linux: each Windows text, and
 /// what Linux shows instead.
-const LINUX_TEXT: [[&str; 2]; 6] = [
+const LINUX_TEXT: [[&str; 2]; 7] = [
+    // Where saved passwords and form data are kept.
+    [
+        "Saved passwords and form data are kept by WebView2 in this profile, protected by Windows for your account. Rust Browser cannot list, show, export or import them; remove them with Clear browsing data.",
+        "Saved passwords and contact details are kept in your desktop keyring (such as GNOME Keyring or KWallet), protected by your login, never in this profile's files. Rust Browser fills a form only when you choose a login or your contact details from the key button in the address field. Remove them with Clear browsing data or your keyring's own app.",
+    ],
     // What Settings says sleeping does.
     [
         "Sleeping keeps inactive pages intact while freeing background activity.",
@@ -3844,6 +4195,101 @@ impl ApplicationHandler<Event> for App {
                     browser.unclean_exit_shown = true;
                     browser.notice = "Rust Browser did not close properly last time. Your tabs were reopened from the last save; anything typed into pages since then may be lost.".into();
                 }
+                Ok(())
+            }
+            Event::Forms(id, message) => {
+                if browser.select_tab_window(id) {
+                    browser.forms(id, message);
+                }
+                Ok(())
+            }
+            Event::Logins(id, origin, result) => {
+                if let Ok(names) = result {
+                    for win in &mut browser.windows {
+                        if let Some(tab) = win.tabs.get_mut(id)
+                            && linux_forms::origin(&tab.url).as_deref() == Some(origin.as_str())
+                        {
+                            tab.content.forms.logins = names.clone();
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Event::OfferChecked(id, result) => {
+                browser.offer_checked(id, result);
+                Ok(())
+            }
+            Event::FillPassword(id, origin, username, result) => match result {
+                Ok(Some(password)) => {
+                    if let Some(view) = browser.view_at(id, &origin) {
+                        linux_forms::fill_login(&view, &username, &password);
+                    }
+                    Ok(())
+                }
+                Ok(None) => Err("That password is no longer in the keyring.".into()),
+                Err(error) => Err(error.into()),
+            },
+            Event::FillContact(id, origin, result) => match result {
+                Ok(Some(json)) => {
+                    if let Some(view) = browser.view_at(id, &origin) {
+                        linux_forms::fill_contact(&view, &json);
+                    }
+                    Ok(())
+                }
+                Ok(None) => Err("No contact details are saved.".into()),
+                Err(error) => Err(error.into()),
+            },
+            Event::MergeContact(values, saved) => match saved {
+                Ok(saved) => {
+                    let merged = linux_forms::merge_contact(saved.as_deref(), values);
+                    let proxy = browser.proxy.clone();
+                    browser.keyring.save_contact(&merged, move |result| {
+                        let _ =
+                            proxy.send_event(Event::KeyringDone(result.map(|()| String::new())));
+                    });
+                    browser.contact_saved = Some(true);
+                    Ok(())
+                }
+                Err(error) => Err(error.into()),
+            },
+            Event::ContactSaved(saved) => {
+                browser.contact_saved = Some(saved);
+                Ok(())
+            }
+            Event::KeyringDone(result) => match result {
+                Ok(text) if text.is_empty() => Ok(()),
+                Ok(text) => {
+                    browser.inform(text);
+                    Ok(())
+                }
+                Err(error) => Err(error.into()),
+            },
+            Event::KeyringCleared(passwords, result) => {
+                if let Some(clear) = &mut browser.clearing {
+                    clear.keyring_pending = clear.keyring_pending.saturating_sub(1);
+                    clear.failed |= result.is_err();
+                    clear.results.push(
+                        match (passwords, result.is_ok()) {
+                            (true, true) => "Saved passwords were removed from the keyring.",
+                            (false, true) => "Saved contact details were removed from the keyring.",
+                            (true, false) => {
+                                "Saved passwords could not be removed from the keyring."
+                            }
+                            (false, false) => {
+                                "Saved contact details could not be removed from the keyring."
+                            }
+                        }
+                        .into(),
+                    );
+                }
+                for win in &mut browser.windows {
+                    for tab in &mut win.tabs.items {
+                        if passwords {
+                            tab.content.forms.logins.clear();
+                        }
+                    }
+                }
+                browser.finish_clear();
                 Ok(())
             }
             Event::ToolbarCrashed => {

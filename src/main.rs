@@ -14,7 +14,11 @@ mod linux;
 #[cfg(target_os = "linux")]
 mod linux_downloads;
 #[cfg(target_os = "linux")]
+mod linux_forms;
+#[cfg(target_os = "linux")]
 mod linux_handoff;
+#[cfg(target_os = "linux")]
+mod linux_keyring;
 #[cfg(target_os = "linux")]
 mod linux_permissions;
 #[cfg(target_os = "linux")]

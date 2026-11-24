@@ -401,7 +401,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -1300,6 +1300,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsecret"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac6fae6ebe590e06ef9d01b125e46b7d4c05ccbd5961f12b4aefe2ecd010220f"
+dependencies = [
+ "gio",
+ "glib",
+ "libc",
+ "libsecret-sys",
+]
+
+[[package]]
+name = "libsecret-sys"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b716fc5e1c82eb0d28665882628382ab0e0a156a6d73580e33f0ac6ac8d2540"
+dependencies = [
+ "gio-sys",
+ "glib-sys",
+ "gobject-sys",
+ "libc",
+ "pkg-config",
+ "system-deps",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2103,6 +2129,8 @@ dependencies = [
  "dunce",
  "gdkx11",
  "gtk",
+ "javascriptcore-rs",
+ "libsecret",
  "rusqlite",
  "serde",
  "serde_json",
