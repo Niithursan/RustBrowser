@@ -531,6 +531,8 @@ struct Browser {
     rebuilding: std::collections::HashSet<String>,
     /// The folder chooser of Settings > Extensions, while it is open.
     extension_chooser: Option<gtk::FileChooserNative>,
+    /// The window menu (right-click on the caption space), while it is shown.
+    window_menu: Option<gtk::Menu>,
 }
 
 impl std::ops::Deref for Browser {
@@ -611,6 +613,9 @@ fn window_label(tabs: &Tabs<Page>) -> String {
     }
     label
 }
+
+/// A window-menu item: its label, whether it can be chosen, and its command.
+type MenuItem = (&'static str, bool, fn() -> Command);
 
 /// "1 blocking rule", "2 blocking rules".
 fn blocking_rules(count: usize) -> String {
@@ -751,6 +756,7 @@ impl Browser {
             shield,
             rebuilding: std::collections::HashSet::new(),
             extension_chooser: None,
+            window_menu: None,
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -1177,6 +1183,38 @@ impl Browser {
     }
 
     /// Bookmarks > Import: ask for an exported bookmarks file.
+    /// The window menu a right-click on the caption space shows, at the
+    /// pointer. winit has none on X11, and window managers differ in whether
+    /// they offer theirs to a window that draws its own title bar.
+    fn show_window_menu(&mut self) {
+        use gtk::prelude::*;
+        let menu = gtk::Menu::new();
+        let maximized = self.window.is_maximized();
+        let window = self.window.id();
+        let items: [MenuItem; 4] = [
+            ("_Restore", maximized, || Command::ToggleMaximize),
+            ("Mi_nimize", true, || Command::MinimizeWindow),
+            ("Ma_ximize", !maximized, || Command::ToggleMaximize),
+            ("_Close", true, || Command::CloseWindow),
+        ];
+        for (at, (label, enabled, command)) in items.into_iter().enumerate() {
+            if at == 3 {
+                menu.append(&gtk::SeparatorMenuItem::new());
+            }
+            let item = gtk::MenuItem::with_mnemonic(label);
+            item.set_sensitive(enabled);
+            let proxy = self.proxy.clone();
+            item.connect_activate(move |_| {
+                let _ = proxy.send_event(Event::Command(Source::Window(window), command()));
+            });
+            menu.append(&item);
+        }
+        menu.show_all();
+        menu.popup_easy(3, gtk::current_event_time());
+        // GTK holds a shown menu only while it is up; keep it until the next.
+        self.window_menu = Some(menu);
+    }
+
     /// Whether the user's extension `id` is added and on.
     fn extension_on(settings: &Settings, id: &str) -> bool {
         settings
@@ -2172,6 +2210,11 @@ impl Browser {
                 }
             }
             Command::MinimizeWindow => self.window.set_minimized(true),
+            Command::ShowWindowMenu { x, y } => {
+                if x.is_finite() && y.is_finite() {
+                    self.show_window_menu();
+                }
+            }
             Command::ToggleMaximize => self.window.set_maximized(!self.window.is_maximized()),
             Command::CloseWindow => return self.close_window(el),
             Command::ExitBrowser => {
