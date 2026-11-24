@@ -113,6 +113,10 @@ pub enum Event {
     EngineCleared(bool),
     /// A later launch's request, with where to send the answer.
     HandOff(Request, std::sync::mpsc::SyncSender<Status>),
+    /// The bookmarks file chooser closed: the chosen file, or none.
+    BookmarkFile(Option<PathBuf>),
+    /// The chosen bookmarks file, read and parsed, or why it was refused.
+    BookmarksRead(Result<rust_browser::bookmark_import::Parsed, String>),
 }
 
 #[derive(Debug)]
@@ -490,6 +494,8 @@ struct Browser {
     started: Instant,
     /// When background tabs were last checked.
     background_at: Instant,
+    /// The file chooser of Bookmarks > Import, while it is open.
+    import_chooser: Option<gtk::FileChooserNative>,
 }
 
 impl std::ops::Deref for Browser {
@@ -688,6 +694,7 @@ impl Browser {
             handoff: None,
             started: Instant::now(),
             background_at: Instant::now(),
+            import_chooser: None,
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -1022,6 +1029,67 @@ impl Browser {
             each(self);
         }
         self.current = current.min(self.windows.len().saturating_sub(1));
+    }
+
+    /// Bookmarks > Import: ask for an exported bookmarks file.
+    fn choose_bookmarks_file(&mut self) -> Result<(), Box<dyn Error>> {
+        use gtk::prelude::{FileChooserExt, NativeDialogExt};
+        if self.private {
+            return Err(
+                "Import bookmarks from a normal window; private windows do not write bookmarks."
+                    .into(),
+            );
+        }
+        if self.import_chooser.is_some() {
+            return Err("Choose the bookmarks file in the window that is already open.".into());
+        }
+        let chooser = gtk::FileChooserNative::new(
+            Some("Import bookmarks"),
+            None::<&gtk::Window>,
+            gtk::FileChooserAction::Open,
+            Some("Import"),
+            Some("Cancel"),
+        );
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Exported bookmarks (*.html, *.htm)"));
+        for pattern in ["*.html", "*.htm", "*.HTML", "*.HTM"] {
+            filter.add_pattern(pattern);
+        }
+        chooser.add_filter(filter);
+        let proxy = self.proxy.clone();
+        chooser.connect_response(move |chooser, response| {
+            let file = (response == gtk::ResponseType::Accept)
+                .then(|| chooser.filename())
+                .flatten();
+            let _ = proxy.send_event(Event::BookmarkFile(file));
+        });
+        chooser.show();
+        self.import_chooser = Some(chooser);
+        Ok(())
+    }
+
+    /// The bookmarks file chooser closed. A chosen file is read and parsed off
+    /// the UI thread; the library worker then imports it.
+    fn bookmark_file(&mut self, file: Option<PathBuf>) {
+        use gtk::prelude::NativeDialogExt;
+        if let Some(chooser) = self.import_chooser.take() {
+            chooser.destroy();
+        }
+        let Some(file) = file else {
+            return;
+        };
+        let proxy = self.proxy.clone();
+        let started = std::thread::Builder::new()
+            .name("bookmark-file".into())
+            .spawn(move || {
+                let result = rust_browser::bookmark_import::read_file(&file).and_then(|bytes| {
+                    rust_browser::bookmark_import::parse(&bytes).map_err(|e| e.message())
+                });
+                let _ = proxy.send_event(Event::BookmarksRead(result));
+            });
+        if started.is_err() {
+            self.notice = "The bookmarks file could not be read.".into();
+        }
     }
 
     /// Wake each window's selected tab if it sleeps. A tab whose waking failed
@@ -1761,6 +1829,7 @@ impl Browser {
                 self.persist();
             }
             Command::RefreshDiagnostics | Command::RefreshProfiles => {}
+            Command::ImportBookmarks => self.choose_bookmarks_file()?,
             Command::KeepAwake => {
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.keep_awake = !tab.keep_awake;
@@ -2723,15 +2792,28 @@ fn toolbar_document(path: &str) -> wry::http::Response<std::borrow::Cow<'static,
         .unwrap_or_else(|_| wry::http::Response::new((&[] as &[u8]).into()))
 }
 
-/// What Settings says sleeping does, on Windows and on Linux.
-const SLEEP_TEXT: [&str; 2] = [
-    "Sleeping keeps inactive pages intact while freeing background activity.",
-    "Sleeping closes an inactive page to free its memory. Selecting the tab loads it again where it was, usually with what you typed in its forms; anything else the page held, such as a playing video or an unsent chat message, may be lost.",
+/// What differs in the shared toolbar document on Linux: each Windows text, and
+/// what Linux shows instead.
+const LINUX_TEXT: [[&str; 2]; 2] = [
+    // What Settings says sleeping does.
+    [
+        "Sleeping keeps inactive pages intact while freeing background activity.",
+        "Sleeping closes an inactive page to free its memory. Selecting the tab loads it again where it was, usually with what you typed in its forms; anything else the page held, such as a playing video or an unsent chat message, may be lost.",
+    ],
+    // Linux keeps no diagnostics, so a problem notice offers none.
+    [
+        "byId('notice-diagnostics').hidden=!s.notice||",
+        "byId('notice-diagnostics').hidden=true||",
+    ],
 ];
 
 /// The shared toolbar document, with what differs on Linux.
 fn linux_document() -> String {
-    ui::HTML.replacen(SLEEP_TEXT[0], SLEEP_TEXT[1], 1)
+    LINUX_TEXT
+        .iter()
+        .fold(ui::HTML.to_string(), |page, [windows, linux]| {
+            page.replacen(windows, linux, 1)
+        })
 }
 
 /// A private window's anchor: a hidden, empty view in a new in-memory WebKit
@@ -2898,6 +2980,15 @@ impl ApplicationHandler<Event> for App {
         // Events not tied to a window are shown in the focused one.
         browser.current = browser.focused_index();
         let result = match event {
+            Event::BookmarkFile(file) => {
+                browser.bookmark_file(file);
+                Ok(())
+            }
+            Event::BookmarksRead(result) => match result {
+                // The library's reply says what was imported.
+                Ok(parsed) => browser.submit(Action::ImportBookmarks(parsed)),
+                Err(message) => Err(message.into()),
+            },
             Event::HandOff(request, reply) => {
                 let status = if el.exiting() {
                     Status::Closing
@@ -2943,8 +3034,12 @@ impl ApplicationHandler<Event> for App {
                         .into(),
                     );
                 }
-                if let Some(message) = reply.message.or(reply.summary) {
+                if let Some(message) = reply.message {
                     browser.notice = message;
+                }
+                // What an import did is information, as on Windows.
+                if let Some(summary) = reply.summary {
+                    browser.inform(summary);
                 }
                 if let Some(data) = reply.data
                     && reply.revision >= browser.revision.saturating_sub(64)
@@ -3228,11 +3323,13 @@ mod tests {
         let page = toolbar_document("/");
         assert_eq!(page.status(), 200);
         assert_eq!(page.body().as_ref(), linux_document().as_bytes());
-        // Settings describes sleeping as Linux does it; the Windows sentence it
-        // replaces must still be in the shared document.
-        assert_eq!(ui::HTML.matches(SLEEP_TEXT[0]).count(), 1);
-        assert!(linux_document().contains(SLEEP_TEXT[1]));
-        assert!(!linux_document().contains(SLEEP_TEXT[0]));
+        // Each Windows text Linux replaces must still be in the shared document,
+        // exactly once.
+        for [windows, linux] in LINUX_TEXT {
+            assert_eq!(ui::HTML.matches(windows).count(), 1, "{windows}");
+            assert!(linux_document().contains(linux));
+            assert!(!linux_document().contains(windows));
+        }
         assert_eq!(toolbar_document("/other").status(), 404);
         assert_eq!(toolbar_document("/../etc/passwd").status(), 404);
         // Short enough for wry to deliver the toolbar's IPC messages.
