@@ -10,6 +10,9 @@
 //! password autofill) is not offered here yet: such commands answer with a notice
 //! instead. Clearing browsing data uses WebKit's own data manager.
 //!
+//! A later launch of a normal window hands its links (or a request for a window)
+//! to the browser already holding the profile through `linux_handoff`, and exits.
+//!
 //! Security model, as on Windows: website views only navigate to HTTP(S) and
 //! `about:blank`, have no command bridge, get a permission only when the user allows
 //! it (or a remembered rule does), and download only into a folder the user picks
@@ -18,11 +21,12 @@
 //! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
-    linux_downloads, linux_permissions,
+    linux_downloads, linux_handoff, linux_permissions,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
 use rust_browser::{
+    handoff::{Request, Status},
     layout::{
         ClipArea, FULLSCREEN_NOTICE, Full, LIBRARY_MAX, LIBRARY_MIN, LIBRARY_WIDTH, Layout,
         fullscreen_host, fullscreen_notice_area, layout,
@@ -102,6 +106,8 @@ pub enum Event {
     PermissionPrompt,
     /// WebKit finished clearing website data, or could not.
     EngineCleared(bool),
+    /// A later launch's request, with where to send the answer.
+    HandOff(Request, std::sync::mpsc::SyncSender<Status>),
 }
 
 #[derive(Debug)]
@@ -149,8 +155,11 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Launch, Stri
                 .links
                 .push(navigation::external(link).map_err(|e| e.to_string())?),
         }
-        if launch.links.len() > MAX_TABS {
-            return Err("Too many links.".into());
+        if launch.links.len() > rust_browser::launch::MAX_LINKS {
+            return Err(format!(
+                "At most {} links can be opened at once.",
+                rust_browser::launch::MAX_LINKS
+            ));
         }
     }
     Ok(launch)
@@ -446,6 +455,8 @@ struct Browser {
     content_context: Option<webkit2gtk::WebContext>,
     /// A clear of browsing data in progress.
     clearing: Option<Clearing>,
+    /// Listens for later launches of this profile (normal windows only).
+    handoff: Option<linux_handoff::Server>,
 }
 
 impl std::ops::Deref for Browser {
@@ -584,17 +595,20 @@ impl Browser {
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         profile: &Path,
-        private: bool,
+        lock: Option<std::fs::File>,
         links: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
-        let (store, snapshot) = if private {
-            (None, Snapshot::default())
-        } else {
-            let errors = proxy.clone();
-            let (store, snapshot, _) = Store::open(profile, move || {
-                let _ = errors.send_event(Event::StorageError);
-            })?;
-            (Some(store), snapshot)
+        // Only a normal window holds the profile's lock.
+        let private = lock.is_none();
+        let (store, snapshot) = match lock {
+            None => (None, Snapshot::default()),
+            Some(lock) => {
+                let errors = proxy.clone();
+                let (store, snapshot, _) = Store::open_locked(profile, lock, move || {
+                    let _ = errors.send_event(Event::StorageError);
+                })?;
+                (Some(store), snapshot)
+            }
         };
         let library_proxy = proxy.clone();
         let library = Worker::start(
@@ -637,6 +651,7 @@ impl Browser {
             profile: profile.to_path_buf(),
             content_context: None,
             clearing: None,
+            handoff: None,
         };
         let restore = !private && browser.settings.restore_session;
         let main = restore.then(|| WindowSnapshot {
@@ -662,10 +677,75 @@ impl Browser {
         if let Some(notice) = failed {
             browser.notice = notice;
         }
+        if !private {
+            browser.start_handoff();
+        }
         browser.claim_permissions();
         browser.layout_all();
         browser.refresh_library();
         Ok(browser)
+    }
+
+    /// Listen for later launches of this profile. If that is not possible, keep
+    /// browsing and say that a later launch cannot reach this browser.
+    fn start_handoff(&mut self) {
+        let proxy = self.proxy.clone();
+        let dispatch: linux_handoff::Dispatch = std::sync::Arc::new(move |request| {
+            let (reply, answer) = std::sync::mpsc::sync_channel(1);
+            if proxy.send_event(Event::HandOff(request, reply)).is_err() {
+                return Status::Closing;
+            }
+            answer
+                .recv_timeout(linux_handoff::UI_TIMEOUT)
+                .unwrap_or(Status::NotResponding)
+        });
+        match linux_handoff::endpoint(&self.profile)
+            .ok_or_else(|| std::io::Error::other("no private folder"))
+            .and_then(|path| linux_handoff::Server::start(&path, dispatch))
+        {
+            Ok(server) => self.handoff = Some(server),
+            Err(_) => {
+                self.notice = "Links from other apps cannot reach this browser while it runs, because its link channel could not be created. Restart Rust Browser to try again.".into();
+            }
+        }
+    }
+
+    /// Open what a later launch handed over in the focused window (or a new
+    /// window), then bring it forward.
+    fn hand_off(&mut self, el: &ActiveEventLoop, request: Request) -> Status {
+        if self.clearing.is_some() {
+            return Status::Busy;
+        }
+        self.current = self.focused_index();
+        match request {
+            Request::Open(links) => {
+                let mut opened = 0;
+                for link in links {
+                    // Checked again with the command-line policy.
+                    match navigation::external(&link)
+                        .map_err(|e| e.to_string())
+                        .and_then(|url| self.open_tab(url).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => opened += 1,
+                        Err(error) => self.notice = error,
+                    }
+                }
+                if opened == 0 {
+                    return Status::Refused;
+                }
+                self.panel = None;
+            }
+            Request::NewWindow => {
+                if let Err(error) = self.open_window(el, None, Vec::new(), true) {
+                    self.notice = error.to_string();
+                    return Status::Refused;
+                }
+            }
+        }
+        self.persist();
+        self.window.set_minimized(false);
+        self.window.focus_window();
+        Status::Accepted
     }
 
     /// Open a window with `restore`'s tabs, then `links`, or else the new-tab
@@ -850,6 +930,8 @@ impl Browser {
 
     /// Save every window and end the browser.
     fn shutdown(&mut self, el: &ActiveEventLoop) {
+        // Later launches then wait for the profile instead of being answered.
+        self.handoff = None;
         self.persist();
         self.downloads.borrow_mut().shutdown();
         el.exit();
@@ -2524,6 +2606,8 @@ fn content_view(
 struct App {
     proxy: EventLoopProxy<Event>,
     profile: PathBuf,
+    /// The profile's lock, for a normal window, until the browser opens.
+    lock: Option<std::fs::File>,
     launch: Option<Launch>,
     browser: Option<Browser>,
     failed: Option<String>,
@@ -2558,7 +2642,7 @@ impl ApplicationHandler<Event> for App {
             el,
             self.proxy.clone(),
             &self.profile,
-            launch.private,
+            self.lock.take(),
             launch.links,
         ) {
             Ok(browser) => self.browser = Some(browser),
@@ -2576,6 +2660,15 @@ impl ApplicationHandler<Event> for App {
         // Events not tied to a window are shown in the focused one.
         browser.current = browser.focused_index();
         let result = match event {
+            Event::HandOff(request, reply) => {
+                let status = if el.exiting() {
+                    Status::Closing
+                } else {
+                    browser.hand_off(el, request)
+                };
+                let _ = reply.send(status);
+                Ok(())
+            }
             Event::Command(source, command) => {
                 let found = match source {
                     Source::Window(id) => browser.select_window(id),
@@ -2736,10 +2829,69 @@ impl ApplicationHandler<Event> for App {
     }
 }
 
+/// Take the profile's lock, or hand `links` (or a request for a window) to the
+/// browser holding it: `None` when that browser accepted. While it is starting or
+/// closing nothing answers, so keep trying for a few seconds, taking the profile
+/// if it becomes free. Never open a second browser on the same profile.
+fn lock_or_hand_off(profile: &Path, links: &[String]) -> Result<Option<std::fs::File>, String> {
+    use linux_handoff::Outcome;
+    const PATIENCE: Duration = Duration::from_secs(6);
+    let started = Instant::now();
+    let request = if links.is_empty() {
+        Request::NewWindow
+    } else {
+        Request::Open(links.to_vec())
+    };
+    loop {
+        match storage::lock(profile) {
+            Ok(lock) => return Ok(Some(lock)),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let message = match linux_handoff::send(profile, &request) {
+            Outcome::Answered(Status::Accepted) => return Ok(None),
+            Outcome::NoServer | Outcome::Answered(Status::Closing)
+                if started.elapsed() < PATIENCE =>
+            {
+                std::thread::sleep(Duration::from_millis(300));
+                continue;
+            }
+            Outcome::NoServer | Outcome::Answered(Status::Closing) => {
+                "Rust Browser is already running with this profile but did not accept the link. It may be starting, closing or not responding. Wait a moment and try again."
+            }
+            Outcome::Answered(Status::Refused) => {
+                "The running Rust Browser refused the request: the link is not one it can open, or no more windows can be opened."
+            }
+            Outcome::Answered(Status::Busy) => {
+                "The running Rust Browser is busy (clearing browsing data, or receiving many links at once). Try again in a few seconds."
+            }
+            Outcome::Answered(Status::NotResponding) | Outcome::NotResponding => {
+                "The running Rust Browser is not responding, so the link was not opened. Wait, or close it and try again."
+            }
+            Outcome::Untrusted => {
+                "Something other than Rust Browser is in the place of its link channel, so nothing was sent to it."
+            }
+            Outcome::Failed => "Rust Browser could not hand the link to its running window.",
+        };
+        return Err(format!(
+            "{message} No second window was opened and nothing was changed."
+        ));
+    }
+}
+
 /// Start the Linux browser. Returns a message for the user when it cannot.
 pub fn run(launch: Launch) -> Result<(), String> {
     use winit::platform::x11::EventLoopBuilderExtX11;
     let profile = storage::profile_dir().map_err(|e| e.to_string())?;
+    let lock = if launch.private {
+        None
+    } else {
+        match lock_or_hand_off(&profile, &launch.links)? {
+            Some(lock) => Some(lock),
+            // The running browser opened it.
+            None => return Ok(()),
+        }
+    };
     // wry's child views need X11; under Wayland this runs on XWayland.
     // SAFETY: called on the main thread before GTK, winit or any other thread
     // starts, so nothing reads the environment concurrently.
@@ -2754,6 +2906,7 @@ pub fn run(launch: Launch) -> Result<(), String> {
     let mut app = App {
         proxy: event_loop.create_proxy(),
         profile,
+        lock,
         launch: Some(launch),
         browser: None,
         failed: None,

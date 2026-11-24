@@ -14,6 +14,8 @@ mod linux;
 #[cfg(target_os = "linux")]
 mod linux_downloads;
 #[cfg(target_os = "linux")]
+mod linux_handoff;
+#[cfg(target_os = "linux")]
 mod linux_permissions;
 #[cfg(windows)]
 mod native_activity;

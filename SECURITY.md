@@ -253,6 +253,24 @@ outside this boundary. The second launch grants the running browser permission t
 take the foreground (`AllowSetForegroundWindow`); no focus-stealing workaround is
 used.
 
+### Hand-off channel on Linux
+
+Linux uses a Unix socket (`linux_handoff`) with the same message format, limits,
+rate limit, timeouts, link checks and status replies as Windows. A private window
+never listens and never hands off: each runs in its own process.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| Another user connects, or places a socket a launch connects to | The socket is in a directory checked before every use: a real directory owned by this user with no group or other access (`$XDG_RUNTIME_DIR`, or else a `handoff` folder made private in the profile). The socket is mode 0600 | `only_a_private_directory_holds_the_socket`, mode checked in `a_request_reaches_the_browser_and_its_answer_comes_back`. A second account could not be created here |
+| Fake server receives links | A launch connects only to a socket owned by this user; anything else in its place is reported, and nothing is sent | `a_socket_left_by_a_crash_is_replaced_and_anything_else_is_not` |
+| Stale socket after a crash | The browser binds only while holding the profile lock, so a socket already there is left over and is replaced; anything that is not a socket is never removed | Same test; checked in a live crash and relaunch |
+| Malformed or hostile message, flood | The shared decoder and rate limit; a message is read for at most 2 seconds in all and never beyond the largest valid size | `malformed_and_too_many_requests_are_refused_without_reaching_the_browser` |
+| Exit blocked by the channel | Stopping the server never waits on a socket that was removed meanwhile | `the_browser_can_stop_listening_even_after_its_socket_was_removed` |
+
+The client does not check the server's process, as Windows does: the file
+ownership and permission checks above stand in for it. As on Windows, a process
+running as the same user is outside this boundary.
+
 ## v0.16 content tools and recovery
 
 Find, zoom and print target a visible website content controller. They are refused
