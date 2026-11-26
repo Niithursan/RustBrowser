@@ -22,8 +22,9 @@ optdepends=('gnome-keyring: saved passwords and contact details (or another Secr
 provides=("$_name")
 conflicts=("$_name")
 # makepkg's default LTO compiles the SQLite that rusqlite bundles to GCC LTO
-# objects, which Rust's linker cannot read (undefined sqlite3_* symbols).
-options=('!lto')
+# objects, which Rust's linker cannot read (undefined sqlite3_* symbols). The
+# release build has no debug symbols, so there is no -debug package either.
+options=('!lto' '!debug')
 source=("$_name::git+$url.git")
 sha256sums=('SKIP')
 
