@@ -1998,6 +1998,142 @@ fn layout_screenshots() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Screenshot tool for the new-tab page (not a gate): visits and favourites are
+/// recorded, then the page is captured in every theme with every background.
+/// Writes PNG files to `RUST_BROWSER_SHOTS` named `newtab-<theme>-<background>.png`.
+/// `RUST_BROWSER_SHOTS_PICTURE` names a picture for "Your picture".
+fn newtab_screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    use rust_browser::settings::{Background, Theme};
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    const THEMES: [(&str, Theme); 4] = [
+        ("dark", Theme::Dark),
+        ("slate", Theme::Slate),
+        ("plum", Theme::Plum),
+        ("light", Theme::Light),
+    ];
+    const BACKGROUNDS: [(&str, Background); 7] = [
+        ("plain", Background::Plain),
+        ("glow", Background::Glow),
+        ("aurora", Background::Aurora),
+        ("dunes", Background::Dunes),
+        ("horizon", Background::Horizon),
+        ("contours", Background::Contours),
+        ("image", Background::Image),
+    ];
+    let out = PathBuf::from(std::env::var_os("RUST_BROWSER_SHOTS").ok_or("RUST_BROWSER_SHOTS")?);
+    let index = p.phase as usize;
+    if p.at.elapsed() < Duration::from_millis(if index == 0 { 2000 } else { 1200 }) {
+        return Ok(());
+    }
+    if index == 0 {
+        let now = rust_browser::library::now();
+        let sites = [
+            ("https://www.youtube.com/", "YouTube", 9),
+            ("https://github.com/", "GitHub", 7),
+            ("https://news.ycombinator.com/", "Hacker News", 5),
+            (
+                "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+                "Rust (programming language) - Wikipedia",
+                4,
+            ),
+            ("https://www.reddit.com/", "Reddit", 3),
+            ("https://docs.rs/", "Docs.rs", 2),
+        ];
+        let mut key = 0;
+        for (url, title, visits) in sites {
+            for visit in 0..visits {
+                key += 1;
+                p.command(
+                    el,
+                    0,
+                    Command::Library(Action::Record {
+                        key: format!("shot-{key}"),
+                        url: url.into(),
+                        title: title.into(),
+                        timestamp: now - 3600 * (visit + 1) - key,
+                    }),
+                )?;
+            }
+        }
+        for (title, url) in [
+            ("Mail", "https://mail.example.com/"),
+            ("Calendar", "https://calendar.example.com/"),
+        ] {
+            p.command(
+                el,
+                0,
+                Command::AddFavorite {
+                    title: title.into(),
+                    url: url.into(),
+                },
+            )?;
+        }
+        p.command(el, 0, Command::SetShowRecent(true))?;
+        p.command(el, 0, Command::Library(Action::Refresh))?;
+        if let Some(picture) = std::env::var_os("RUST_BROWSER_SHOTS_PICTURE") {
+            let profile = p.s()?.profile.clone();
+            rust_browser::wallpaper::choose(&profile, Path::new(&picture))?;
+        }
+        p.next();
+        return Ok(());
+    }
+    let step = index - 1;
+    if step >= THEMES.len() * BACKGROUNDS.len() * 4 {
+        p.done = true;
+        el.exit();
+        return Ok(());
+    }
+    // Per shot: set, capture the top, scroll to the end, capture the end.
+    let (shot, part) = (step / 4, step % 4);
+    let (theme_name, theme) = THEMES[shot / BACKGROUNDS.len()];
+    let (background_name, background) = BACKGROUNDS[shot % BACKGROUNDS.len()];
+    if part == 0 {
+        p.command(el, 0, Command::SetTheme(theme))?;
+        p.command(el, 0, Command::SetNewtabBackground(background))?;
+        let s = p.app.session.as_mut().ok_or("No session")?;
+        let _ = s.windows[0]
+            .toolbar
+            .evaluate_script("document.getElementById('manager').scrollTop=0");
+    } else if part == 2 {
+        let s = p.app.session.as_mut().ok_or("No session")?;
+        let _ = s.windows[0]
+            .toolbar
+            .evaluate_script("document.getElementById('manager').scrollTop=99999");
+    } else {
+        let end = if part == 3 { "-end" } else { "" };
+        let path = out.join(format!("newtab-{theme_name}-{background_name}{end}.png"));
+        let s = p.app.session.as_mut().ok_or("No session")?;
+        let toolbar = s.windows[0].toolbar.webview();
+        // SAFETY: UI-thread call on this fixture's own toolbar view.
+        unsafe {
+            toolbar.CallDevToolsProtocolMethod(
+                &windows::core::HSTRING::from("Page.captureScreenshot"),
+                &windows::core::HSTRING::from(r#"{"format":"png"}"#),
+                &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |_, json| {
+                    let text = json.to_string();
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && let Some(data) = value["data"].as_str()
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data)
+                    {
+                        let _ = std::fs::write(&path, bytes);
+                    }
+                    Ok(())
+                })),
+            )
+        }
+        .map_err(|_| "Screenshot failed")?;
+    }
+    p.next();
+    Ok(())
+}
+
+#[test]
+#[ignore = "Layout review tool: writes new-tab screenshots to RUST_BROWSER_SHOTS"]
+fn newtab_screenshots() {
+    let (root, _) = run("newtab-shots", newtab_screenshot_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Send one DevTools protocol call to the first window's toolbar.
 fn toolbar_cdp(s: &Session, method: &str, params: serde_json::Value) -> Result<(), String> {
     use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
