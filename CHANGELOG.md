@@ -6,6 +6,8 @@
 - **Linux ad blocking:** the same unpacked extension folder (such as uBlock Origin Lite) adds its declarative blocking rules as a WebKit content filter, with a per-site switch in the shield's panel. WebKitGTK cannot run extensions, so there is no extension panel and no blocked-request count.
 - **Linux passwords and form filling:** saved in the desktop keyring (Secret Service, through the new `libsecret` dependency), offered for saving after a sign-in, and filled only when chosen from the key button in the address field.
 - **Linux default browser:** Settings > System > Make default browser registers a launcher and sets it for web links.
+- **Fix (Windows):** one click on a tab's close icon closes the tab. A click on the icon itself, rather than the space around it, started a tab drag, so the click selected the tab and closing took several clicks.
+- **Fix (Windows):** Home shows the new-tab page on the first click. The tab took the address of the page it was leaving while the view was still switching, so the first Home showed a blank page.
 - **Shared code:** the profile start decision, the picker page, extension manifest reading and the view layout moved out of the Windows-only code; Windows behaves as before.
 
 ## 0.22.2 (published 2026-11-23)
