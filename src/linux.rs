@@ -216,7 +216,14 @@ struct Page {
     zoom: f64,
     lifecycle: Lifecycle,
     forms: Forms,
+    /// When this page's visit was last recorded: a title that arrives soon
+    /// after (`TITLE_FOLLOWS`) is saved on that visit.
+    recorded: Option<Instant>,
 }
+
+/// How long after a visit is recorded its page's title still updates it; within
+/// the 30 seconds in which the library merges visits to one address.
+const TITLE_FOLLOWS: Duration = Duration::from_secs(20);
 
 impl Page {
     /// The view of an awake tab. The selected tab is always awake.
@@ -2414,6 +2421,7 @@ impl Browser {
                 zoom: 1.0,
                 lifecycle: Lifecycle::default(),
                 forms: Forms::default(),
+                recorded: None,
             },
         )?;
         Ok(())
@@ -3397,6 +3405,20 @@ impl Browser {
                 }
                 gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(&text);
             }
+            Command::Suggest(text) => {
+                // Typing goes on if the library is busy: that keystroke simply
+                // gets no list. The answer goes to this window's toolbar.
+                if text.len() <= rust_browser::suggestions::MAX_TEXT {
+                    let _ = self.library.submit(library_worker::Job {
+                        revision: 0,
+                        action: Action::Suggest {
+                            text,
+                            window: u64::from(self.window.id()),
+                        },
+                        filter: Filter::default(),
+                    });
+                }
+            }
             Command::PasteAddress => {
                 let proxy = self.proxy.clone();
                 let window = self.window.id();
@@ -3501,10 +3523,20 @@ impl Browser {
                     }
                     if history {
                         self.loads += 1;
+                        // WebKit's own title: the tab's may still be the last
+                        // page's, as the title's event can come after this one.
+                        let title = tab
+                            .content
+                            .view
+                            .as_ref()
+                            .and_then(|view| view.webview().title())
+                            .map(|title| title.to_string())
+                            .unwrap_or_default();
+                        tab.content.recorded = Some(Instant::now());
                         let action = Action::Record {
                             key: format!("linux-{}-{id}-{}", self.run_id, self.loads),
                             url,
-                            title: tab.title.clone(),
+                            title,
                             timestamp: rust_browser::library::now(),
                         };
                         if let Err(error) = self.submit(action) {
@@ -3520,6 +3552,28 @@ impl Browser {
                     .filter(|c| !c.is_control())
                     .take(512)
                     .collect();
+                // A title that comes just after the visit was recorded goes on
+                // that visit (the library merges a visit to the same address
+                // within 30 seconds), so history shows the page's name.
+                if history
+                    && !tab.title.is_empty()
+                    && tab
+                        .content
+                        .recorded
+                        .is_some_and(|at| at.elapsed() < TITLE_FOLLOWS)
+                    && navigation::allowed(&tab.url)
+                {
+                    self.loads += 1;
+                    let action = Action::Record {
+                        key: format!("linux-{}-{id}-{}", self.run_id, self.loads),
+                        url: tab.url.clone(),
+                        title: tab.title.clone(),
+                        timestamp: rust_browser::library::now(),
+                    };
+                    if let Err(error) = self.submit(action) {
+                        self.notice = error.to_string();
+                    }
+                }
                 self.persist();
             }
             PageEvent::Failed => {
@@ -4356,6 +4410,19 @@ impl ApplicationHandler<Event> for App {
             Event::OpenTab(id, url) => {
                 browser.select_tab_window(id);
                 browser.open_tab(url).map(|()| browser.persist())
+            }
+            Event::Library(library_worker::Reply {
+                suggestions: Some(found),
+                ..
+            }) => {
+                if browser.select_window(WindowId::from(found.window)) {
+                    browser
+                        .toolbar
+                        .evaluate_script(&ui::suggestions_script(&found))
+                        .map_err(Into::into)
+                } else {
+                    Ok(())
+                }
             }
             Event::Library(reply) => {
                 if let Some(clear) = &mut browser.clearing
