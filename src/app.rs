@@ -3274,7 +3274,17 @@ impl Session {
         if self.clearing.is_some() {
             return Err("Data clearing is in progress; wait for its result.".into());
         }
-        if !self.ready && !matches!(command, Command::Ready | Command::ToolbarHeight(_)) {
+        // Reading the library or the new-tab picture touches no website data, so
+        // the new-tab page may ask while the engine is still being prepared.
+        if !self.ready
+            && !matches!(
+                command,
+                Command::Ready
+                    | Command::ToolbarHeight(_)
+                    | Command::Library(Action::Refresh)
+                    | Command::RequestWallpaper
+            )
+        {
             return Err("Security initialization is not complete.".into());
         }
         match command {
