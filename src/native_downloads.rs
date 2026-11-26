@@ -513,9 +513,39 @@ pub fn choose_extension_folder(owner: isize) -> Result<Option<PathBuf>, String> 
 /// the import limit before reading it all. Runs on its own STA thread like
 /// `choose_folder`. Returns `None` when the user cancels.
 pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
+    match choose_file(
+        owner,
+        "Import bookmarks from an exported HTML file",
+        "Exported bookmarks (*.html; *.htm)",
+        "*.html;*.htm",
+    )? {
+        Some(path) => rust_browser::bookmark_import::read_file(&path).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Ask for a picture for the new-tab page. Runs on its own STA thread like
+/// `choose_folder`. Returns `None` when the user cancels.
+pub fn choose_picture(owner: isize) -> Result<Option<PathBuf>, String> {
+    choose_file(
+        owner,
+        "Choose a picture for the new tab page",
+        "Pictures (*.png; *.jpg; *.jpeg; *.webp)",
+        "*.png;*.jpg;*.jpeg;*.webp",
+    )
+}
+
+/// One existing file chosen in the Windows file picker, owned by `owner`, from
+/// files matching `pattern` (shown as `kind`); `None` when the user cancels.
+fn choose_file(
+    owner: isize,
+    title: &str,
+    kind: &str,
+    pattern: &str,
+) -> Result<Option<PathBuf>, String> {
     // SAFETY: as in `choose_folder`, the dialog and shell items stay on this STA
     // thread; only an owned path leaves the block.
-    let path = unsafe {
+    unsafe {
         CoInitializeEx(None, COINIT_APARTMENTTHREADED)
             .ok()
             .map_err(|_| "Could not open the file picker.".to_string())?;
@@ -530,21 +560,17 @@ pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
         let _apartment = Apartment;
         let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
             .map_err(|_| "Could not open the file picker.".to_string())?;
-        let html = HSTRING::from("Exported bookmarks (*.html; *.htm)");
-        let pattern = HSTRING::from("*.html;*.htm");
+        let kind = HSTRING::from(kind);
+        let pattern = HSTRING::from(pattern);
         dialog
             .SetFileTypes(&[COMDLG_FILTERSPEC {
-                pszName: windows::core::PCWSTR(html.as_ptr()),
+                pszName: windows::core::PCWSTR(kind.as_ptr()),
                 pszSpec: windows::core::PCWSTR(pattern.as_ptr()),
             }])
             .and_then(|()| {
                 dialog.SetOptions(FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST)
             })
-            .and_then(|()| {
-                dialog.SetTitle(&HSTRING::from(
-                    "Import bookmarks from an exported HTML file",
-                ))
-            })
+            .and_then(|()| dialog.SetTitle(&HSTRING::from(title)))
             .map_err(|_| "Could not configure the file picker.".to_string())?;
         if let Err(error) = dialog.Show(Some(HWND(owner as *mut _))) {
             if error.code().0 as u32 == 0x800704c7 {
@@ -562,9 +588,8 @@ pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
             .to_string()
             .map_err(|_| "Invalid file name.".to_string());
         CoTaskMemFree(Some(name.0 as *const _));
-        PathBuf::from(value?)
-    };
-    rust_browser::bookmark_import::read_file(&path).map(Some)
+        Ok(Some(PathBuf::from(value?)))
+    }
 }
 
 pub fn open_folder(path: &Path) -> std::io::Result<()> {

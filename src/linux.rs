@@ -120,6 +120,12 @@ pub enum Event {
     HandOff(Request, std::sync::mpsc::SyncSender<Status>),
     /// The bookmarks file chooser closed: the chosen file, or none.
     BookmarkFile(Option<PathBuf>),
+    /// The new-tab picture chooser closed: the chosen file, or none.
+    WallpaperFile(Option<PathBuf>),
+    /// The chosen picture, checked and saved (its `data:` URL), or why not.
+    WallpaperChosen(Result<String, String>),
+    /// The saved new-tab picture for a window's toolbar (`None`: there is none).
+    WallpaperLoaded(WindowId, Option<String>),
     /// The chosen bookmarks file, read and parsed, or why it was refused.
     BookmarksRead(Result<rust_browser::bookmark_import::Parsed, String>),
     /// The extension folder chooser closed: the chosen folder, or none.
@@ -592,6 +598,8 @@ struct Browser {
     background_at: Instant,
     /// The file chooser of Bookmarks > Import, while it is open.
     import_chooser: Option<gtk::FileChooserNative>,
+    /// The new-tab picture chooser while it is open.
+    wallpaper_chooser: Option<gtk::FileChooserNative>,
     /// Extensions' blocking rules as WebKit content filters.
     shield: linux_shield::Shield,
     /// Extensions whose kept filter could not load and are being compiled
@@ -857,6 +865,7 @@ impl Browser {
             started: Instant::now(),
             background_at: Instant::now(),
             import_chooser: None,
+            wallpaper_chooser: None,
             shield,
             rebuilding: std::collections::HashSet::new(),
             blocker_folder: linux_blocker::folder(profile),
@@ -2181,6 +2190,93 @@ impl Browser {
         Ok(())
     }
 
+    /// Ask for a picture for the new-tab page (Customize > Your image).
+    fn choose_wallpaper(&mut self) -> Result<(), Box<dyn Error>> {
+        use gtk::prelude::{FileChooserExt, NativeDialogExt};
+        if self.private {
+            return Err(
+                "Choose a picture from a normal window; private windows do not change saved settings."
+                    .into(),
+            );
+        }
+        if self.wallpaper_chooser.is_some() {
+            return Err("Choose the picture in the window that is already open.".into());
+        }
+        let chooser = gtk::FileChooserNative::new(
+            Some("Choose a picture for the new tab page"),
+            None::<&gtk::Window>,
+            gtk::FileChooserAction::Open,
+            Some("Choose"),
+            Some("Cancel"),
+        );
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Pictures (PNG, JPEG, WebP)"));
+        for kind in ["image/png", "image/jpeg", "image/webp"] {
+            filter.add_mime_type(kind);
+        }
+        chooser.add_filter(filter);
+        let proxy = self.proxy.clone();
+        chooser.connect_response(move |chooser, response| {
+            let file = (response == gtk::ResponseType::Accept)
+                .then(|| chooser.filename())
+                .flatten();
+            let _ = proxy.send_event(Event::WallpaperFile(file));
+        });
+        chooser.show();
+        self.wallpaper_chooser = Some(chooser);
+        Ok(())
+    }
+
+    /// The picture chooser closed. A chosen file is checked and copied into the
+    /// profile off the UI thread (`wallpaper::choose`).
+    fn wallpaper_file(&mut self, file: Option<PathBuf>) {
+        use gtk::prelude::NativeDialogExt;
+        if let Some(chooser) = self.wallpaper_chooser.take() {
+            chooser.destroy();
+        }
+        let Some(file) = file else {
+            return;
+        };
+        let (proxy, profile) = (self.proxy.clone(), self.profile.clone());
+        let started = std::thread::Builder::new()
+            .name("wallpaper-file".into())
+            .spawn(move || {
+                let result = rust_browser::wallpaper::choose(&profile, &file);
+                let _ = proxy.send_event(Event::WallpaperChosen(result));
+            });
+        if started.is_err() {
+            self.notice = "The picture could not be read.".into();
+        }
+    }
+
+    /// The chosen picture is saved: it becomes the background in every window.
+    fn wallpaper_chosen(&mut self, result: Result<String, String>) {
+        match result {
+            Ok(url) => {
+                self.settings.newtab_background = rust_browser::settings::Background::Image;
+                let script = rust_browser::wallpaper::script(Some(&url));
+                for win in &self.windows {
+                    let _ = win.toolbar.evaluate_script(&script);
+                }
+                self.persist();
+            }
+            Err(message) => self.notice = message,
+        }
+    }
+
+    /// Send a window's toolbar the saved picture, read off the UI thread.
+    fn request_wallpaper(&self) -> Result<(), Box<dyn Error>> {
+        let (proxy, profile, window) = (self.proxy.clone(), self.profile.clone(), self.window.id());
+        std::thread::Builder::new()
+            .name("wallpaper-load".into())
+            .spawn(move || {
+                let url = rust_browser::wallpaper::load(&profile);
+                let _ = proxy.send_event(Event::WallpaperLoaded(window, url));
+            })
+            .map_err(|_| "Could not read the new tab picture.")?;
+        Ok(())
+    }
+
     /// The bookmarks file chooser closed. A chosen file is read and parsed off
     /// the UI thread; the library worker then imports it.
     fn bookmark_file(&mut self, file: Option<PathBuf>) {
@@ -3372,6 +3468,8 @@ impl Browser {
                 self.settings.newtab_background = background;
                 self.persist();
             }
+            Command::ChooseWallpaper => self.choose_wallpaper()?,
+            Command::RequestWallpaper => self.request_wallpaper()?,
             // F7 and "Back to page": leave a full panel, then focus the page (or
             // the new-tab page's search field).
             Command::FocusPage => {
@@ -4309,6 +4407,24 @@ impl ApplicationHandler<Event> for App {
             Event::BookmarkFile(file) => {
                 browser.bookmark_file(file);
                 Ok(())
+            }
+            Event::WallpaperFile(file) => {
+                browser.wallpaper_file(file);
+                Ok(())
+            }
+            Event::WallpaperChosen(result) => {
+                browser.wallpaper_chosen(result);
+                Ok(())
+            }
+            Event::WallpaperLoaded(window, url) => {
+                if browser.select_window(window) {
+                    browser
+                        .toolbar
+                        .evaluate_script(&rust_browser::wallpaper::script(url.as_deref()))
+                        .map_err(Into::into)
+                } else {
+                    Ok(())
+                }
             }
             Event::ExtensionFolder(folder) => browser.extension_folder(folder),
             Event::ExtensionRules(id, result) => {

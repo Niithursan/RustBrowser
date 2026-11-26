@@ -20,3 +20,4 @@ pub mod security;
 pub mod settings;
 pub mod storage;
 pub mod tabs;
+pub mod wallpaper;

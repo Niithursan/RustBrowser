@@ -114,7 +114,7 @@ fn a_favorite_without_an_icon_is_saved_as_before() {
 
 #[test]
 fn a_background_named_by_a_later_version_reads_as_plain() {
-    let settings: Settings = serde_json::from_str(r#"{"newtab_background":"aurora"}"#).unwrap();
+    let settings: Settings = serde_json::from_str(r#"{"newtab_background":"nebula"}"#).unwrap();
     assert_eq!(settings.newtab_background, Background::Plain);
     let settings: Settings = serde_json::from_str(r#"{"newtab_background":"panels"}"#).unwrap();
     assert_eq!(settings.newtab_background, Background::Panels);

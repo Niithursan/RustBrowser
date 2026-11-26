@@ -102,6 +102,11 @@ pub enum Event {
     /// An exported bookmarks file was chosen and read (or why not). `None` when
     /// the user cancelled.
     BookmarkFile(Result<Option<Vec<u8>>, String>),
+    /// A picture for the new-tab page was chosen and saved (its `data:` URL), or
+    /// why not. `None` when the user cancelled.
+    WallpaperChosen(Result<Option<String>, String>),
+    /// The saved new-tab picture for a window's toolbar (`None`: there is none).
+    WallpaperLoaded(WindowId, Option<String>),
     DownloadFinished(u64, Result<PathBuf, String>),
     DownloadRecovery(String),
 }
@@ -3472,6 +3477,43 @@ impl Session {
             Command::SetNewtabBackground(background) => {
                 self.settings.newtab_background = background;
             }
+            Command::ChooseWallpaper => {
+                if self.private {
+                    return Err("Choose a picture from a normal window; private windows do not change saved settings.".into());
+                }
+                let owner = match self.window.window_handle().map(|handle| handle.as_raw()) {
+                    Ok(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
+                    _ => {
+                        return Err(
+                            "Could not identify the browser window for the file picker.".into()
+                        );
+                    }
+                };
+                let (proxy, profile) = (self.proxy.clone(), self.profile.clone());
+                std::thread::Builder::new()
+                    .name("wallpaper-picker".into())
+                    .spawn(move || {
+                        let result = native_downloads::choose_picture(owner).and_then(|chosen| {
+                            chosen
+                                .map(|path| rust_browser::wallpaper::choose(&profile, &path))
+                                .transpose()
+                        });
+                        let _ = proxy.send_event(Event::WallpaperChosen(result));
+                    })
+                    .map_err(|_| "Could not open the file picker.")?;
+            }
+            Command::RequestWallpaper => {
+                // Read off the UI thread: the picture can be several megabytes.
+                let (proxy, profile, window) =
+                    (self.proxy.clone(), self.profile.clone(), self.window.id());
+                std::thread::Builder::new()
+                    .name("wallpaper-load".into())
+                    .spawn(move || {
+                        let url = rust_browser::wallpaper::load(&profile);
+                        let _ = proxy.send_event(Event::WallpaperLoaded(window, url));
+                    })
+                    .map_err(|_| "Could not read the new tab picture.")?;
+            }
             Command::AnswerPasswordOffer { id, answer } => {
                 // Never sent here: the toolbar shows no offer on Windows.
                 let _ = (id, answer);
@@ -5265,6 +5307,25 @@ impl ApplicationHandler<Event> for App {
                         .destination(id, Err("Could not start the folder picker.".into()));
                 }
                 let _ = session.open_library(Panel::Downloads);
+            }
+            Event::WallpaperChosen(result) => match result {
+                Ok(None) => {}
+                Ok(Some(url)) => {
+                    session.settings.newtab_background = rust_browser::settings::Background::Image;
+                    let script = rust_browser::wallpaper::script(Some(&url));
+                    for window in &session.windows {
+                        let _ = window.toolbar.evaluate_script(&script);
+                    }
+                    session.persist();
+                }
+                Err(message) => session.notice = message,
+            },
+            Event::WallpaperLoaded(window, url) => {
+                if session.select_window(window) {
+                    let _ = session
+                        .toolbar
+                        .evaluate_script(&rust_browser::wallpaper::script(url.as_deref()));
+                }
             }
             Event::BookmarkFile(result) => match result {
                 Ok(None) => {}

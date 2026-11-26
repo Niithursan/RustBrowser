@@ -612,3 +612,58 @@ fn schema_v4_migrates_to_v5_and_updates_bookmark_icons_for_matching_site() {
         BarItem::Link { icon: i, .. } if i == icon
     ));
 }
+
+#[test]
+fn top_sites_rank_recent_visits_by_site_with_front_page_names_and_icons() {
+    let profile = Profile::new();
+    let (mut db, _) = Database::open(&profile.db()).unwrap();
+    let now = rust_browser::library::now();
+    let mut key = 0;
+    let mut record = |db: &mut Database, url: &str, title: &str, ago: i64| {
+        key += 1;
+        db.apply(Action::Record {
+            key: format!("t{key}"),
+            url: url.into(),
+            title: title.into(),
+            timestamp: now - ago,
+        })
+        .unwrap();
+    };
+    // Visits more than 30 seconds apart count separately.
+    record(&mut db, "https://www.example.com/a", "Page A", 400);
+    record(&mut db, "https://www.example.com/b", "Page B", 300);
+    record(&mut db, "https://www.example.com/", "Example", 200);
+    record(&mut db, "https://docs.example.org/guide", "Guide", 100);
+    record(&mut db, "http://old.example.net/", "Old", 91 * 86_400);
+    db.apply(Action::SaveBookmark {
+        id: None,
+        title: "Docs".into(),
+        url: "https://docs.example.org/".into(),
+        folder: None,
+    })
+    .unwrap();
+    let icon = "data:image/png;base64,iVBORw0KGgo=".to_string();
+    db.apply(Action::UpdateBookmarkIcon {
+        url: "https://docs.example.org/".into(),
+        icon: icon.clone(),
+    })
+    .unwrap();
+    let sites = db.top_sites(now).unwrap();
+    let names: Vec<_> = sites
+        .iter()
+        .map(|s| (s.url.as_str(), s.title.as_str()))
+        .collect();
+    // Three visits beat one; the front page names the site; the 91-day-old
+    // visit is left out; a site without a front-page visit is named by host.
+    assert_eq!(
+        names,
+        [
+            ("https://www.example.com/", "Example"),
+            ("https://docs.example.org/", "docs.example.org")
+        ]
+    );
+    assert_eq!(sites[1].icon, icon);
+    assert!(sites[0].icon.is_empty());
+    let data = db.query(&Filter::default()).unwrap();
+    assert_eq!(data.top_sites, sites);
+}
