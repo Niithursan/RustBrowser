@@ -1,0 +1,59 @@
+# Rust Browser for Arch Linux, built from the latest main branch.
+# In this folder: makepkg -si
+# packaging/linux/README.md explains the package; .deb and this package
+# install the same files.
+
+pkgname=rust-browser-git
+_name=rust-browser
+pkgver=0.22.2.r0.g0000000
+pkgrel=1
+pkgdesc='An experimental web browser built in Rust on WebKitGTK'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Niithursan/RustBrowser'
+license=('MIT')
+# winit loads libxkbcommon-x11 and libX11-xcb (in libx11) at run time.
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'libsecret' 'glib2' 'cairo' 'pango'
+         'gdk-pixbuf2' 'libx11' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
+makedepends=('cargo' 'git')
+optdepends=('gnome-keyring: saved passwords and contact details (or another Secret Service)'
+            'gst-plugins-good: audio and video playback'
+            'gst-libav: more audio and video formats'
+            'xorg-xwayland: running in a Wayland session')
+provides=("$_name")
+conflicts=("$_name")
+source=("$_name::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_name"
+  git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$_name"
+  install -Dm755 target/release/rust-browser "$pkgdir/usr/bin/rust-browser"
+  install -Dm644 packaging/linux/rust-browser.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 packaging/windows/rust-browser.svg -t "$pkgdir/usr/share/icons/hicolor/scalable/apps/"
+  install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 README.md -t "$pkgdir/usr/share/doc/$pkgname/"
+}
