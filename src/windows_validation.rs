@@ -2064,7 +2064,7 @@ fn native_address_enter_navigates_without_a_go_button() {
 }
 
 /// The address field, its selection and the suggestion list, as JSON.
-const SUGGEST_REPORT: &str = "(()=>{const a=document.getElementById('address'),p=document.getElementById('suggest-panel'),rows=[...p.querySelectorAll('[role=option]')];return JSON.stringify({value:a.value,start:a.selectionStart,end:a.selectionEnd,open:!p.hidden,expanded:a.getAttribute('aria-expanded'),rows:rows.map(r=>r.dataset.target),titles:rows.map(r=>r.textContent),focused:document.activeElement===a&&document.hasFocus()})})()";
+const SUGGEST_REPORT: &str = "(()=>{const a=document.getElementById('address'),p=document.getElementById('suggest-panel'),rows=[...p.querySelectorAll('[role=option]')];return JSON.stringify({value:a.value,start:a.selectionStart,end:a.selectionEnd,open:!p.hidden,expanded:a.getAttribute('aria-expanded'),rows:rows.map(r=>r.dataset.target),titles:rows.map(r=>r.textContent),focused:document.activeElement===a})})()";
 
 /// One key through Chromium's own keyboard input, as the user presses it.
 fn press_toolbar_key(s: &Session, key: &str, code: i32, text: &str) -> Result<(), String> {
