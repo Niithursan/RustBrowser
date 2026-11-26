@@ -7,3 +7,5 @@ Microsoft Evergreen WebView2 Runtime and the latest supported x64 Visual C++ v14
 Close every Rust Browser window before upgrading. Back up the closed profile first. Bookmarks, history, settings, permissions, cookies and sessions remain in their separate existing profile; downloaded files remain in their chosen folders. Uninstall removes application-owned files and shortcuts, not browsing data.
 
 The fixed install directory is separate from the profile. Existing unowned directories and downgrades are refused. In-place installation is not a power-loss transaction. Preserve the previous installer/portable application and a compatible whole-profile backup for manual recovery.
+
+Rust Browser includes uBlock Origin 1.77.2 (https://github.com/gorhill/uBlock), unchanged, as its built-in ad blocker. uBlock Origin is licensed under the GNU General Public License v3.0; its license text and source files are unpacked with it into the profile (built-in\ublock-origin), and its source is published at https://github.com/gorhill/uBlock/releases/tag/1.77.2. Turn it off in Settings > Extensions.

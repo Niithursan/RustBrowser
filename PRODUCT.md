@@ -84,8 +84,10 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
   checked by the browser.
 - Web content is untrusted and stays isolated from privileged native functionality;
   the browser chrome must not weaken that boundary.
-- Ad blocking comes only from user-added extensions (e.g. uBlock Origin Lite); Rust
-  Browser has no ad blocker of its own.
+- Rust Browser blocks ads out of the box (v0.23, owner decision 2026-11-26): the
+  official uBlock Origin is built in on Windows, in normal and private windows, and
+  hBlock's domain list is downloaded on Linux. It is on by default and stays off
+  once the user turns it off. Users can still add their own extensions.
 - Terminology in use: Menu (⋮), site-information badge, star, shield, library column,
   Settings (with its Privacy & security and Profiles sections), tabs down the side,
   bookmarks bar, new tab, Don't allow / Allow, profile button, Default profile,

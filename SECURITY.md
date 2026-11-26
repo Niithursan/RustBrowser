@@ -69,7 +69,8 @@
 
 - Each profile is a separate process with its own folder, session lock, WebView2
   environments and hand-off endpoint; no cookies, storage, passwords, extensions or
-  library data are shared. Private windows of a profile stay InPrivate and temporary.
+  library data are shared. Private windows of a profile stay temporary (see the
+  private windows paragraph below for what changed on Windows in v0.23).
 - Profile ids name folders, so only `default` and `p<n>` (1 to 6 digits, no leading
   zero) are accepted, from the command line (`--profile=<id>`, one token, never from
   a link), from the toolbar and from the list file. Names are bounded text and are
@@ -100,16 +101,34 @@
   Rust Browser does not restrict or review what an extension does; WebView2 enforces
   the permissions in the extension's manifest. Users should add only extensions they
   trust, from the extension's official release.
-- **Only the normal website profile has extensions.** WebView2's extension support is
-  turned on only for normal website views. Private windows use separate temporary
-  profiles with it off, and refuse every extension command. The toolbar has its own
-  profile, never has extension support turned on and never runs the user's
-  extensions (tested: the toolbar profile lists only WebView2's two built-in
-  Microsoft extensions).
-- **Nothing is downloaded.** Rust Browser never downloads, bundles, updates or
-  installs an extension on its own. The user picks an unpacked folder in a Windows
-  folder dialog; the browser checks that it holds a valid `manifest.json` (version 2
-  or 3, at most 1 MiB) and passes the folder to WebView2's `AddBrowserExtension`.
+- **Website profiles have extensions; the toolbar never does.** WebView2's extension
+  support is on for website views. Since v0.23 (owner decision, 2026-11-26) private
+  windows run extensions too: each private window adds the built-in uBlock Origin
+  and the extensions the user added and left on in a normal window, from their
+  folders, each time it opens. Private windows still refuse every extension command
+  (add, remove, turn on or off, the built-in blocker's switch) and ignore a folder
+  chosen there. The toolbar has its own profile, never has extension support turned
+  on and never runs extensions (tested: the toolbar profile lists only WebView2's two
+  built-in Microsoft extensions).
+- **One extension is bundled; none is downloaded.** The built-in ad blocker is the
+  official uBlock Origin 1.77.2 Chromium release (GPL-3.0), embedded in the program
+  unchanged; `the_embedded_zip_is_the_pinned_release` checks it against the SHA-256
+  GitHub publishes. On first start it is unpacked into the profile's
+  `built-in\ublock-origin` folder by Rust Browser's own ZIP reader (`bundled`), which
+  accepts only stored or deflated files with plain relative names (no absolute paths,
+  `..`, backslashes, drive letters or NUL), at most 5,000 files and 128 MiB in all,
+  writes into a new folder and swaps it in only when complete
+  (`unsafe_or_damaged_archives_are_refused`,
+  `the_release_is_unpacked_once_and_replaced_when_it_changes`). uBlock Origin then
+  downloads filter-list updates itself, as it does in any browser. Otherwise Rust
+  Browser never downloads, updates or installs an extension on its own: the user picks
+  an unpacked folder in a Windows folder dialog; the browser checks that it holds a
+  valid `manifest.json` (version 2 or 3, at most 1 MiB) and passes the folder to
+  WebView2's `AddBrowserExtension`.
+- **The built-in blocker can be turned off for good.** Settings > Extensions has a
+  switch; turning it off, or removing uBlock Origin from the list, removes it and
+  records `built_in_blocker: false`, so it is not added again until the switch is
+  turned back on. Private windows follow the normal profile's switch, read-only.
 - **What is active is visible.** Settings > Extensions lists every extension the user
   added and whether it is on; the extension button in the toolbar shows how many are
   on and their names. WebView2 keeps the installed and on or off state in the profile
@@ -309,6 +328,25 @@ from the keyring (checked in the container with `secret-tool`). Without a
 running keyring nothing is saved, and the browser says so when asked to save or
 fill.
 
+### Built-in ad blocker on Linux (hBlock)
+
+WebKitGTK cannot run extensions, so on Linux the built-in ad blocker is the list of
+ad, tracking and malware domains that hBlock (https://github.com/hectorm/hblock,
+MIT) publishes. Rust Browser downloads it; it is never shipped, because some of the
+lists hBlock combines allow only non-commercial use.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| The download tells someone what the user does | A normal window requests `https://hblock.molinero.dev/hosts_domains.txt` on first start, when the kept list is a week old, or on **Update list now**: the same address every time, with a generic `RustBrowser` user agent and no cookies. Private windows never download it | Container check: one request at first start |
+| A tampered or broken list | HTTPS only, validated by GIO's TLS. The response is read in 64 KiB pieces and refused past 32 MiB. Every line must be a lowercase domain (letters, digits, `-`, `_`, at least two labels, DNS lengths); one bad line, fewer than 1,000 domains or more than 8 filters refuse the whole list, and the previous list stays in use | `anything_but_hblocks_list_is_refused` |
+| A domain blocks more than itself | Each domain becomes one WebKit pattern that matches that host and its subdomains only (dots escaped, anchored at the scheme and ended by `:` or `/`). Opening a listed site as the page itself stays allowed, so a link through a tracking domain keeps working | `domains_block_their_subdomains_and_covered_ones_are_dropped` |
+| WebKit's rule limit | Domains covered by a listed parent are dropped (488,744 to 419,949 in November 2026) and the rest split into filters of at most 149,999 rules plus the page exemption | `large_lists_are_split_within_webkit_limits` |
+| A private window writes the profile | Private windows load the prepared filters and read the switch from the normal profile; they never compile, remove or download | Container check: blocked in a private window |
+
+The prepared list takes about 15 seconds on WebKit's own thread and about 130 MB in
+the profile's `content-filters` folder, with a small `hblock.json` record of when it
+was downloaded. Turning the blocker off removes both.
+
 ### Shield on Linux
 
 WebKitGTK cannot run extensions. On Linux, Add from folder reads only an
@@ -326,7 +364,9 @@ scripts, pages, buttons or settings.
 | Web content changes the rules | Only Settings > Extensions in a normal window adds, turns on or off, or removes an extension. The toolbar commands name only saved extension IDs (32 letters `a` to `p`, derived from the folder's path as Chromium does), which are also the only identifiers given to WebKit's store | `ids_match_chromium_and_are_the_only_identifiers` |
 | Memory safety at the C boundary | `linux_shield` calls WebKit's content-filter API through `webkit2gtk::ffi`, on the UI thread only. Each asynchronous call's callback reclaims its boxed closure exactly once, and every filter reference is counted and released (`Filter` clones take a reference, and `Drop` releases one) | `webkit_compiles_translated_rules` (compiles, refuses a non-rule list, loads again) |
 
-Private windows never use the filters. The compiled filter is kept in the
+Private windows use only the built-in ad blocker's filters (below), which they
+load from the profile but never compile or remove. An extension's compiled filter is
+kept in the
 profile's `content-filters` folder, about 60 MB for uBlock Origin Lite's default
 lists (117,031 WebKit rules from 17,811 of its rules, prepared in about 6
 seconds on WebKit's own thread). It is deleted when the extension is removed or
@@ -606,8 +646,17 @@ stored as plaintext settings; private new-tab preferences remain in memory only.
 Turning off session URL retention removes tab titles/pins/order metadata, while
 explicitly saved favorites and visual/performance preferences remain.
 
-Private windows use separate processes and temporary profiles with verified WebView2
-InPrivate mode. They open no persistent application session store and never queue
+Private windows use separate processes and temporary profiles. On Windows, since
+v0.23 (owner decision, 2026-11-26), a private window's website views are an ordinary
+WebView2 profile in that window's own `private-contexts\private-<id>` folder instead
+of WebView2's InPrivate mode, because WebView2 never runs extensions in InPrivate
+profiles. The trade-off: while the window is open, its cookies, cache and site
+storage are written to that folder on disk (removed when the window closes, or at
+the next start after a crash or power loss) instead of being kept in memory.
+`verify_private_storage` refuses to use a website view whose WebView2 profile is not
+inside a private folder (`private_views_must_live_in_a_private_folder`); the toolbar
+keeps verified InPrivate mode. Passwords and form data are never saved in private
+windows. Private windows open no persistent application session store and never queue
 history visits. Memory-only decisions and temporary runtime data are scoped to each
 window. Directory cleanup is best effort, including after crashes. This does not
 provide anonymity, secure erasure, or protection from websites, observers, Windows
