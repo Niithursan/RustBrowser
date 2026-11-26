@@ -443,6 +443,140 @@ mod tests {
         let _ = std::fs::remove_dir_all(folder);
     }
 
+    /// WebKit applies translated rules as Chromium would: a rule's initiator
+    /// domains are the frame that makes a request, not the top document, and
+    /// a host named in an address's user-name part is not its host. A page on
+    /// 127.0.0.1 shows images from 127.0.0.3 and a frame from 127.0.0.2 that
+    /// shows them too; the loopback server records what reached it.
+    #[test]
+    #[ignore = "needs a display (run under Xvfb)"]
+    fn webkit_applies_frame_and_host_conditions() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+        use webkit2gtk::{LoadEvent, UserContentManager, WebView};
+        gtk::init().expect("a display");
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let record = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut request = Vec::new();
+                let mut buffer = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => request.extend_from_slice(&buffer[..n]),
+                    }
+                }
+                let text = String::from_utf8_lossy(&request);
+                let path = text.split(' ').nth(1).unwrap_or("").to_string();
+                let (kind, body) = match path.as_str() {
+                    "/top" => (
+                        "text/html",
+                        format!(
+                            "<img src='http://127.0.0.3:{port}/ad-init?top'>\
+                         <img src='http://127.0.0.3:{port}/ad-excl?top'>\
+                         <img src='http://127.0.0.2@127.0.0.3:{port}/ad-cred?user'>\
+                         <img src='http://127.0.0.2:{port}/ad-cred?host'>\
+                         <iframe src='http://127.0.0.2:{port}/frame'></iframe>                         <iframe src='http://127.0.0.2:{port}/frame-init'></iframe>                         <iframe src='http://127.0.0.2:{port}/frame-excl'></iframe>"
+                        )
+                        .into_bytes(),
+                    ),
+                    "/frame" => (
+                        "text/html",
+                        format!(
+                            "<img src='http://127.0.0.3:{port}/ad-init?frame'>\
+                         <img src='http://127.0.0.3:{port}/ad-excl?frame'>\
+                         <img src='http://127.0.0.3:{port}/done'>"
+                        )
+                        .into_bytes(),
+                    ),
+                    "/frame-init" | "/frame-excl" => ("text/html", b"frame".to_vec()),
+                    _ => ("image/gif", b"GIF89a\x01\x00\x01\x00\x00\x00\x00;".to_vec()),
+                };
+                record.lock().unwrap().push(path);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(&body);
+            }
+        });
+        let rules = serde_json::json!([
+            {"id": 1, "action": {"type": "block"}, "condition": {"urlFilter": "/ad-init",
+                "initiatorDomains": ["127.0.0.1"], "resourceTypes": ["image"]}},
+            {"id": 2, "action": {"type": "block"}, "condition": {"urlFilter": "/ad-excl",
+                "excludedInitiatorDomains": ["127.0.0.2"], "resourceTypes": ["image"]}},
+            {"id": 3, "action": {"type": "block"},
+                "condition": {"urlFilter": "/ad-cred", "resourceTypes": ["image"]}},
+            {"id": 4, "action": {"type": "allow"},
+                "condition": {"urlFilter": "||127.0.0.2^", "resourceTypes": ["image"]}},
+            // Frames: the initiator of a frame's own document is the page
+            // that holds it.
+            {"id": 5, "action": {"type": "block"}, "condition": {"urlFilter": "/frame-init",
+                "initiatorDomains": ["127.0.0.1"], "resourceTypes": ["sub_frame"]}},
+            {"id": 6, "action": {"type": "block"}, "condition": {"urlFilter": "/frame-excl",
+                "excludedInitiatorDomains": ["127.0.0.1"], "resourceTypes": ["sub_frame"]}}
+        ]);
+        let out = rust_browser::content_rules::translate(&[rules]).unwrap();
+        assert_eq!(out.skipped, 0);
+        let (store, folder) = store("frames");
+        let context = glib::MainContext::default();
+        let run_until = |limit: Duration, done: &dyn Fn() -> bool| {
+            let end = std::time::Instant::now() + limit;
+            while !done() && std::time::Instant::now() < end {
+                if !context.iteration(false) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        };
+        let compiled = Rc::new(RefCell::new(None));
+        let slot = Rc::clone(&compiled);
+        store.save(
+            ID,
+            out.json,
+            Box::new(move |r| *slot.borrow_mut() = Some(r)),
+        );
+        run_until(Duration::from_secs(60), &|| compiled.borrow().is_some());
+        let filter = compiled
+            .borrow_mut()
+            .take()
+            .expect("WebKit answered")
+            .unwrap();
+        let manager = UserContentManager::new();
+        let view = WebView::with_user_content_manager(&manager);
+        let window = gtk::OffscreenWindow::new();
+        gtk::prelude::ContainerExt::add(&window, &view);
+        gtk::prelude::WidgetExt::show_all(&window);
+        apply(&view, [&filter]);
+        let finished = Rc::new(std::cell::Cell::new(false));
+        let flag = Rc::clone(&finished);
+        view.connect_load_changed(move |_, event| flag.set(event == LoadEvent::Finished));
+        view.load_uri(&format!("http://127.0.0.1:{port}/top"));
+        run_until(Duration::from_secs(30), &|| {
+            finished.get() && seen.lock().unwrap().iter().any(|p| p == "/done")
+        });
+        let mut seen = seen.lock().unwrap().clone();
+        seen.sort();
+        assert_eq!(
+            seen,
+            [
+                "/ad-cred?host",
+                "/ad-excl?frame",
+                "/ad-init?frame",
+                "/done",
+                "/frame",
+                "/frame-excl",
+                "/top"
+            ],
+            "the top page's images and the one with a user name are blocked"
+        );
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
     /// The real extension compiles (`RUST_BROWSER_TEST_EXTENSION`).
     #[test]
     #[ignore = "needs an unpacked extension folder"]
