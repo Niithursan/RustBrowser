@@ -196,6 +196,8 @@ jobs:
         run: cargo test --locked --bin rust-browser native_built_in_ublock_origin_blocks_and_turns_off -- --ignored --test-threads=1
       - name: Native address field Enter without a Go button
         run: cargo test --locked --bin rust-browser native_address_enter_navigates_without_a_go_button -- --ignored --test-threads=1
+      - name: Native address suggestions
+        run: cargo test --locked --bin rust-browser native_address_suggestions_complete_and_list -- --ignored --test-threads=1
       - name: Native toolbar polish states
         run: cargo test --locked --bin rust-browser native_toolbar_polish_states -- --ignored --test-threads=1
       - name: Native menu opens as a dropdown
