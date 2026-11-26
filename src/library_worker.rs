@@ -1,5 +1,8 @@
 //! SQLite is owned exclusively by this worker; no database calls run in the event loop.
-use rust_browser::library::{Action, Data, Database, Filter};
+use rust_browser::{
+    library::{Action, Data, Database, Filter},
+    suggestions::Suggestions,
+};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, SyncSender},
@@ -18,6 +21,8 @@ pub struct Reply {
     pub message: Option<String>,
     /// What an import did, shown as a notice (not a failure).
     pub summary: Option<String>,
+    /// The answer to `Action::Suggest`; such a reply carries nothing else.
+    pub suggestions: Option<Suggestions>,
 }
 pub struct Worker {
     sender: Option<SyncSender<Job>>,
@@ -32,27 +37,36 @@ impl Worker {
         let thread = std::thread::Builder::new().name("library-database".into()).spawn(move || {
             let (mut database, recovered) = match Database::open(&path) {
                 Ok(result) => result,
-                Err(_) => { notify(Reply { revision: 0, data: None, summary: None,
+                Err(_) => { notify(Reply { revision: 0, data: None, summary: None, suggestions: None,
                     message: Some("Library database is unavailable or uses a newer schema. Its files were preserved; check profile access or use the newer browser.".into()) }); return; }
             };
-            if recovered { notify(Reply { revision: 0, data: None, summary: None, message: Some("Corrupted library was backed up; a new database was created.".into()) }); }
+            if recovered { notify(Reply { revision: 0, data: None, summary: None, suggestions: None, message: Some("Corrupted library was backed up; a new database was created.".into()) }); }
             while let Ok(job) = receiver.recv() {
                 if let Action::ImportBookmarks(parsed) = &job.action {
                     let reply = match database.import_bookmarks(parsed) {
-                        Ok(summary) => Reply { revision: job.revision, data: database.query(&job.filter).ok().map(Box::new), message: None, summary: Some(summary.message()) },
+                        Ok(summary) => Reply { revision: job.revision, data: database.query(&job.filter).ok().map(Box::new), message: None, summary: Some(summary.message()), suggestions: None },
                         Err(error) => {
                             let text = error.to_string();
-                            Reply { revision: job.revision, data: None, summary: None, message: Some(if text.contains("nothing was imported") { text } else { "Bookmark import failed, so nothing was imported. Check profile access and disk space.".into() }) }
+                            Reply { revision: job.revision, data: None, summary: None, suggestions: None, message: Some(if text.contains("nothing was imported") { text } else { "Bookmark import failed, so nothing was imported. Check profile access and disk space.".into() }) }
                         }
                     };
                     notify(reply);
                     continue;
                 }
+                if let Action::Suggest { text, window } = &job.action {
+                    // A failed lookup shows nothing rather than a notice: the
+                    // field still works without suggestions.
+                    let mut found = database.suggest(text, rust_browser::library::now()).unwrap_or_default();
+                    found.text.clone_from(text);
+                    found.window = *window;
+                    notify(Reply { revision: job.revision, data: None, message: None, summary: None, suggestions: Some(found) });
+                    continue;
+                }
                 let record = matches!(job.action, Action::Record { .. });
                 let result = database.apply(job.action).and_then(|()| if record { Ok(None) } else { database.query(&job.filter).map(|d| Some(Box::new(d))) });
                 let reply = match result {
-                    Ok(data) => Reply { revision: job.revision, data, message: None, summary: None },
-                    Err(_) => Reply { revision: job.revision, data: None, summary: None, message: Some("Library action failed. Check the values, duplicate URLs/folder names, date range and profile access.".into()) },
+                    Ok(data) => Reply { revision: job.revision, data, message: None, summary: None, suggestions: None },
+                    Err(_) => Reply { revision: job.revision, data: None, summary: None, suggestions: None, message: Some("Library action failed. Check the values, duplicate URLs/folder names, date range and profile access.".into()) },
                 };
                 if !record || reply.message.is_some() { notify(reply); }
             }
