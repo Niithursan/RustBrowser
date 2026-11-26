@@ -2,8 +2,35 @@
 name = "rust-browser"
 version = "0.22.2"
 edition = "2024"
-description = "An experimental Windows browser built with Wry and winit"
+description = "An experimental web browser for Windows and Linux built with Wry and winit"
 license = "MIT"
+homepage = "https://github.com/Niithursan/RustBrowser"
+repository = "https://github.com/Niithursan/RustBrowser"
+
+# The Linux .deb, built with cargo-deb (`cargo deb`; CI pins its version). The
+# Arch package is packaging/linux/arch/PKGBUILD; both install the same files.
+[package.metadata.deb]
+maintainer = "Rust Browser developers"
+copyright = "Rust Browser developers"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+A lightweight desktop web browser built in Rust on WebKitGTK, with tabs, \
+vertical tabs, a library of bookmarks, history and downloads, private windows, \
+separate profiles, a built-in ad blocker and saved passwords in the desktop \
+keyring."""
+section = "web"
+priority = "optional"
+# $auto adds the libraries the program links to (WebKitGTK, GTK, libsoup,
+# libsecret). winit loads the X11 keyboard and XCB libraries at run time, so
+# they are named here.
+depends = "$auto, libxkbcommon-x11-0, libx11-xcb1"
+suggests = "gnome-keyring"
+assets = [
+    ["target/release/rust-browser", "usr/bin/", "755"],
+    ["packaging/linux/rust-browser.desktop", "usr/share/applications/", "644"],
+    ["packaging/windows/rust-browser.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["README.md", "usr/share/doc/rust-browser/", "644"],
+]
 
 [dependencies]
 base64 = "0.23"
