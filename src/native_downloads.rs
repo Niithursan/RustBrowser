@@ -4,7 +4,6 @@ use rust_browser::{
     downloads::{ProgressWatch, Staged, safe_filename},
     navigation,
 };
-use serde::Serialize;
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
@@ -32,17 +31,7 @@ use winit::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewExtWindows};
 
 pub type Shared = Rc<RefCell<Manager>>;
-#[derive(Clone, Debug, Serialize)]
-pub struct Record {
-    pub id: u64,
-    pub name: String,
-    pub status: String,
-    pub received: i64,
-    pub total: i64,
-    pub folder: Option<String>,
-    pub path: Option<String>,
-    pub detail: String,
-}
+pub use rust_browser::downloads::Record;
 struct Entry {
     record: Record,
     operation: Option<ICoreWebView2DownloadOperation>,
@@ -524,8 +513,6 @@ pub fn choose_extension_folder(owner: isize) -> Result<Option<PathBuf>, String> 
 /// the import limit before reading it all. Runs on its own STA thread like
 /// `choose_folder`. Returns `None` when the user cancels.
 pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
-    use std::io::Read;
-    let limit = rust_browser::bookmark_import::MAX_FILE_BYTES;
     // SAFETY: as in `choose_folder`, the dialog and shell items stay on this STA
     // thread; only an owned path leaves the block.
     let path = unsafe {
@@ -577,22 +564,7 @@ pub fn choose_bookmarks_file(owner: isize) -> Result<Option<Vec<u8>>, String> {
         CoTaskMemFree(Some(name.0 as *const _));
         PathBuf::from(value?)
     };
-    let file =
-        std::fs::File::open(&path).map_err(|_| "The file could not be opened.".to_string())?;
-    let metadata = file
-        .metadata()
-        .map_err(|_| "The file could not be read.".to_string())?;
-    if !metadata.is_file() {
-        return Err("Choose a file, not a folder.".into());
-    }
-    if metadata.len() > limit {
-        return Err(rust_browser::bookmark_import::FileError::TooLarge.message());
-    }
-    let mut bytes = Vec::new();
-    file.take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "The file could not be read.".to_string())?;
-    Ok(Some(bytes))
+    rust_browser::bookmark_import::read_file(&path).map(Some)
 }
 
 pub fn open_folder(path: &Path) -> std::io::Result<()> {

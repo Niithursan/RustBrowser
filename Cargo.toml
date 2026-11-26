@@ -13,6 +13,21 @@ url = "2.5.9"
 rusqlite = { version = "0.43.0", features = ["bundled"] }
 dunce = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = "0.30"
+wry = "0.57.1"
+gtk = "0.18"
+# 2.40: calling a function in the form helper's own script world.
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+# Reading the form helper's messages; already used by wry.
+javascriptcore-rs = "1.1"
+# Both already come with wry; used to shape the views' X11 windows.
+gdkx11 = "0.18"
+x11-dl = "2.21"
+# The desktop keyring (Secret Service) for saved passwords and form data; the
+# release on the same glib as gtk 0.18.
+libsecret = { version = "0.4", features = ["v0_19"] }
+
 [target.'cfg(windows)'.dependencies]
 winit = "0.30"
 wry = "0.57.1"

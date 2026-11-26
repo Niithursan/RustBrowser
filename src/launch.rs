@@ -209,6 +209,20 @@ pub fn parse(raw: &[u16]) -> Result<Launch, LaunchError> {
     })
 }
 
+/// The arguments that start profile `id` in a process of its own: private or
+/// not, showing `link` (an address already checked) instead of its usual tabs.
+pub fn profile_args(id: &str, private: bool, link: Option<&str>) -> Vec<String> {
+    let mut args = vec![format!("--profile={id}")];
+    if private {
+        args.push("--private".into());
+    }
+    if let Some(link) = link {
+        // After `--`, so an address can never be read as an option.
+        args.extend(["--".into(), link.into()]);
+    }
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,5 +434,32 @@ mod tests {
         let mut raw = wide("rust-browser.exe --single-argument https://example.com/");
         raw.push(0xDC00);
         assert_eq!(parse(&raw), Err(LaunchError::InvalidText));
+    }
+
+    #[test]
+    fn profile_args_read_back_as_the_same_launch() {
+        let args = profile_args("p2", true, Some("https://example.com/--private"));
+        assert_eq!(
+            args,
+            [
+                "--profile=p2",
+                "--private",
+                "--",
+                "https://example.com/--private"
+            ]
+        );
+        assert_eq!(
+            run(&args.join(" ")),
+            Ok(Launch::Open {
+                private: true,
+                new_window: false,
+                profile: Some("p2".into()),
+                links: vec!["https://example.com/--private".into()],
+            })
+        );
+        assert_eq!(
+            profile_args(crate::profiles::DEFAULT_ID, false, None),
+            ["--profile=default"]
+        );
     }
 }

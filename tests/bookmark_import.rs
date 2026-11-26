@@ -584,3 +584,27 @@ fn imported_raster_icons_are_stored_backfilled_and_unsafe_icons_dropped() {
     assert_eq!(hostile.entries[2].icon, "");
     assert_eq!(hostile.entries[3].icon, "data:image/x-icon;base64,AAABAA==");
 }
+
+#[test]
+fn a_chosen_file_is_read_whole_only_within_the_size_limit() {
+    let profile = Profile::new();
+    let file = profile.0.join("bookmarks.html");
+    std::fs::write(&file, b"<!DOCTYPE NETSCAPE-Bookmark-file-1>").unwrap();
+    assert_eq!(
+        bookmark_import::read_file(&file).unwrap(),
+        b"<!DOCTYPE NETSCAPE-Bookmark-file-1>"
+    );
+    // A folder, a missing file and an oversized file are refused with a message
+    // (Windows will not open a folder; Linux opens it and finds it is not a file).
+    assert!(bookmark_import::read_file(&profile.0).is_err());
+    assert!(bookmark_import::read_file(&profile.0.join("missing.html")).is_err());
+    let large = profile.0.join("large.html");
+    std::fs::File::create(&large)
+        .unwrap()
+        .set_len(MAX_FILE_BYTES + 1)
+        .unwrap();
+    assert_eq!(
+        bookmark_import::read_file(&large).unwrap_err(),
+        FileError::TooLarge.message()
+    );
+}

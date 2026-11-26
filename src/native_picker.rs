@@ -1,9 +1,7 @@
-//! The "Who's browsing?" window: shown by a plain launch when there is more than
-//! one profile. It only chooses; the chosen profile then starts in a process of
-//! its own (`--profile=<id>`), because a process can run one event loop and each
-//! profile keeps its own lock, WebView2 environment and link channel.
-use rust_browser::profiles::{self, Registry};
-use serde::Deserialize;
+//! The "Who's browsing?" window on Windows: shown by a plain launch when there
+//! is more than one profile. Its page and choices are shared (`picker`).
+use crate::picker::{self, Choice, Outcome};
+use rust_browser::profiles::Registry;
 use std::path::{Path, PathBuf};
 use winit::{
     application::ApplicationHandler,
@@ -13,29 +11,6 @@ use winit::{
     window::{Window, WindowId},
 };
 use wry::{WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
-
-const HTML: &str = include_str!("ui/picker.html");
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(tag = "action", content = "value", rename_all = "snake_case")]
-enum Choice {
-    Open(String),
-    Add,
-    Close,
-}
-
-/// The picker page with the profiles and theme filled in. The data is JSON with
-/// `<` escaped, so no profile name can end the script element.
-fn page(registry: &Registry, theme: rust_browser::settings::Theme) -> String {
-    let data = serde_json::json!({
-        "theme": theme,
-        "can_add": registry.profiles.len() < profiles::MAX_PROFILES,
-        "profiles": registry.profiles,
-    })
-    .to_string()
-    .replace('<', "\\u003c");
-    HTML.replacen("/*DATA*/null", &data, 1)
-}
 
 struct Picker {
     root: PathBuf,
@@ -57,9 +32,9 @@ impl Picker {
             Window::default_attributes()
                 .with_window_icon(icon.clone())
                 .with_taskbar_icon(icon)
-                .with_title("Rust Browser - Who's browsing?")
-                .with_inner_size(LogicalSize::new(640.0, 460.0))
-                .with_min_inner_size(LogicalSize::new(360.0, 320.0)),
+                .with_title(picker::TITLE)
+                .with_inner_size(LogicalSize::<f64>::from(picker::SIZE))
+                .with_min_inner_size(LogicalSize::<f64>::from(picker::MIN_SIZE)),
         )?;
         let url = format!(
             "data:text/html;charset=utf-8;base64,{}",
@@ -79,9 +54,7 @@ impl Picker {
             .with_navigation_handler(move |to| to == allowed)
             .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
             .with_ipc_handler(move |request| {
-                if request.body().len() <= 256
-                    && let Ok(choice) = serde_json::from_str::<Choice>(request.body())
-                {
+                if let Some(choice) = picker::read(request.body()) {
                     let _ = proxy.send_event(choice);
                 }
             })
@@ -95,9 +68,9 @@ impl Picker {
 
     fn show_error(&self, message: &str) {
         if let Some(view) = &self.view
-            && let Ok(text) = serde_json::to_string(message)
+            && let Some(script) = picker::error_script(message)
         {
-            let _ = view.evaluate_script(&format!("window.showError({text})"));
+            let _ = view.evaluate_script(&script);
         }
     }
 }
@@ -111,33 +84,13 @@ impl ApplicationHandler<Choice> for Picker {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, choice: Choice) {
-        match choice {
-            Choice::Open(id) => {
-                // Only a profile that still exists; another process may have
-                // deleted it since the picker opened.
-                match profiles::load(&self.root) {
-                    Ok(registry) if registry.get(&id).is_some() => {
-                        self.chosen = Some(id);
-                        event_loop.exit();
-                    }
-                    _ => self.show_error("That profile no longer exists."),
-                }
+        match picker::decide(&self.root, choice) {
+            Outcome::Chosen(id) => {
+                self.chosen = Some(id);
+                event_loop.exit();
             }
-            Choice::Add => {
-                let created = profiles::update(&self.root, |registry| {
-                    let name = registry.suggested_name();
-                    let color = registry.suggested_color();
-                    registry.create(&name, color).map(|p| p.id)
-                });
-                match created {
-                    Ok(id) => {
-                        self.chosen = Some(id);
-                        event_loop.exit();
-                    }
-                    Err(error) => self.show_error(&error.to_string()),
-                }
-            }
-            Choice::Close => event_loop.exit(),
+            Outcome::Error(message) => self.show_error(&message),
+            Outcome::Closed => event_loop.exit(),
         }
     }
 
@@ -160,15 +113,12 @@ impl ApplicationHandler<Choice> for Picker {
 /// Show the picker. `Ok(Some(id))` is the chosen (or newly added) profile;
 /// `Ok(None)` means the picker was closed without choosing.
 pub fn choose(root: &Path, registry: &Registry) -> Result<Option<String>, ()> {
-    let theme = rust_browser::storage::load(&root.join("session.json"))
-        .map(|snapshot| snapshot.settings.theme)
-        .unwrap_or_default();
     let event_loop = EventLoop::<Choice>::with_user_event()
         .build()
         .map_err(|_| ())?;
     let mut picker = Picker {
         root: root.to_path_buf(),
-        html: page(registry, theme),
+        html: picker::page(root, registry),
         proxy: event_loop.create_proxy(),
         window: None,
         view: None,
@@ -184,40 +134,4 @@ pub fn choose(root: &Path, registry: &Registry) -> Result<Option<String>, ()> {
         return Err(());
     }
     Ok(picker.chosen)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn profile_names_cannot_escape_the_picker_script() {
-        let mut registry = Registry::default();
-        registry
-            .create("</script><img src=x onerror=alert(1)>", profiles::COLORS[1])
-            .unwrap();
-        let html = page(&registry, rust_browser::settings::Theme::Light);
-        assert!(!html.contains("/*DATA*/null"));
-        assert_eq!(
-            html.matches("</script>").count(),
-            1,
-            "only the page's own end tag"
-        );
-        assert!(html.contains("\\u003c/script>\\u003cimg"));
-        assert!(html.contains("\"theme\":\"light\""));
-        assert!(html.contains("\"can_add\":true"));
-    }
-
-    #[test]
-    fn only_known_choices_are_accepted() {
-        assert_eq!(
-            serde_json::from_str::<Choice>(r#"{"action":"open","value":"p2"}"#).unwrap(),
-            Choice::Open("p2".into())
-        );
-        assert_eq!(
-            serde_json::from_str::<Choice>(r#"{"action":"add"}"#).unwrap(),
-            Choice::Add
-        );
-        assert!(serde_json::from_str::<Choice>(r#"{"action":"delete","value":"p2"}"#).is_err());
-    }
 }

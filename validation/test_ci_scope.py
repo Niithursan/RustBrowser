@@ -86,6 +86,15 @@ class DecisionTests(unittest.TestCase):
                      ('success', 'yes', 'skipped', 'skipped')]:
             self.assertFalse(SCOPE.verdict(*case), case)
 
+    def test_verdict_requires_the_linux_job_when_given(self):
+        self.assertTrue(SCOPE.verdict('success', 'true', 'success', 'success', 'success'))
+        self.assertTrue(SCOPE.verdict('success', 'false', 'skipped', 'skipped', 'skipped'))
+        for case in [('success', 'true', 'success', 'success', 'failure'),
+                     ('success', 'true', 'success', 'success', 'skipped'),
+                     ('success', 'true', 'success', 'success', 'cancelled'),
+                     ('success', 'false', 'skipped', 'skipped', 'success')]:
+            self.assertFalse(SCOPE.verdict(*case), case)
+
 
 @unittest.skipUnless(shutil.which('git'), 'git is required')
 class GitDiffTests(unittest.TestCase):

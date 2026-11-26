@@ -12,6 +12,8 @@ pub enum Panel {
     NewTab,
 }
 
+/// The toolbar's starting height on Windows (Linux starts from `DEFAULT_CHROME`).
+#[cfg(windows)]
 pub const HEIGHT: f64 = 136.0;
 pub const HTML: &str = include_str!("toolbar.html");
 
@@ -70,6 +72,17 @@ pub enum Command {
     SetNewtabBackground(rust_browser::settings::Background),
     /// Whether the shield counts requests extensions block.
     SetCountBlocked(bool),
+    /// Linux: block requests on the selected tab's site (true), or pause it.
+    SetSiteBlocking(bool),
+    /// Linux: answer the offer to save a submitted login.
+    AnswerPasswordOffer {
+        id: u64,
+        answer: OfferAnswer,
+    },
+    /// Linux: fill the page's login form with the saved login of this username.
+    FillLogin(String),
+    /// Linux: fill the page's empty contact fields with saved details.
+    FillContact,
     /// Show the bookmarks bar under the address line (Settings > Appearance).
     SetBookmarksBar(bool),
     /// A folder on the bookmarks bar (or inside its dropdown): list its contents
@@ -204,6 +217,16 @@ pub enum Command {
     SetHistoryEnabled(bool),
     CancelDownload(u64),
     OpenDownloadFolder(u64),
+    /// The find bar (Linux; WebView2 has its own): find `text` in the page, or
+    /// move to the next (`forward`) or previous match of the same text.
+    #[cfg(target_os = "linux")]
+    FindText {
+        text: String,
+        forward: bool,
+    },
+    /// The find bar closed: stop highlighting matches.
+    #[cfg(target_os = "linux")]
+    CloseFind,
 }
 
 #[derive(Default, Serialize)]
@@ -244,6 +267,44 @@ pub struct ProfileRow<'a> {
     pub open: bool,
 }
 
+/// How the user answered the offer to save a login.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OfferAnswer {
+    Save,
+    /// Never offer for this site again.
+    Never,
+    NotNow,
+}
+
+/// The selected tab's site in the password panel.
+#[derive(Serialize)]
+pub struct PasswordState<'a> {
+    pub host: &'a str,
+    /// A submitted login waiting for an answer.
+    pub offer: Option<PasswordOffer<'a>>,
+    /// Usernames saved for this site, to fill.
+    pub logins: &'a [String],
+    /// Saved contact details can fill a form on this page.
+    pub contact: bool,
+}
+
+/// A submitted login the browser offers to save. Never its password.
+#[derive(Serialize)]
+pub struct PasswordOffer<'a> {
+    pub id: u64,
+    pub username: &'a str,
+    /// A password is already saved for this username and differs.
+    pub update: bool,
+}
+
+/// The site the shield's per-site switch acts on.
+#[derive(Serialize)]
+pub struct ShieldSite<'a> {
+    pub host: &'a str,
+    pub paused: bool,
+}
+
 /// One extension in Privacy & security > Extensions.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ExtensionRow {
@@ -278,7 +339,7 @@ pub struct ToolbarState<'a> {
     pub private: bool,
     pub restore_session: bool,
     pub security: rust_browser::security::Indicator,
-    pub permission_prompt: Option<crate::native_security::Prompt>,
+    pub permission_prompt: Option<rust_browser::security::Prompt>,
     /// Seconds before `permission_prompt` is denied unanswered.
     pub permission_seconds: Option<u64>,
     pub busy: bool,
@@ -312,6 +373,14 @@ pub struct ToolbarState<'a> {
     pub blocked: Option<u32>,
     /// The "Count blocked requests" switch.
     pub count_blocked: bool,
+    /// Linux: the selected tab's site and whether blocking is paused there,
+    /// for the shield's per-site switch; never sent on Windows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shield_site: Option<ShieldSite<'a>>,
+    /// Linux: saved logins and form filling for the selected tab's site; never
+    /// sent on Windows, where WebView2 shows its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passwords: Option<PasswordState<'a>>,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
     /// The extension whose popup is open under the shield, if any.
@@ -320,7 +389,7 @@ pub struct ToolbarState<'a> {
     /// The folder the library column is filtered to, if any.
     pub library_folder: Option<i64>,
     pub history_enabled: bool,
-    pub downloads: Vec<crate::native_downloads::Record>,
+    pub downloads: Vec<rust_browser::downloads::Record>,
     /// Every profile, this window's first.
     pub profiles: Vec<ProfileRow<'a>>,
     pub profile_colors: &'static [&'static str],

@@ -239,3 +239,19 @@ fn process_termination_releases_locks_restores_committed_session_and_rolls_back_
         drop(store);
     }
 }
+
+#[test]
+fn staging_notice_speaks_only_when_the_check_found_or_missed_something() {
+    let report = |cleaned, preserved| {
+        Ok(download_recovery::Report {
+            cleaned,
+            preserved,
+            live: 3,
+        })
+    };
+    assert_eq!(download_recovery::staging_notice(&report(0, 0)), None);
+    let notice = download_recovery::staging_notice(&report(2, 1)).unwrap();
+    assert!(notice.contains("2 empty abandoned folders cleaned; 1 nonempty"));
+    let failed = download_recovery::staging_notice(&Err(std::io::Error::other("denied")));
+    assert!(failed.unwrap().contains("could not be checked"));
+}

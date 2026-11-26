@@ -420,11 +420,34 @@ pub fn profile_dir() -> io::Result<PathBuf> {
     if let Some(profile) = validation_profile() {
         return Ok(profile);
     }
-    // Keep the v0.1 location so upgrading preserves existing cookies and site storage.
+    default_profile_dir()
+}
+
+/// Windows: `%LOCALAPPDATA%\RustBrowser0.1`, the v0.1 location, so upgrading keeps
+/// existing cookies and site storage.
+#[cfg(windows)]
+fn default_profile_dir() -> io::Result<PathBuf> {
     Ok(PathBuf::from(
         std::env::var_os("LOCALAPPDATA")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "LOCALAPPDATA is not set"))?,
     )
     .join("RustBrowser")
     .join("v0.1"))
+}
+
+/// Elsewhere: `$XDG_DATA_HOME/rust-browser/v0.1`, or `~/.local/share/rust-browser/v0.1`
+/// when `XDG_DATA_HOME` is unset or not absolute (as the XDG base directory rules say).
+#[cfg(not(windows))]
+fn default_profile_dir() -> io::Result<PathBuf> {
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .map(|home| home.join(".local").join("share"))
+        })
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+    Ok(data.join("rust-browser").join("v0.1"))
 }

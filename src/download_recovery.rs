@@ -73,6 +73,20 @@ fn plain(path: &Path, directory: bool) -> bool {
             meta.is_file()
         }
 }
+/// What to tell the user after checking a chosen download folder, if anything.
+pub fn staging_notice(result: &io::Result<Report>) -> Option<String> {
+    match result {
+        Ok(r) if r.cleaned > 0 || r.preserved > 0 => Some(format!(
+            "Download staging check: {} empty abandoned folders cleaned; {} nonempty or unrecognized owned folders preserved for manual review. Live transfers were kept.",
+            r.cleaned, r.preserved
+        )),
+        Ok(_) => None,
+        Err(_) => {
+            Some("Download staging could not be checked; existing files were preserved.".into())
+        }
+    }
+}
+
 /// Never recursively deletes or removes payload files. Old/unrecognized folders stay intact.
 pub fn clean_empty_abandoned(folder: &Path) -> io::Result<Report> {
     let root = folder.canonicalize()?;

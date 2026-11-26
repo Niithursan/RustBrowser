@@ -81,3 +81,13 @@ pub fn indicator(value: &str, loading: bool, failed: bool) -> Indicator {
         message: message.into(),
     }
 }
+
+/// A website's pending permission request, as the toolbar shows it. Engine
+/// adapters keep their own request objects beside it.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct Prompt {
+    pub id: u64,
+    pub tab: crate::tabs::TabId,
+    pub origin: String,
+    pub capability: Capability,
+}

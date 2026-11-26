@@ -1,5 +1,6 @@
 //! Single-instance hand-off: the pure parts (wire format, limits, trust rule).
-//! The Windows named-pipe transport lives in the application (`native_handoff`).
+//! The transports live in the application: a named pipe on Windows
+//! (`native_handoff`), a Unix socket on Linux (`linux_handoff`).
 //!
 //! A second launch of a normal window sends one fixed-format message to the
 //! browser already running on the same profile and exits. The message can only
@@ -194,9 +195,28 @@ pub fn endpoint(user: &str, session: u32, profile: &str) -> String {
     )
 }
 
+/// The Linux socket's file name for one profile folder. Linux paths are
+/// case-sensitive, so the path is hashed as it is. Short, so the socket path
+/// stays within the 108 bytes a Unix socket address allows.
+pub fn socket_name(profile: &str) -> String {
+    format!("rust-browser-{:016x}.sock", fnv1a(profile.as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_profile_has_its_own_short_socket_name() {
+        let first = socket_name("/home/a/.local/share/rust-browser/v0.1");
+        assert_eq!(first, socket_name("/home/a/.local/share/rust-browser/v0.1"));
+        assert_ne!(
+            first,
+            socket_name("/home/a/.local/share/rust-browser/v0.1/profiles/p2")
+        );
+        assert_ne!(first, socket_name("/home/A/.local/share/rust-browser/v0.1"));
+        assert_eq!(first.len(), "rust-browser-".len() + 16 + ".sock".len());
+    }
 
     fn open(links: &[&str]) -> Request {
         Request::Open(links.iter().map(|l| l.to_string()).collect())

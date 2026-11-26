@@ -254,6 +254,44 @@ Runtime and the matching x64 Visual C++ v14 Runtime; neither is bundled. See
 Release startup failures use a Windows message when the loader can start the app; debug builds keep
 console feedback. See [installation, package contents and removal](INSTALL_WINDOWS.md).
 
+## Linux (from source)
+
+Rust Browser also runs on Linux, built from source. There is no Linux release,
+package or installer yet. It uses WebKitGTK through Wry, with the same toolbar,
+tabs, library, settings and session files as on Windows. It runs on X11, and on
+Wayland through XWayland. Tested on Ubuntu 24.04 (WebKitGTK 2.52) under Xvfb with
+Openbox and with GNOME Keyring; a full desktop session has not been tested.
+
+Requirements: WebKitGTK 2.40 or newer and libsecret 0.19 or newer. On Ubuntu or
+Debian:
+
+```bash
+sudo apt-get install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libsecret-1-dev
+cargo run --release
+```
+
+Data lives in `$XDG_DATA_HOME/rust-browser/v0.1` (`~/.local/share/rust-browser/v0.1`),
+or in `RUST_BROWSER_PROFILE` when set. What differs from Windows:
+
+- **Extensions and the shield:** Add from folder takes the same unpacked extension
+  (such as uBlock Origin Lite), but WebKitGTK cannot run extensions, so only its
+  declarative blocking rules are used, compiled by WebKit into a content filter.
+  Its scripts, panel and settings pages never run, and rules that replace scripts
+  or hide page elements are left out. There is no blocked-request count. The
+  shield's panel has a switch that turns blocking off for one site.
+- **Passwords and form filling:** saved in your desktop keyring (GNOME Keyring,
+  KWallet or another Secret Service), not by the engine. After you sign in, the
+  key button in the address field offers to save the login. Saved logins and
+  contact details are filled only when you choose them from that button.
+  Without a running keyring nothing is saved.
+- **Sleeping tabs:** WebKitGTK cannot freeze a page, so a sleeping tab's page is
+  closed and loads again, where it was, when you select it.
+- **Default browser:** Settings > System > Make default browser adds a launcher to
+  your applications and makes it the default for web links. On Windows that
+  button opens Windows Settings instead.
+- **Not tested:** camera and microphone requests (no devices in the test
+  container).
+
 ## Controls
 
 | Action | Control |

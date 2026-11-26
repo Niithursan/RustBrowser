@@ -253,6 +253,88 @@ outside this boundary. The second launch grants the running browser permission t
 take the foreground (`AllowSetForegroundWindow`); no focus-stealing workaround is
 used.
 
+### Hand-off channel on Linux
+
+Linux uses a Unix socket (`linux_handoff`) with the same message format, limits,
+rate limit, timeouts, link checks and status replies as Windows. A private window
+never listens and never hands off: each runs in its own process.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| Another user connects, or places a socket a launch connects to | The socket is in a directory checked before every use: a real directory owned by this user with no group or other access (`$XDG_RUNTIME_DIR`, or else a `handoff` folder made private in the profile). The socket is mode 0600 | `only_a_private_directory_holds_the_socket`, mode checked in `a_request_reaches_the_browser_and_its_answer_comes_back`. A second account could not be created here |
+| Fake server receives links | A launch connects only to a socket owned by this user; anything else in its place is reported, and nothing is sent | `a_socket_left_by_a_crash_is_replaced_and_anything_else_is_not` |
+| Stale socket after a crash | The browser binds only while holding the profile lock, so a socket already there is left over and is replaced; anything that is not a socket is never removed | Same test; checked in a live crash and relaunch |
+| Malformed or hostile message, flood | The shared decoder and rate limit; a message is read for at most 2 seconds in all and never beyond the largest valid size | `malformed_and_too_many_requests_are_refused_without_reaching_the_browser` |
+| Exit blocked by the channel | Stopping the server never waits on a socket that was removed meanwhile | `the_browser_can_stop_listening_even_after_its_socket_was_removed` |
+
+The client does not check the server's process, as Windows does: the file
+ownership and permission checks above stand in for it. As on Windows, a process
+running as the same user is outside this boundary.
+
+### Default browser on Linux
+
+Make default browser (Settings > System) runs only when the user presses it. It
+writes one launcher, `rust-browser.desktop`, to the user's applications folder
+(`$XDG_DATA_HOME/applications` or `~/.local/share/applications`), whole and then
+renamed. It then sets it through GIO as the user's default for `http` and
+`https` links in `~/.config/mimeapps.list`. It claims no file types, needs no
+administrator rights and changes nothing for other users. A program path with
+characters the launcher's command line would have to escape (quotes,
+backslashes, `$`, `%`, backticks or control characters) is refused rather than
+escaped (`paths_a_command_line_would_need_to_escape_are_refused`). Links from
+other apps arrive as command-line arguments and pass the same checks and
+hand-off as any other launch.
+
+### Saved passwords and form data on Linux
+
+WebKitGTK has no password manager, so Linux has its own, behind the same
+Settings switches as Windows ("Offer to save passwords", "Fill in forms
+automatically"; both off by default, never in private windows). Logins and
+contact details are kept in the desktop keyring (the Secret Service: GNOME
+Keyring, KWallet and others, through libsecret), which encrypts them and unlocks
+them with the user's login. Rust Browser writes no cryptography of its own and
+keeps nothing in the profile's files.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| A page forges a login to save, or calls the fill | The form helper (`linux_forms.js`) runs in its own WebKit script world in the top frame. Page scripts run in another world and see neither its message handler nor its fill functions | Checked in the container: a probe page saw `handler=hidden fill=undefined` |
+| A fill reaches the wrong site | Every message names its origin, which must be the view's own. Logins are kept per origin (`https://host[:port]`, or HTTP on loopback only) and listed only for that origin. A fill goes to the tab only if it still shows that origin | `passwords_are_kept_only_for_secure_or_local_sites`, `only_bounded_well_formed_messages_are_read` |
+| A page script reads a filled password | Nothing is filled on page load. A login or contact details are filled only when the user chooses them from the key button in the address field. Values reach the page as call arguments, never as script text | GUI check in the container (fill after choosing) |
+| Saving more than the user meant | A submitted login is only offered (Save, Never for this site, Not now). Its password stays in memory until it is answered, its tab closes or five minutes pass, and it never reaches the toolbar page. Contact details are saved only from a submitted form, only for known fields (name, email, phone, organization, address), never passwords or card fields | `contact_details_merge_known_fields_only`, `the_script_reports_only_what_the_browser_reads` |
+| Profiles see each other's logins | Every keyring item carries a digest of its profile's folder, and every search names it | `profiles_have_separate_items` |
+| Visiting a page prompts for the keyring | Listing usernames and checking for contact details never unlock the keyring. Only saving, filling and a submitted login's check do | Design |
+
+Clear browsing data removes this profile's saved passwords or contact details
+from the keyring (checked in the container with `secret-tool`). Without a
+running keyring nothing is saved, and the browser says so when asked to save or
+fill.
+
+### Shield on Linux
+
+WebKitGTK cannot run extensions. On Linux, Add from folder reads only an
+extension's declarative blocking rules (`declarativeNetRequest` rulesets, as
+uBlock Origin Lite ships them). `content_rules` translates them into WebKit
+content-blocker rules, and WebKit compiles and applies them itself, before a
+request leaves the browser. None of the extension's code ever runs: no
+scripts, pages, buttons or settings.
+
+| Threat | Protection | Test |
+| --- | --- | --- |
+| Hostile or damaged extension folder | The manifest is at most 1 MiB and must name a Manifest V2 or V3 extension. Rulesets must be relative `.json` files inside the folder with no parent steps or backslashes. There are at most 100 rulesets, 32 MiB each and 128 MiB in all. A localized name is read only from `_locales/<default_locale>/messages.json` with a checked locale name. Anything else refuses the folder | `only_enabled_rulesets_inside_the_folder_are_read`, `a_localized_name_is_read_from_the_default_locale`, `an_extension_folder_is_read_and_translated` |
+| A rule blocks more than the extension would (a broken site) | A rule WebKit cannot express exactly is left out, never widened: redirects, header changes, regular expressions, request methods, excluded request domains, unknown resource types or conditions, and an exception list with a domain WebKit cannot take. Only lists that narrow a rule drop entries WebKit cannot take. A top-level visit is never blocked by a rule that does not ask for it, and an allow never lets a blocked top document load | `what_webkit_cannot_express_is_skipped_not_widened`, `blocks_after_a_top_document_block_are_not_merged`, `domain_lists_narrow_safely_and_drop_covered_subdomains` |
+| Filter text escapes its pattern | Every filter character that is not a letter, digit or `/` is escaped, and non-ASCII or control characters refuse the rule | `filters_become_webkit_patterns` |
+| Web content changes the rules | Only Settings > Extensions in a normal window adds, turns on or off, or removes an extension. The toolbar commands name only saved extension IDs (32 letters `a` to `p`, derived from the folder's path as Chromium does), which are also the only identifiers given to WebKit's store | `ids_match_chromium_and_are_the_only_identifiers` |
+| Memory safety at the C boundary | `linux_shield` calls WebKit's content-filter API through `webkit2gtk::ffi`, on the UI thread only. Each asynchronous call's callback reclaims its boxed closure exactly once, and every filter reference is counted and released (`Filter` clones take a reference, and `Drop` releases one) | `webkit_compiles_translated_rules` (compiles, refuses a non-rule list, loads again) |
+
+Private windows never use the filters. The compiled filter is kept in the
+profile's `content-filters` folder, about 60 MB for uBlock Origin Lite's default
+lists (117,031 WebKit rules from 17,811 of its rules, prepared in about 6
+seconds on WebKit's own thread). It is deleted when the extension is removed or
+the profile is deleted. WebKit reports nothing about what it blocked, so Linux
+shows no count. A page that starts loading at startup before the kept filter
+has loaded may load unfiltered; in the container checks the first page was
+already filtered.
+
 ## v0.16 content tools and recovery
 
 Find, zoom and print target a visible website content controller. They are refused
