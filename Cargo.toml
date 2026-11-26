@@ -27,9 +27,18 @@ x11-dl = "2.21"
 # The desktop keyring (Secret Service) for saved passwords and form data; the
 # release on the same glib as gtk 0.18.
 libsecret = { version = "0.4", features = ["v0_19"] }
+# Downloading the built-in ad blocker's list; already used by webkit2gtk and wry.
+soup3 = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 winit = "0.30"
 wry = "0.57.1"
 webview2-com = "0.39.1"
 windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Security", "Win32_System_Environment", "Win32_System_Pipes", "Win32_System_IO", "Win32_Security_Authorization", "Win32_System_RemoteDesktop", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_Graphics_Gdi"] }
+# Unpacking the uBlock Origin copy that comes with the browser (a deflated ZIP).
+miniz_oxide = "0.9.1"
+
+[dev-dependencies]
+# Checking the bundled uBlock Origin ZIP against its pinned SHA-256; already in
+# the lockfile through wry.
+sha2 = "0.10"

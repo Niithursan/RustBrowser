@@ -233,6 +233,36 @@ pub fn verify_private(view: &WebView) -> windows::core::Result<()> {
     }
     Ok(())
 }
+/// Whether `path` lies in a private window's own folder
+/// (`.../private-contexts/private-<id>/...`, see `privacy::PrivateLease`).
+pub fn in_private_folder(path: &str) -> bool {
+    let parts: Vec<&str> = path.split(['\\', '/']).collect();
+    parts.windows(2).any(|pair| {
+        pair[0].eq_ignore_ascii_case("private-contexts") && pair[1].starts_with("private-")
+    }) && !parts.contains(&"..")
+}
+
+/// A private window's website view must keep its data in that window's
+/// temporary folder, never in a normal profile: refuse to use it otherwise.
+pub fn verify_private_storage(view: &WebView) -> windows::core::Result<()> {
+    // SAFETY: interface queries and a string read on a live view, on the UI thread
+    // that owns it; the string is freed by take_pwstr.
+    let path = unsafe {
+        let core: ICoreWebView2_13 = view.webview().cast()?;
+        let profile = core.Profile()?;
+        let mut path = PWSTR::null();
+        profile.ProfilePath(&mut path)?;
+        webview2_com::take_pwstr(path)
+    };
+    if in_private_folder(&path) {
+        Ok(())
+    } else {
+        Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+            0x80004005u32 as i32,
+        )))
+    }
+}
+
 /// Whether a view may save passwords and fill in forms.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Forms {
@@ -358,6 +388,24 @@ pub fn clear(
 #[cfg(test)]
 mod prompt_tests {
     use super::*;
+
+    #[test]
+    fn private_views_must_live_in_a_private_folder() {
+        for path in [
+            r"C:\Users\a\AppData\Local\RustBrowser\v0.1\private-contexts\private-0123-01\content\EBWebView\Default",
+            "/tmp/p/private-contexts/private-x/content",
+        ] {
+            assert!(in_private_folder(path), "{path}");
+        }
+        for path in [
+            r"C:\Users\a\AppData\Local\RustBrowser\v0.1\content\EBWebView\Default",
+            r"C:\p\private-contexts\content\EBWebView\Default",
+            r"C:\p\private-contexts\private-1\..\..\content",
+            r"C:\p\private-x\content",
+        ] {
+            assert!(!in_private_folder(path), "{path}");
+        }
+    }
 
     #[test]
     fn a_request_counts_down_whole_seconds_and_never_shows_zero_while_open() {

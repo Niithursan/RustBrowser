@@ -1,5 +1,7 @@
 pub mod background;
 pub mod bookmark_import;
+#[cfg(windows)]
+pub mod bundled;
 pub mod content_rules;
 pub mod diagnostics;
 pub mod download_recovery;
@@ -7,6 +9,7 @@ pub mod downloads;
 pub mod engine_api;
 pub mod extension_manifest;
 pub mod handoff;
+pub mod hblock;
 pub mod launch;
 pub mod layout;
 pub mod library;

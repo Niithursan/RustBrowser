@@ -110,6 +110,9 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
         // A frame from another site (localhost) whose own request the blocker stops.
         "/shield-frame.html"=>b"<!doctype html><title>Shield frame fixture</title><iframe id='f'></iframe><script>addEventListener('message',e=>document.documentElement.dataset.frame=String(e.data));document.getElementById('f').src=location.href.replace('127.0.0.1','localhost').replace('shield-frame.html','frame-inner.html')</script>".to_vec(),
         "/frame-inner.html"=>b"<!doctype html><title>Inner frame</title><script src='/blocked-by-fixture.js?frame' onerror=\"parent.postMessage('stopped:'+location.hostname,'*')\"></script>inner".to_vec(),
+        // A script EasyList blocks on any site (`/adserver.`), for the built-in uBlock Origin.
+        "/article.html"=>b"<!doctype html><title>Article fixture</title><h1>Article fixture</h1><script src='/adserver.js' onerror=\"document.documentElement.dataset.ad='blocked'\"></script>".to_vec(),
+        "/adserver.js"=>{kind="application/javascript";b"document.documentElement.dataset.ad='loaded'".to_vec()},
         "/allowed.js"=>{kind="application/javascript";b"document.documentElement.dataset.allowed='yes'".to_vec()},
         "/download"=>{kind="application/octet-stream";extra="Content-Disposition: attachment; filename=fixture.txt\r\n";vec![b'x';1024*1024]},
         "/status-404"=>{status="404 Not Found";b"<!doctype html><title>Missing fixture</title>The fixture has no such page.".to_vec()},

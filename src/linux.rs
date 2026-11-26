@@ -24,7 +24,8 @@
 //! website opens in a new window becomes a tab.
 use crate::{
     library_worker::{self, Worker},
-    linux_downloads, linux_forms, linux_handoff, linux_keyring, linux_permissions, linux_shield,
+    linux_blocker, linux_downloads, linux_forms, linux_handoff, linux_keyring, linux_permissions,
+    linux_shield,
     ui::{self, Command, Panel, ResizeEdge, State, TabState, ToolbarState},
 };
 use gtk::prelude::WidgetExt as _;
@@ -32,6 +33,7 @@ use rust_browser::{
     background::{Lifecycle, Phase, Protection},
     diagnostics::{self, Code as DiagnosticCode},
     handoff::{Request, Status},
+    hblock::{self, Kept},
     layout::{
         ClipArea, FULLSCREEN_NOTICE, Full, LIBRARY_MAX, LIBRARY_MIN, LIBRARY_WIDTH, Layout,
         fullscreen_host, fullscreen_notice_area, layout,
@@ -129,6 +131,8 @@ pub enum Event {
     ),
     /// A shield filter finished loading or compiling (`Shield::finished`).
     ShieldReady,
+    /// hBlock's list was downloaded and prepared off the UI thread, or why not.
+    BlockerPrepared(Result<rust_browser::hblock::Prepared, String>),
     /// The local diagnostics record changed.
     Diagnostics(diagnostics::Report),
     /// A trusted view's web process ended; it was loaded again.
@@ -593,6 +597,17 @@ struct Browser {
     /// Extensions whose kept filter could not load and are being compiled
     /// again from their folder.
     rebuilding: std::collections::HashSet<String>,
+    /// The built-in ad blocker: where its filters and record are kept.
+    blocker_folder: PathBuf,
+    /// The prepared list in use, as recorded.
+    blocker_kept: Option<Kept>,
+    /// A newly downloaded list whose filters are compiling, and those left.
+    blocker_pending: Option<(Kept, std::collections::HashSet<String>)>,
+    blocker_downloading: bool,
+    /// The user asked for this update (Update list now), so its end is told.
+    blocker_asked: bool,
+    /// Why the built-in ad blocker is not up to date, if it failed.
+    blocker_error: Option<String>,
     /// The folder chooser of Settings > Extensions, while it is open.
     extension_chooser: Option<gtk::FileChooserNative>,
     /// The window menu (right-click on the caption space), while it is shown.
@@ -759,7 +774,14 @@ impl Browser {
         // Only a normal window holds the profile's lock.
         let private = lock.is_none();
         let (store, snapshot) = match lock {
-            None => (None, Snapshot::default()),
+            // A private window follows one setting of its profile, read-only:
+            // whether the built-in ad blocker is on.
+            None => {
+                let mut snapshot = Snapshot::default();
+                snapshot.settings.built_in_blocker = storage::load(&profile.join("session.json"))
+                    .map_or(true, |kept| kept.settings.built_in_blocker);
+                (None, snapshot)
+            }
             Some(lock) => {
                 let errors = proxy.clone();
                 let (store, snapshot, _) = Store::open_locked(profile, lock, move || {
@@ -775,10 +797,10 @@ impl Browser {
             })
             .unwrap_or_else(|_| diagnostics::Recorder::disabled());
         let shield_proxy = proxy.clone();
+        // Private windows read the profile's filters (the built-in ad blocker's
+        // list) but never write them.
         let shield = linux_shield::Shield::new(
-            (!private)
-                .then(|| profile.join("content-filters"))
-                .as_deref(),
+            Some(linux_blocker::folder(profile).as_path()),
             Rc::new(move || {
                 let _ = shield_proxy.send_event(Event::ShieldReady);
             }),
@@ -837,6 +859,12 @@ impl Browser {
             import_chooser: None,
             shield,
             rebuilding: std::collections::HashSet::new(),
+            blocker_folder: linux_blocker::folder(profile),
+            blocker_kept: linux_blocker::read(&linux_blocker::folder(profile)),
+            blocker_pending: None,
+            blocker_downloading: false,
+            blocker_asked: false,
+            blocker_error: None,
             extension_chooser: None,
             window_menu: None,
             keyring: linux_keyring::Keyring::for_profile(profile),
@@ -869,6 +897,7 @@ impl Browser {
             browser.notice = notice;
         }
         browser.refresh_profiles();
+        browser.start_blocker();
         if !private {
             browser.load_shield();
             browser.start_handoff();
@@ -1323,19 +1352,23 @@ impl Browser {
         Self::site(url).is_some_and(|host| self.settings.shield_paused_sites.contains(&host))
     }
 
-    /// Give a website view showing `url` the filters of the extensions that
-    /// are on, or none on a site where blocking is paused. Private windows
-    /// never use extensions.
+    /// Give a website view showing `url` the built-in ad blocker's filters and
+    /// those of the extensions that are on, or none on a site where blocking is
+    /// paused. Private windows use only the built-in ad blocker's.
     fn shield_view(&self, view: &WebView, url: &str) {
-        if self.private {
-            return;
-        }
         let settings = &self.settings;
-        let paused = self.site_paused(url);
+        let private = self.private;
+        let paused = !private && self.site_paused(url);
         linux_shield::apply(
             &view.webview(),
-            self.shield
-                .active(move |id| !paused && Self::extension_on(settings, id)),
+            self.shield.active(move |id| {
+                !paused
+                    && if hblock::is_filter(id) {
+                        settings.built_in_blocker
+                    } else {
+                        !private && Self::extension_on(settings, id)
+                    }
+            }),
         );
     }
 
@@ -1623,6 +1656,208 @@ impl Browser {
         }
     }
 
+    /// Load the built-in ad blocker's prepared list, and download it again in a
+    /// normal window when there is none or it is a week old.
+    fn start_blocker(&mut self) {
+        if !self.settings.built_in_blocker {
+            return;
+        }
+        if let Some(kept) = &self.blocker_kept {
+            for index in 0..kept.filters {
+                if let Some(id) = hblock::filter_id(index) {
+                    self.shield.load(&id);
+                }
+            }
+        }
+        let now = linux_blocker::now();
+        if !self.private && self.blocker_kept.as_ref().is_none_or(|kept| kept.due(now)) {
+            self.update_blocker();
+        }
+    }
+
+    /// Download and prepare hBlock's list (normal windows; one at a time).
+    fn update_blocker(&mut self) {
+        if self.private
+            || !self.settings.built_in_blocker
+            || self.blocker_downloading
+            || self.blocker_pending.is_some()
+        {
+            return;
+        }
+        let proxy = self.proxy.clone();
+        let started = linux_blocker::fetch(move |result| {
+            let _ = proxy.send_event(Event::BlockerPrepared(result));
+        });
+        match started {
+            Ok(()) => {
+                self.blocker_downloading = true;
+                self.blocker_error = None;
+            }
+            Err(_) => self.blocker_error = Some("Could not start the download.".into()),
+        }
+    }
+
+    /// hBlock's list arrived (or not): compile its filters.
+    fn blocker_prepared(&mut self, result: Result<hblock::Prepared, String>) {
+        self.blocker_downloading = false;
+        if !self.settings.built_in_blocker {
+            return;
+        }
+        let prepared = match result {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if std::mem::take(&mut self.blocker_asked) {
+                    self.notice = error.clone();
+                }
+                self.blocker_error = Some(error);
+                return;
+            }
+        };
+        let kept = Kept {
+            updated: linux_blocker::now(),
+            domains: prepared.domains,
+            filters: prepared.filters.len(),
+        };
+        let mut waiting = std::collections::HashSet::new();
+        for (index, json) in prepared.filters.into_iter().enumerate() {
+            if let Some(id) = hblock::filter_id(index) {
+                waiting.insert(id.clone());
+                self.shield.compile(&id, json);
+            }
+        }
+        self.blocker_pending = Some((kept, waiting));
+    }
+
+    /// One of the built-in ad blocker's filters finished loading or compiling.
+    fn blocker_filter(&mut self, id: &str, error: Option<String>) {
+        let compiled = self
+            .blocker_pending
+            .as_mut()
+            .is_some_and(|(_, waiting)| waiting.remove(id));
+        if !compiled {
+            // A kept filter that cannot load (removed, or kept by another WebKit
+            // version): the list is downloaded and prepared again.
+            if let Some(error) = error {
+                self.blocker_error =
+                    Some(format!("WebKit could not load hBlock's list ({error})."));
+                self.update_blocker();
+            }
+            return;
+        }
+        if let Some(error) = error {
+            self.blocker_pending = None;
+            self.blocker_error = Some(format!("WebKit could not prepare hBlock's list ({error})."));
+            return;
+        }
+        if self
+            .blocker_pending
+            .as_ref()
+            .is_some_and(|(_, waiting)| !waiting.is_empty())
+        {
+            return;
+        }
+        let Some((kept, _)) = self.blocker_pending.take() else {
+            return;
+        };
+        // A shorter list leaves filters behind.
+        for index in kept.filters..hblock::MAX_FILTERS {
+            if let Some(id) = hblock::filter_id(index) {
+                self.shield.remove(&id);
+            }
+        }
+        if linux_blocker::write(&self.blocker_folder, &kept).is_err() {
+            self.blocker_error = Some(
+                "Its record could not be saved; it is downloaded again at the next start.".into(),
+            );
+        } else {
+            self.blocker_error = None;
+        }
+        if std::mem::take(&mut self.blocker_asked) {
+            self.inform(format!(
+                "hBlock's list is up to date: {} domains blocked.",
+                kept.domains
+            ));
+        }
+        self.blocker_kept = Some(kept);
+    }
+
+    /// Settings > Extensions: the built-in ad blocker's switch.
+    fn set_built_in_blocker(&mut self, on: bool) -> Result<(), Box<dyn Error>> {
+        if self.private {
+            return Err("Change the built-in ad blocker in a normal window.".into());
+        }
+        self.settings.built_in_blocker = on;
+        self.persist();
+        if on {
+            self.blocker_error = None;
+            self.start_blocker();
+            self.inform("The built-in ad blocker is on.".into());
+        } else {
+            // Its prepared list (about 160 MB) is removed; turning it back on
+            // downloads it again.
+            for index in 0..hblock::MAX_FILTERS {
+                if let Some(id) = hblock::filter_id(index) {
+                    self.shield.remove(&id);
+                }
+            }
+            linux_blocker::forget(&self.blocker_folder);
+            self.blocker_kept = None;
+            self.blocker_pending = None;
+            self.blocker_error = None;
+            self.inform(
+                "The built-in ad blocker is off. Turn it back on in Settings > Extensions.".into(),
+            );
+        }
+        self.apply_shield();
+        Ok(())
+    }
+
+    /// The built-in ad blocker as Settings and the shield show it.
+    fn blocker_state(&self) -> ui::BuiltInBlocker {
+        let enabled = self.settings.built_in_blocker;
+        let loaded = self.blocker_kept.as_ref().filter(|kept| {
+            (0..kept.filters)
+                .all(|index| hblock::filter_id(index).is_some_and(|id| self.shield.is_loaded(&id)))
+        });
+        let detail = if !enabled {
+            "Off.".to_string()
+        } else if let Some(kept) = loaded {
+            let state = format!(
+                "hBlock's list blocks {} ad, tracking and malware domains in normal and private windows. Downloaded {}; it is downloaded again after a week.",
+                kept.domains,
+                hblock::date(kept.updated)
+            );
+            match (
+                &self.blocker_error,
+                self.blocker_downloading || self.blocker_pending.is_some(),
+            ) {
+                (_, true) => format!("{state} Updating it now."),
+                (Some(error), false) => format!("{state} The last update failed: {error}"),
+                (None, false) => state,
+            }
+        } else if let Some(error) = &self.blocker_error {
+            format!("Not running: {error}")
+        } else if self.blocker_downloading {
+            "Downloading hBlock's list (about 10 MB).".into()
+        } else if self.blocker_pending.is_some() {
+            "Preparing hBlock's list; this takes about 15 seconds.".into()
+        } else if self.private && self.blocker_kept.is_none() {
+            "A normal window downloads hBlock's list first.".into()
+        } else {
+            "Loading hBlock's list.".into()
+        };
+        ui::BuiltInBlocker {
+            name: "hBlock",
+            enabled,
+            active: enabled && loaded.is_some(),
+            detail,
+            can_update: !self.private
+                && enabled
+                && !self.blocker_downloading
+                && self.blocker_pending.is_none(),
+        }
+    }
+
     /// The extensions for Settings > Extensions and the shield.
     fn extension_rows(&self) -> Vec<ui::ExtensionRow> {
         self.settings
@@ -1642,6 +1877,7 @@ impl Browser {
                 },
                 blocks: e.blocks,
                 popup: false,
+                built_in: false,
             })
             .collect()
     }
@@ -1801,6 +2037,10 @@ impl Browser {
     /// again what could not load, and update every website view.
     fn shield_ready(&mut self) {
         for (id, error) in self.shield.finished() {
+            if hblock::is_filter(&id) {
+                self.blocker_filter(&id, error);
+                continue;
+            }
             let adding = self.shield.adding.as_ref().is_some_and(|a| a.id == id);
             match error {
                 None if adding => {
@@ -1816,6 +2056,7 @@ impl Browser {
                             folder: added.folder,
                             blocks: Some(added.blocks),
                             disabled: false,
+                            built_in: false,
                         });
                     self.persist();
                     let left_out = if added.skipped == 0 {
@@ -2508,6 +2749,7 @@ impl Browser {
             }),
             passwords: self.password_state(active, &secure_host),
             extensions: self.extension_rows(),
+            built_in_blocker: self.blocker_state(),
             extension_popup: None,
             library: &self.data,
             library_folder: self.filter.folder,
@@ -2800,6 +3042,14 @@ impl Browser {
             Command::AnswerPasswordOffer { id, answer } => return self.answer_offer(id, answer),
             Command::FillLogin(username) => return self.fill_login(username),
             Command::FillContact => return self.fill_contact(),
+            Command::SetBuiltInBlocker(on) => return self.set_built_in_blocker(on),
+            Command::UpdateBuiltInBlocker => {
+                if self.private {
+                    return Err("Update the ad blocker's list in a normal window.".into());
+                }
+                self.blocker_asked = true;
+                self.update_blocker();
+            }
             // The switch is hidden on Linux; turning counting off changes nothing.
             Command::SetCountBlocked(on) => {
                 if on {
@@ -3839,18 +4089,18 @@ const LINUX_TEXT: [[&str; 2]; 8] = [
     ],
     // What an extension can do on Linux.
     [
-        r#"An extension can read and change every site you open in normal windows, including passwords you type, so add only extensions you trust."#,
+        r#"An extension can read and change every site you open, in normal and private windows, including passwords you type, so add only extensions you trust."#,
         r#"On Linux only an extension's declarative blocking rules are used, as WebKit content filters in normal windows: its scripts, buttons and settings pages never run. Add only content blockers you trust."#,
     ],
     // How its rules are used.
     [
-        r#"Private windows and this toolbar never run them, and extension buttons and settings pages are not available here."#,
-        r#"The rulesets it turns on by default are prepared once, which takes a few seconds, and kept in this profile. Private windows never use them."#,
+        r#"Private windows run them too, added again each time one opens; this toolbar runs none, and extension buttons and settings pages are not available here."#,
+        r#"The rulesets it turns on by default are prepared once, which takes a few seconds, and kept in this profile. Private windows use only the built-in ad blocker's list."#,
     ],
     // What the shield cannot tell or do on Linux.
     [
         r#"limits='The browser engine reports each blocked request but not what blocked it, so the count may also include requests the engine blocks itself. Requests inside frames from other sites are not counted. '+(popup?'Click the shield to open '+popup.name+'\'s own panel, where it can be turned off or tuned for this site.':'Rust Browser cannot turn blocking off for one site: an extension can only be turned on or off everywhere. Use the extension\'s own settings for site exceptions.')"#,
-        r#"limits='WebKit applies the blocking rules taken from your extensions and does not report what it blocked, so no count is shown. Rules that replace scripts or hide page elements are not used on Linux. The switch above turns blocking off for this site only.'"#,
+        r#"limits='WebKit applies hBlock\'s list and the blocking rules taken from your extensions, and does not report what it blocked, so no count is shown. Rules that replace scripts or hide page elements are not used on Linux. The switch above turns blocking off for this site only.'"#,
     ],
     // No switch to point to.
     [
@@ -4067,6 +4317,10 @@ impl ApplicationHandler<Event> for App {
             }
             Event::ShieldReady => {
                 browser.shield_ready();
+                Ok(())
+            }
+            Event::BlockerPrepared(result) => {
+                browser.blocker_prepared(result);
                 Ok(())
             }
             Event::BookmarksRead(result) => match result {

@@ -72,6 +72,10 @@ pub enum Command {
     SetNewtabBackground(rust_browser::settings::Background),
     /// Whether the shield counts requests extensions block.
     SetCountBlocked(bool),
+    /// Turn the ad blocker that comes with Rust Browser on or off.
+    SetBuiltInBlocker(bool),
+    /// Linux: download hBlock's list again now.
+    UpdateBuiltInBlocker,
     /// Linux: block requests on the selected tab's site (true), or pause it.
     SetSiteBlocking(bool),
     /// Linux: answer the offer to save a submitted login.
@@ -318,6 +322,23 @@ pub struct ExtensionRow {
     pub blocks: Option<bool>,
     /// Whether it has a toolbar-button page (popup) the shield can open.
     pub popup: bool,
+    /// Windows: the uBlock Origin that comes with Rust Browser.
+    pub built_in: bool,
+}
+
+/// The ad blocker that comes with Rust Browser, for Settings and the shield.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct BuiltInBlocker {
+    /// "uBlock Origin" (Windows) or "hBlock" (Linux).
+    pub name: &'static str,
+    /// The Settings switch.
+    pub enabled: bool,
+    /// Whether it blocks in this window now.
+    pub active: bool,
+    /// One sentence about its state (version, list date, or what is pending).
+    pub detail: String,
+    /// Linux: whether "Update now" applies (a list can be downloaded).
+    pub can_update: bool,
 }
 
 /// "<host> is now full screen", drawn at the top of a fullscreen page.
@@ -383,6 +404,8 @@ pub struct ToolbarState<'a> {
     pub passwords: Option<PasswordState<'a>>,
     /// Extensions the user added, with their current state.
     pub extensions: Vec<ExtensionRow>,
+    /// The ad blocker that comes with Rust Browser.
+    pub built_in_blocker: BuiltInBlocker,
     /// The extension whose popup is open under the shield, if any.
     pub extension_popup: Option<&'a str>,
     pub library: &'a Data,

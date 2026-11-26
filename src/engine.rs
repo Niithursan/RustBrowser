@@ -371,10 +371,14 @@ impl Engine {
             .with_autoplay(false)
             .with_hotkeys_zoom(true)
             .with_clipboard(false)
-            .with_incognito(private)
-            // Extensions run only in the normal website profile, never in private
-            // windows (separate profile) or the toolbar (separate profile, never set).
-            .with_browser_extensions_enabled(!private)
+            // A private window's website views are an ordinary profile in that
+            // window's own temporary folder (removed when it closes), not WebView2's
+            // InPrivate mode: WebView2 never runs extensions in InPrivate profiles,
+            // and the owner chose (2026-11-26) to run them in private windows.
+            .with_incognito(false)
+            // Extensions run in every website profile, private windows included. The
+            // toolbar's separate profile never sets it.
+            .with_browser_extensions_enabled(true)
             .with_focused(false)
             .with_navigation_handler(move |url| {
                 let allowed = url == "about:blank" || navigation::allowed(&url);
@@ -393,7 +397,7 @@ impl Engine {
             })
             .build_as_child(window)?;
         if private {
-            crate::native_security::verify_private(&view)?;
+            crate::native_security::verify_private_storage(&view)?;
         }
         // Private windows never save passwords or form data, whatever the switches.
         let forms = if private {

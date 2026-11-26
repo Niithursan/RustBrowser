@@ -1,5 +1,6 @@
 /target/
 *.zip
+!/third_party/ublock-origin/*.zip
 *.pdb
 *.log
 /dist/
