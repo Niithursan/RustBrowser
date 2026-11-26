@@ -10,6 +10,10 @@
 - **Linux default browser:** Settings > System > Make default browser registers a launcher and sets it for web links.
 - **Fix (Windows):** one click on a tab's close icon closes the tab. A click on the icon itself, rather than the space around it, started a tab drag, so the click selected the tab and closing took several clicks.
 - **Fix (Windows):** Home shows the new-tab page on the first click. The tab took the address of the page it was leaving while the view was still switching, so the first Home showed a blank page.
+- **Fix (Linux ad blocking):** a rule an extension limits to some sites now applies to requests made by those sites' frames, as in Chromium. Before, it applied to everything on those sites' pages, including other sites' frames on them (such as an embedded video), and not to those sites' own frames on other pages.
+- **Fix (Linux ad blocking):** an address that puts an allowed site's name before an `@` (`https://allowed.test@ads.test/`) is no longer let through by that site's allow rule.
+- **Fix (Windows):** opening a private window while another browser process starts no longer risks removing the new window's temporary folder before the window takes it.
+- **Fix (Windows):** when a private window of an earlier build still uses the built-in uBlock Origin's files, a newer build keeps using that copy until a later start can replace it. Before, the built-in ad blocker was not turned on in that session.
 - **Shared code:** the profile start decision, the picker page, extension manifest reading and the view layout moved out of the Windows-only code; Windows behaves as before.
 
 ## 0.22.2 (published 2026-11-23)

@@ -160,13 +160,25 @@ fn unique(parent: &Path, label: &str) -> PathBuf {
     parent.join(format!(".{FOLDER}-{label}-{}-{nanos}", std::process::id()))
 }
 
+/// What the unpacked copy at `target` holds: the SHA-256 of its release, or
+/// `None` when it is missing or unfinished.
+fn unpacked_release(target: &Path) -> Option<String> {
+    fs::read_to_string(target.join(MARKER)).ok()
+}
+
 /// The unpacked copy of this build's uBlock Origin in `parent`, unpacking it
 /// first when it is missing or holds another release. The new copy is written
-/// beside the old one and swapped in only when complete; an old copy that is
-/// still in use (another browser process of this profile) is kept.
+/// beside the old one and swapped in only when complete.
+///
+/// A complete copy of another release that cannot be moved aside, because
+/// another browser process of this profile (such as a private window of an
+/// earlier build) has its files open, is kept and used as it is until a later
+/// start can replace it. The same folder is used either way, so the extension
+/// keeps its ID. Another process that unpacks this release at the same time
+/// leaves its copy, which is used.
 pub fn unpack(parent: &Path) -> Result<PathBuf, String> {
     let target = parent.join(FOLDER);
-    if fs::read_to_string(target.join(MARKER)).is_ok_and(|kept| kept == SHA256) {
+    if unpacked_release(&target).is_some_and(|kept| kept == SHA256) {
         return Ok(target);
     }
     let failed = |e: std::io::Error| format!("The built-in ad blocker could not be unpacked: {e}");
@@ -178,17 +190,26 @@ pub fn unpack(parent: &Path) -> Result<PathBuf, String> {
         let _ = fs::remove_dir_all(&fresh);
         return Err(error);
     }
+    // Whatever complete copy is at `target` after a failed swap: this release
+    // (another process won the race), or another one still in use.
+    let in_place = |error: std::io::Error| match unpacked_release(&target) {
+        Some(_) => Ok(target.clone()),
+        None => Err(failed(error)),
+    };
     let old = unique(parent, "old");
     if target.exists()
         && let Err(error) = fs::rename(&target, &old)
     {
         let _ = fs::remove_dir_all(&fresh);
-        return Err(failed(error));
+        return in_place(error);
     }
     if let Err(error) = fs::rename(&fresh, &target) {
-        let _ = fs::rename(&old, &target);
+        if !target.exists() {
+            let _ = fs::rename(&old, &target);
+        }
         let _ = fs::remove_dir_all(&fresh);
-        return Err(failed(error));
+        let _ = fs::remove_dir_all(&old);
+        return in_place(error);
     }
     let _ = fs::remove_dir_all(&old);
     Ok(target)
@@ -315,6 +336,36 @@ mod tests {
         assert!(!folder.join("extra").exists());
         let leftovers = fs::read_dir(&parent).unwrap().count();
         assert_eq!(leftovers, 1, "only the unpacked folder is left");
+        fs::remove_dir_all(&parent).unwrap();
+    }
+
+    /// Another browser process (a private window of an earlier build) has a
+    /// file of the old release open, as WebView2 does, so the folder cannot be
+    /// moved aside: that copy is used, then replaced at a later start.
+    #[cfg(windows)]
+    #[test]
+    fn a_release_still_in_use_is_kept_and_replaced_later() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let parent = std::env::temp_dir().join(format!("rb-bundled-busy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&parent);
+        let folder = unpack(&parent).unwrap();
+        fs::write(folder.join(MARKER), "earlier release").unwrap();
+        // FILE_SHARE_READ only: no one may delete or move it while it is open.
+        let open = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(folder.join("manifest.json"))
+            .unwrap();
+        assert_eq!(unpack(&parent).unwrap(), folder);
+        assert_eq!(
+            fs::read_to_string(folder.join(MARKER)).unwrap(),
+            "earlier release"
+        );
+        let leftovers = fs::read_dir(&parent).unwrap().count();
+        assert_eq!(leftovers, 1, "no unfinished copy is left beside it");
+        drop(open);
+        assert_eq!(unpack(&parent).unwrap(), folder);
+        assert_eq!(fs::read_to_string(folder.join(MARKER)).unwrap(), SHA256);
         fs::remove_dir_all(&parent).unwrap();
     }
 }
