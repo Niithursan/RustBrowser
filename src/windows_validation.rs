@@ -1574,20 +1574,34 @@ fn extension_restart_child() {
 }
 
 /// A private window never runs extensions and refuses to add or change them.
+/// A private window runs the extensions added in a normal window (marker A,
+/// on) but not those turned off (marker B), plus the built-in uBlock Origin,
+/// and still refuses to add, remove or change extensions itself.
 fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let url = p.url.clone();
     match p.phase {
-        0 if p.at.elapsed() > Duration::from_secs(1) => {
+        0 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
             if !s.private {
                 return Err("The fixture did not start a private window".into());
             }
+            if !s.extensions.iter().any(|e| e.name.contains('A')) {
+                if p.at.elapsed() > Duration::from_secs(20) {
+                    return Err(format!(
+                        "The user's extension was not added to the private window: {:?}",
+                        s.extensions
+                    ));
+                }
+                return Ok(());
+            }
             if s.command(Command::AddExtension).is_ok()
                 || s.command(Command::RemoveExtension("a".repeat(32))).is_ok()
+                || s.command(Command::SetBuiltInBlocker(false)).is_ok()
             {
                 return Err("A private window accepted an extension command".into());
             }
-            add_marker(p, 'a')?;
+            // A folder chosen in a private window is ignored.
+            add_marker(p, 'b')?;
             p.command(el, 0, Command::Navigate(format!("{url}?private")))?;
             p.next();
         }
@@ -1603,41 +1617,178 @@ fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
         2 => {
             if let Some(found) = markers(p) {
                 let s = p.app.session.as_mut().ok_or("No session")?;
-                if found != r#""[\"\",\"\"]""# || !s.settings.extensions.is_empty() {
+                if found != r#""[\"on\",\"\"]""# {
                     return Err(format!(
-                        "A private window ran or kept an extension: {found}, {:?}",
-                        s.settings.extensions
+                        "A private window ran the wrong extensions: {found}, {:?}",
+                        s.extensions
                     ));
                 }
                 // The shield never counts in a private window.
                 if s.counts_blocked() || s.tabs.items[0].content.engine.blocked.count().is_some() {
                     return Err("A private window counts blocked requests".into());
                 }
-                s.extension_added = None;
-                // Refused either at once or in WebView2's answer.
-                if let Err(message) = native_extensions::add(
-                    &s.tabs.items[0].content.engine.view,
-                    &marker('a'),
-                    s.proxy.clone(),
-                ) {
-                    s.extension_added = Some(Err(message));
-                }
                 p.next();
             }
         }
+        // Only the built-in uBlock Origin runs, and it blocks.
         3 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            if let Some(added) = s.extension_added.clone() {
-                if added.is_ok() {
-                    return Err("WebView2 accepted an extension in a private window".into());
-                }
-                p.log
-                    .push("extensions: private windows never run them".into());
-                p.done = true;
-                el.exit();
-            } else if p.at.elapsed() > Duration::from_secs(15) {
-                return Err("Adding in a private window never answered".into());
+            if s.built_in_private.is_some() {
+                p.command(el, 0, Command::Navigate(format!("{url}article.html")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(40) {
+                return Err(format!(
+                    "The built-in ad blocker never started in a private window: {:?}",
+                    s.built_in_error
+                ));
             }
+        }
+        4.. => {
+            if !ad_blocked(p, el, 4)? {
+                return Ok(());
+            }
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.settings.extensions.len() != 1 {
+                return Err(format!(
+                    "A private window kept an extension it was given: {:?}",
+                    s.settings.extensions
+                ));
+            }
+            p.log.push(
+                "extensions: private windows run the user's extensions and the built-in uBlock Origin"
+                    .into(),
+            );
+            p.done = true;
+            el.exit();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Ask the first tab whether the ad fixture's script was blocked; repeat the
+/// load while uBlock Origin may still be reading its filter lists (the first
+/// minute after it is added). `step` is the phase that loaded `/article.html`.
+fn ad_blocked(p: &mut Probe, el: &ActiveEventLoop, step: u32) -> Result<bool, String> {
+    let s = p.app.session.as_mut().ok_or("No session")?;
+    if p.phase == step {
+        if !s.windows.iter().all(loaded) || !s.tabs.items[0].url.contains("/article.html") {
+            return Ok(false);
+        }
+        *p.result.lock().unwrap() = None;
+        let result = p.result.clone();
+        s.tabs.items[0]
+            .content
+            .engine
+            .view
+            .evaluate_script_with_callback(
+                "document.documentElement.dataset.ad||''",
+                move |value| *result.lock().unwrap() = Some(value),
+            )
+            .map_err(|_| "Page script failed".to_string())?;
+        p.phase += 1;
+        return Ok(false);
+    }
+    let Some(answer) = p.result.lock().unwrap().clone() else {
+        return Ok(false);
+    };
+    if answer == "\"blocked\"" {
+        return Ok(true);
+    }
+    if p.at.elapsed() > Duration::from_secs(60) {
+        let s = p.app.session.as_ref().ok_or("No session")?;
+        return Err(format!(
+            "The ad fixture's script was not blocked: {answer:?} at {} (built-in: {:?}, private: {:?}, listed: {:?})",
+            s.tabs.items[0].url,
+            s.built_in_state(),
+            s.built_in_private,
+            s.extensions
+        ));
+    }
+    p.phase = step;
+    p.command(el, 0, Command::Reload)?;
+    Ok(false)
+}
+
+/// The built-in uBlock Origin is added on first start, recorded as built in,
+/// blocks what EasyList blocks, and turning it off removes it for good.
+fn built_in_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let url = p.url.clone();
+    match p.phase {
+        0 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            let state = s.built_in_state();
+            if let Some(saved) = s.built_in_saved().cloned()
+                && state.active
+            {
+                let folder = s.built_in_folder.join("ublock-origin");
+                if saved.version != rust_browser::bundled::VERSION
+                    || saved.folder != folder.display().to_string()
+                    || saved.name != "uBlock Origin"
+                    || !folder.join("manifest.json").is_file()
+                {
+                    return Err(format!("Unexpected built-in entry: {saved:?}"));
+                }
+                p.command(el, 0, Command::Navigate(format!("{url}article.html")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(40) {
+                return Err(format!(
+                    "The built-in ad blocker never started: {:?}, {state:?}",
+                    s.built_in_error
+                ));
+            }
+        }
+        1 | 2 => {
+            if ad_blocked(p, el, 1)? {
+                p.phase = 10;
+                p.at = Instant::now();
+            }
+        }
+        // uBlock Origin alone starts no counting: WebView2 cannot tell its blocks
+        // from other cancelled requests.
+        10 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.counts_blocked() || s.tabs.items[0].content.engine.blocked.count().is_some() {
+                return Err("The shield counts for the built-in uBlock Origin alone".into());
+            }
+            p.command(el, 0, Command::SetBuiltInBlocker(false))?;
+            p.phase = 3;
+            p.at = Instant::now();
+        }
+        3 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if !s.settings.built_in_blocker && s.built_in_saved().is_none() {
+                if s.built_in_state().active {
+                    return Err("The built-in ad blocker still shows as on".into());
+                }
+                // Listing again must not add it back.
+                s.refresh_extensions();
+                p.command(el, 0, Command::Navigate(format!("{url}article.html?off")))?;
+                p.next();
+            } else if p.at.elapsed() > Duration::from_secs(15) {
+                return Err("Turning the built-in ad blocker off did not remove it".into());
+            }
+        }
+        4 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.windows.iter().all(loaded) && s.tabs.items[0].url.contains("?off") {
+                eval_page(p, "document.documentElement.dataset.ad||''")?;
+                p.next();
+            }
+        }
+        5 => {
+            let Some(answer) = p.result.lock().unwrap().clone() else {
+                return Ok(());
+            };
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if answer != "\"loaded\"" || s.built_in_saved().is_some() || s.built_in_adding {
+                return Err(format!("Turned off, the blocker still acted: {answer}"));
+            }
+            p.log.push(
+                "built-in: uBlock Origin added, blocks, and stays off when turned off".into(),
+            );
+            p.done = true;
+            el.exit();
         }
         _ => {}
     }
@@ -1645,9 +1796,36 @@ fn private_extension_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
 }
 
 #[test]
+#[ignore = "Requires Windows/WebView2; opens a real window and unpacks uBlock Origin"]
+fn native_built_in_ublock_origin_blocks_and_turns_off() {
+    TEST_BUILT_IN.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (root, _) = run("built-in", built_in_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 #[ignore = "Requires Windows/WebView2; opens a real private window"]
-fn native_private_windows_never_run_extensions() {
-    let (root, _) = run("private-extensions", private_extension_steps, |_, _| {});
+fn native_private_windows_run_extensions_and_the_built_in_blocker() {
+    TEST_BUILT_IN.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (root, _) = run("private-extensions", private_extension_steps, |root, _| {
+        // The normal profile: marker A added and on, marker B added and off.
+        let saved = |letter: char, disabled: bool| {
+            serde_json::json!({
+                "id": letter.to_string().repeat(32),
+                "name": format!("Marker {}", letter.to_ascii_uppercase()),
+                "version": "1",
+                "folder": marker(letter).display().to_string(),
+                "disabled": disabled,
+            })
+        };
+        let file = serde_json::json!({
+            "version": 1,
+            "tabs": [navigation::HOME],
+            "active": 0,
+            "settings": {"extensions": [saved('a', false), saved('b', true)]},
+        });
+        std::fs::write(root.join("session.json"), file.to_string()).unwrap();
+    });
     let _ = std::fs::remove_dir_all(root);
 }
 

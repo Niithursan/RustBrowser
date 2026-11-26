@@ -65,6 +65,11 @@ pub struct Settings {
     /// Windows WebView2 keeps its own list.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub password_never_sites: Vec<String>,
+    /// The ad blocker that comes with Rust Browser (v0.23): uBlock Origin on
+    /// Windows, hBlock's domain list on Linux. On when missing, so existing
+    /// profiles get it; removing or turning it off sets this to false, so it is
+    /// not added again.
+    pub built_in_blocker: bool,
 }
 
 /// Most sites the shield can be paused on.
@@ -153,10 +158,14 @@ pub struct SavedExtension {
     /// for extensions added before 0.21 until their folder is read again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocks: Option<bool>,
-    /// Linux only: the user turned it off. WebView2 keeps this itself on
-    /// Windows, where it stays false.
+    /// The user turned it off. On Windows WebView2 keeps the state itself and
+    /// this copy (v0.23) tells private windows which extensions to leave out.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
+    /// Windows: the uBlock Origin that comes with Rust Browser (v0.23), added by
+    /// the browser from its own copy rather than from a folder the user chose.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub built_in: bool,
 }
 
 impl Default for Settings {
@@ -180,6 +189,7 @@ impl Default for Settings {
             bookmarks_bar: true,
             shield_paused_sites: Vec::new(),
             password_never_sites: Vec::new(),
+            built_in_blocker: true,
         }
     }
 }
@@ -207,7 +217,9 @@ impl Settings {
         if !(15..=3600).contains(&self.suspend_after_seconds) || self.favorites.len() > 12 {
             return Err("Invalid background timer or too many favorites.".into());
         }
-        if self.extensions.len() > MAX_EXTENSIONS
+        // The built-in ad blocker does not count against the limit.
+        if self.extensions.iter().filter(|e| !e.built_in).count() > MAX_EXTENSIONS
+            || self.extensions.iter().filter(|e| e.built_in).count() > 1
             || self.extensions.iter().any(|e| {
                 e.id.len() != 32
                     || !e.id.bytes().all(|b| (b'a'..=b'p').contains(&b))
@@ -292,5 +304,21 @@ mod tests {
         // Older files have no list; an empty one is not written.
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(!json.contains("shield_paused_sites"));
+    }
+
+    #[test]
+    fn the_built_in_blocker_is_on_for_new_and_existing_profiles() {
+        assert!(Settings::default().built_in_blocker);
+        // A file from before 0.23 has no switch: the blocker is on.
+        let old: Settings = serde_json::from_str(r#"{"history_enabled":false}"#).unwrap();
+        assert!(old.built_in_blocker && !old.history_enabled);
+        let off: Settings = serde_json::from_str(r#"{"built_in_blocker":false}"#).unwrap();
+        assert!(!off.built_in_blocker);
+        let saved: SavedExtension = serde_json::from_str(
+            r#"{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"A","version":"1","folder":"/a"}"#,
+        )
+        .unwrap();
+        assert!(!saved.built_in);
+        assert!(!serde_json::to_string(&saved).unwrap().contains("built_in"));
     }
 }

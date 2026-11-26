@@ -10,9 +10,10 @@ download releases from the [Releases page](https://github.com/Niithursan/RustBro
 [Install a release](#install-a-release)). It brings a new layout: tabs are cards
 with the page's icon, the toolbar has icon buttons, a bookmark star in the address
 line and one Menu (⋮) holding every other action. You can add browser extensions
-from a folder, for example uBlock Origin Lite to block ads (see
-[Extensions and ad blocking](#extensions-and-ad-blocking)). Extensions never run in
-private windows. This is not a release candidate.
+from a folder; in v0.22.2 extensions never run in private windows. This is not a
+release candidate. Built from source, Rust Browser now blocks ads out of the box:
+uBlock Origin comes with it on Windows, in normal and private windows, and hBlock's
+domain list on Linux (see [Extensions and ad blocking](#extensions-and-ad-blocking)).
 
 v0.19 can save passwords and fill in forms using WebView2's own features. Both
 are off until you turn them on in Menu (⋮) → Settings → Privacy & security, and private
@@ -128,9 +129,9 @@ The toolbar row holds back, forward, reload (stop while loading) and home, then 
 address line. At its start, the site-information badge shows the connection: a small
 lock on an encrypted page, a turning arc while a page loads (the address beside it
 never moves), and a word (Not encrypted, Not connected, Browser page) when there is
-something to read. At its end, the star bookmarks the page and, once
-you have added an extension that can block requests, the shield shows ad blocking
-(below). The Menu (⋮) at the far right holds everything else, in labelled groups: New
+something to read. At its end, the star bookmarks the page and, while the built-in
+ad blocker or an extension you added that can block requests is on, the shield shows
+ad blocking (below). The Menu (⋮) at the far right holds everything else, in labelled groups: New
 (new tab, new window, new private window, reopen closed window), This page (find,
 zoom with the current percentage, print), This tab (pin, keep awake, reopen closed
 tab), Library (bookmarks, history, downloads) and then Settings, Profiles…,
@@ -151,11 +152,10 @@ switches straight to that dropdown.
   bookmarked; clicking it saves the page or opens its bookmark to rename it, choose
   its folder, remove it, or open All bookmarks.
 
-The **shield** appears at the end of the address line once you add an extension that
-can block requests (Rust Browser has no ad blocker of its own, so there is nothing to
-show before that, and it never appears in private windows). When that extension has
-its own toolbar panel (uBlock Origin Lite, for example), clicking the shield opens that
-panel under it, acting on the current page: turn the blocker off or change its
+The **shield** appears at the end of the address line while the built-in ad blocker
+is on, or once you add an extension that can block requests. When the blocker has
+its own toolbar panel (the built-in uBlock Origin on Windows, for example), clicking
+the shield in a normal window opens that panel under it, acting on the current page: turn the blocker off or change its
 filtering mode for this site, remove an element, create a custom filter. Escape, a
 click anywhere else, a second click on the shield or another tab closes it, and a
 website it opens arrives in a new tab. Extension pages such as the blocker's own
@@ -164,12 +164,16 @@ the shield (or click it when the extension has no panel) for its details: a drop
 listing the extensions that are on and whether each asks to block
 requests, and how many requests were blocked on the current page, with that number
 on the shield itself. The number comes from WebView2's own network events, only in
-normal windows while you have added an extension and **Count blocked requests**
+normal windows while you have added an extension of your own and **Count blocked requests**
 (Settings > Extensions, on by default) is on; turned off, no page listens
 for blocked requests at all. WebView2 does not say which
 extension, or whether the engine itself, blocked a request; requests inside frames
 from other sites are not counted; and Rust Browser itself cannot turn blocking off for
-one site (the extension's own panel can). Rust Browser has no ad blocker of its own.
+one site on Windows (the extension's own panel can). The built-in uBlock Origin is never
+in this number: WebView2 reports the requests it stops like any cancelled request, so
+they cannot be told apart; its own panel (click the shield) shows what it blocked. In
+a private window the shield's details say whether the built-in ad blocker runs there;
+nothing is counted.
 
 **Bookmarks, history and downloads** open in a library column at the right of the
 page or the new-tab page, which shrinks and stays usable. Ctrl+Shift+B shows or hides
@@ -273,6 +277,9 @@ cargo run --release
 Data lives in `$XDG_DATA_HOME/rust-browser/v0.1` (`~/.local/share/rust-browser/v0.1`),
 or in `RUST_BROWSER_PROFILE` when set. What differs from Windows:
 
+- **Built-in ad blocker:** hBlock's list of about 420,000 ad, tracking and malware
+  domains instead of uBlock Origin (see
+  [Extensions and ad blocking](#extensions-and-ad-blocking)).
 - **Extensions and the shield:** Add from folder takes the same unpacked extension
   (such as uBlock Origin Lite), but WebKitGTK cannot run extensions, so only its
   declarative blocking rules are used, compiled by WebKit into a content filter.
@@ -651,10 +658,16 @@ most 16 profiles can exist.
 ## Private browsing
 
 Use **Private window** or **Ctrl+Shift+N**, or run `cargo run --locked -- --private`.
-Each clearly labelled private window runs separately and verifies native WebView2
-InPrivate mode before any website loads. Its tabs share that window's temporary
-content profile. Private windows do not share cookies, cache or site storage with
-normal tabs or with other private windows. No private session store is opened;
+Each clearly labelled private window runs separately in its own temporary profile
+folder (`private-contexts` in the profile), and refuses to load any website unless
+its pages' WebView2 profile is in that folder. On Windows this is an ordinary
+WebView2 profile rather than WebView2's InPrivate mode, because WebView2 never runs
+extensions in InPrivate profiles: while a private window is open, its cookies, cache
+and site storage are written to that folder, which is removed when the window
+closes. The built-in uBlock Origin and the extensions you added (and left on) in a
+normal window run in private windows too, added again each time one opens. Its tabs
+share that window's temporary profile. Private windows do not share cookies, cache
+or site storage with normal tabs or with other private windows. No private session store is opened;
 history is not recorded and temporary permission decisions are kept in memory.
 Normal bookmarks are unavailable in private windows and remain unchanged.
 
@@ -696,19 +709,49 @@ separate password manager app.
 
 ## Extensions and ad blocking
 
-Menu (⋮) → Settings → **Extensions** → **Add from folder…** adds a browser
-extension from an unpacked folder you downloaded yourself. Rust Browser never
-downloads, bundles or updates extensions. The list shows the extensions you added,
-whether each is on, and lets you turn each off or on and remove it; this lasts after
-a restart. Extensions run only in normal windows, never in private windows or in the
-browser's own toolbar. Extension buttons, pop-ups and settings pages are not
-available, so extensions run with their default settings.
+Rust Browser comes with an ad blocker, on unless you turn it off with **Block ads
+with …, built into Rust Browser** at the top of Menu (⋮) → Settings →
+**Extensions**. Turned off (or removed from the list), it stays off until you turn
+it back on.
 
-**An extension can read and change every website you open in normal windows,
-including what you type.** Add only extensions you trust, from their official
-release page.
+- **Windows: uBlock Origin 1.77.2.** The official release
+  (`uBlock0_1.77.2.chromium.zip`, SHA-256
+  `636cfa6c640b29ab7251b765225d6c0f580bd9fe830d1319005ea7093cf4303c`, GPL-3.0,
+  source at https://github.com/gorhill/uBlock/releases/tag/1.77.2) is built into
+  the program unchanged and unpacked into the profile (`built-in\ublock-origin`) on
+  first start. It runs in normal and private windows, uses its own filter lists and
+  updates them itself, and its panel opens from the shield. Each Rust Browser
+  release may bring a newer uBlock Origin. uBlock Origin is a Manifest V2 extension;
+  if a future WebView2 stops loading those, it will be replaced.
+- **Linux: hBlock's list.** WebKitGTK cannot run extensions, so Rust Browser
+  downloads the list of ad, tracking and malware domains that
+  [hBlock](https://github.com/hectorm/hblock) publishes
+  (https://hblock.molinero.dev/hosts_domains.txt, about 10 MB) and WebKit blocks
+  those domains and their subdomains for everything a page loads, in normal and
+  private windows. Opening such a site as the page itself still works, so links that
+  pass through a tracking domain keep working. A normal window downloads the list on
+  first start and again when it is a week old, or with **Update list now**; that
+  request is the only one it makes for the blocker. The prepared list takes about
+  15 seconds to prepare and about 130 MB in the profile (`content-filters`), and is
+  removed when the blocker is turned off. The list is downloaded rather than shipped
+  because some of the lists hBlock combines allow only non-commercial use. Blocking
+  domains does not remove ads served from a site's own domain, such as video ads on
+  YouTube.
 
-To block ads, the recommended extension is **uBlock Origin Lite**:
+Menu (⋮) → Settings → **Extensions** → **Add from folder…** also adds a browser
+extension from an unpacked folder you downloaded yourself. Apart from its built-in
+ad blocker, Rust Browser never downloads, bundles or updates extensions. The list
+shows the extensions, whether each is on, and lets you turn each off or on and
+remove it; this lasts after a restart. On Windows, extensions run in normal windows
+and, added again each time one opens, in private windows; never in the browser's
+own toolbar. Extension pop-ups open from the shield; other extension pages are not
+available.
+
+**An extension can read and change every website you open, in normal and private
+windows, including what you type.** Add only extensions you trust, from their
+official release page.
+
+To use **uBlock Origin Lite** instead of (or beside) the built-in blocker:
 
 1. Open its official releases page, https://github.com/uBlockOrigin/uBOL-home/releases,
    and download the `uBOLite_<version>.chromium.zip` file of the latest release.

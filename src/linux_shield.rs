@@ -222,7 +222,8 @@ pub struct Adding {
 type Inbox = Rc<RefCell<Vec<(String, Result<Filter, String>)>>>;
 
 /// A browser's shield: the compiled filters it has loaded, and its store
-/// calls in progress. Private windows have no store and never filter.
+/// calls in progress. Private windows load from the profile's store but never
+/// compile or remove (the browser only asks them to load).
 pub struct Shield {
     store: Option<Store>,
     /// Loaded filters, by extension ID.
@@ -284,6 +285,11 @@ impl Shield {
             Some(store) => store.save(id, json, self.deliver(id)),
             None => self.deliver(id)(Err("Private windows keep no filters.".into())),
         }
+    }
+
+    /// Whether `id`'s filter is loaded.
+    pub fn is_loaded(&self, id: &str) -> bool {
+        self.filters.contains_key(id)
     }
 
     /// Forget `id`'s filter, here and in the store.

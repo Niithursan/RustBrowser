@@ -1,5 +1,62 @@
 # Validation
 
+## Built-in ad blocker (uBlock Origin on Windows, hBlock on Linux)
+
+Owner request, 2026-11-26: ship an ad blocker with the browser, uBlock Origin on
+Windows and hBlock on Linux, also in private windows.
+
+### Measured first
+
+- **WebView2 does not run extensions in InPrivate profiles.** With extension support
+  turned on for a private (InPrivate) website view, `AddBrowserExtension` accepted
+  uBlock Origin 1.77.2 and returned an ID, but it never blocked: the fixture's
+  `/adserver.js` loaded on every try for 60 seconds. WebView2 has no API to allow an
+  extension there, and the private profile keeps no preferences file to change.
+  Run as an ordinary WebView2 profile in the same temporary private folder, the same
+  extension blocked the script within 5 seconds. The owner chose that model for
+  private windows (the trade-off is in SECURITY.md).
+- **hBlock's list in WebKit** (Ubuntu 24.04 container, WebKitGTK 2.52, November 2026
+  list): 488,744 domains, 10.4 MB; 419,949 once subdomains of listed domains are
+  dropped. WebKit's 150,000-rule limit per filter needs 3 filters. Compiling all four
+  filters of the full list took 14.2 s with a peak of 472 MB in the compiling
+  process and 161 MB on disk; loading the compiled filters at start took no
+  measurable time. In the browser: downloaded and prepared in 18 s, 126 MB on disk.
+- **uBlock Origin 1.77.2**: `uBlock0_1.77.2.chromium.zip` is 6.2 MB (SHA-256
+  `636cfa6c...303c`, as GitHub publishes it) and unpacks to 669 files, 28 MB. It is a
+  Manifest V2 extension and loads in the current WebView2.
+
+### Found during the work
+
+- EasyList blocks some fixture-like page names as whole documents; the test page is
+  `/article.html` loading `/adserver.js` (EasyList's `/adserver.$~stylesheet,~xmlhttprequest`).
+
+### Automated evidence
+
+- `native_built_in_ublock_origin_blocks_and_turns_off`: a new profile gets uBlock
+  Origin unpacked into `built-in\ublock-origin` and added as built in; it blocks the
+  fixture's ad script; the Settings switch removes it, it is not added again after
+  the list is read again, and the script then loads.
+- `native_private_windows_run_extensions_and_the_built_in_blocker`: a private window
+  runs the extension the normal profile has on (marker A) and not the one it has off
+  (marker B), ignores a folder chosen in the private window, refuses extension
+  commands and the blocker's switch, and its built-in uBlock Origin blocks the ad
+  script.
+- Unit tests: `bundled` (pinned ZIP, ZIP reading, unsafe names, unpack and replace),
+  `hblock` (list checks, subdomains, splitting, dates and refresh),
+  `the_built_in_blocker_is_on_for_new_and_existing_profiles`,
+  `private_views_must_live_in_a_private_folder`.
+- Linux container check (Xvfb and Openbox, fresh profile): the list was downloaded
+  and prepared on first start; a page's fetch to `pagead2.googlesyndication.com` was
+  blocked and one to `www.google.com` was not, in a normal window, after a restart,
+  and in a private window.
+
+### Not tested here
+
+- Upgrading from one bundled uBlock Origin release to the next (only one exists).
+- The Settings switch, its status line and Update list now on Linux by hand, and the
+  shield's private-window wording, beyond what the tests read.
+- A full desktop session on Linux (the owner's VM can check).
+
 ## v0.21.0 release candidate qualification
 
 Candidate: `main` at `c41bf6e73e30e7def9061732234e83a3e24a75b1` (PR #57 squash merge;
@@ -330,7 +387,9 @@ page, a built-in WebView2 extension cannot be removed or turned off, turn one of
 remove the other, neither runs, WebView2 refuses an extension in the toolbar view;
 then a second process on the same profile finds the first still off, the second
 gone, and neither running); `native_private_windows_never_run_extensions` (commands
-refused, no extension kept or run, WebView2 refuses an extension in a private view);
+refused, no extension kept or run, WebView2 refuses an extension in a private view;
+replaced in v0.23 by `native_private_windows_run_extensions_and_the_built_in_blocker`,
+below);
 `native_toolbar_autofill_is_cleared_once_on_upgrade` and
 `native_toolbar_autofill_cleanup_does_not_repeat`;
 `native_address_enter_navigates_without_a_go_button` (a real Enter key event through

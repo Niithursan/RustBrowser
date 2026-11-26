@@ -381,10 +381,10 @@ with the text-colour wash, an icon and a 12px/600 word, coral on *Not encrypted*
 failure, Dial Grey and regular weight on browser pages), the **address** (an origin-emphasised view whose subdomains collapse
 before the registrable domain tail on narrow bars, hiding on focus to show the editable
 field), the **star** (30px round, Dial Grey at rest, filled in the theme signal when the
-current page is bookmarked) and the **shield** (32px pill, shown only once an extension
-that can or may block requests is added and never in a private window, because Rust
-Browser has no ad blocker of its own; Dial Grey at rest, the text colour while an
-extension can block, with its blocked-request count in Dial Grey 12px/600 tabular
+current page is bookmarked) and the **shield** (32px pill, shown while the built-in ad
+blocker runs in the window, normal or private, or once an extension that can or may
+block requests is added; Dial Grey at rest, the text colour while a blocker can
+block, with its blocked-request count in Dial Grey 12px/600 tabular
 figures: a tally, not a warning). The shield is always a plain outline with no check
 mark, so it never reads as a verdict on the site next to the lock (GrayText in high
 contrast while no extension can block). When that extension has its own toolbar panel,

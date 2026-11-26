@@ -1,8 +1,10 @@
-//! Browser extensions in the normal website profile, through WebView2's own
-//! extension support. Rust Browser never downloads or bundles an extension: the
-//! user adds an unpacked folder they downloaded. WebView2 keeps the installed and
-//! enabled state in the profile; the settings only remember which extensions the
-//! user added, so WebView2's built-in extensions are never listed or removed.
+//! Browser extensions in the website profiles, through WebView2's own extension
+//! support. Apart from the built-in uBlock Origin (`rust_browser::bundled`),
+//! Rust Browser never downloads or bundles an extension: the user adds an unpacked
+//! folder they downloaded. WebView2 keeps the installed and enabled state in the
+//! profile; the settings only remember which extensions the user added (and the
+//! built-in one), so WebView2's own built-in extensions are never listed or
+//! removed. Private windows add the same extensions again each time they open.
 use crate::app::Event;
 pub use rust_browser::extension_manifest::{
     action_popup, check_folder, folder_asks_to_block, folder_popup, valid_id,

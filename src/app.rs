@@ -42,6 +42,8 @@ use wry::{Rect, WebContext, WebView, WebViewBuilder, WebViewBuilderExtWindows};
 pub use rust_browser::engine_api::PageEvent;
 #[derive(Debug)]
 pub enum Event {
+    /// The uBlock Origin copy that comes with the browser was unpacked (or why not).
+    BuiltInUnpacked(Result<PathBuf, String>),
     /// A second launch handed over links or asked for a new window. The UI thread
     /// answers on the channel; the hand-off server waits at most `UI_TIMEOUT`.
     HandOff(
@@ -221,8 +223,29 @@ fn build_toolbar(
 
 /// The normal profile's vertical-tabs setting, for a private window's layout.
 /// Read-only; anything unreadable means the tab strip.
-fn normal_vertical_tabs(session: &std::path::Path) -> bool {
-    storage::load(session).is_ok_and(|snapshot| snapshot.settings.vertical_tabs)
+/// Whether native fixtures in this test process run the built-in ad blocker.
+#[cfg(test)]
+pub(crate) static TEST_BUILT_IN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The normal profile's settings a private window follows, read-only: whether
+/// tabs go down the side, whether the built-in ad blocker is on, and the
+/// extensions the user added (and has not turned off), which run there too.
+fn normal_private_settings(
+    session: &std::path::Path,
+) -> (bool, bool, Vec<rust_browser::settings::SavedExtension>) {
+    storage::load(session).map_or((false, true, Vec::new()), |snapshot| {
+        let settings = snapshot.settings;
+        (
+            settings.vertical_tabs,
+            settings.built_in_blocker,
+            settings
+                .extensions
+                .into_iter()
+                .filter(|e| !e.built_in && !e.disabled)
+                .collect(),
+        )
+    })
 }
 
 /// Which part of the trusted browser document a view shows.
@@ -604,6 +627,16 @@ struct Session {
     extensions: Vec<native_extensions::Info>,
     /// Whether `extensions` has been read from WebView2 since startup.
     extensions_listed: bool,
+    /// Where the built-in uBlock Origin is unpacked (in the normal profile).
+    built_in_folder: PathBuf,
+    /// Its unpacked folder, once ready this session.
+    built_in_path: Option<PathBuf>,
+    /// The built-in uBlock Origin is being added to WebView2.
+    built_in_adding: bool,
+    /// Private windows: its extension ID once added to this window's profile.
+    built_in_private: Option<String>,
+    /// Why the built-in ad blocker is not running, if it failed.
+    built_in_error: Option<String>,
     /// Each added extension's toolbar-button page, read from its manifest once
     /// per session (`None` when it has none).
     extension_popups: std::collections::HashMap<String, Option<String>>,
@@ -780,11 +813,15 @@ impl Session {
         true
     }
 
-    /// Pages count the requests extensions stop only where extensions run (normal
-    /// windows) and only once the user added one: the engine's network events cost
-    /// a little on every request.
+    /// Pages count the requests extensions stop only in normal windows and only
+    /// once the user added an extension: the engine's network events cost a little
+    /// on every request. The built-in uBlock Origin does not count: WebView2
+    /// reports the requests it stops (Manifest V2 `webRequest`) as ordinary
+    /// cancelled loads, which pages also cause, so they cannot be told apart.
     fn counts_blocked(&self) -> bool {
-        !self.private && !self.settings.extensions.is_empty() && self.settings.count_blocked
+        !self.private
+            && self.settings.extensions.iter().any(|e| !e.built_in)
+            && self.settings.count_blocked
     }
 
     /// Stop counting in every open page and remove the listener.
@@ -857,6 +894,223 @@ impl Session {
         }
     }
 
+    /// A private window: add the extensions the user added in a normal window
+    /// (its profile starts empty each time). Folders that no longer hold a
+    /// valid extension are skipped.
+    fn add_private_extensions(&mut self) {
+        let Some(tab) = self.tabs.active() else {
+            return;
+        };
+        for saved in &self.settings.extensions {
+            let folder = std::path::Path::new(&saved.folder);
+            if native_extensions::check_folder(folder).is_ok() {
+                let _ =
+                    native_extensions::add(&tab.content.engine.view, folder, self.proxy.clone());
+            }
+        }
+    }
+
+    /// Unpack the built-in uBlock Origin (off the UI thread) when it is on.
+    fn start_built_in_blocker(&mut self) {
+        // Native fixtures opt in, so the others keep a profile with only the
+        // extensions they add themselves.
+        #[cfg(test)]
+        if !TEST_BUILT_IN.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        if !self.settings.built_in_blocker {
+            return;
+        }
+        let (folder, proxy) = (self.built_in_folder.clone(), self.proxy.clone());
+        let started = std::thread::Builder::new()
+            .name("built-in-blocker".into())
+            .spawn(move || {
+                let unpacked = rust_browser::bundled::unpack(&folder);
+                let _ = proxy.send_event(Event::BuiltInUnpacked(unpacked));
+            });
+        if started.is_err() {
+            self.built_in_error = Some("Could not start preparing it.".into());
+        }
+    }
+
+    /// The saved entry of the built-in uBlock Origin (normal windows).
+    fn built_in_saved(&self) -> Option<&rust_browser::settings::SavedExtension> {
+        self.settings.extensions.iter().find(|e| e.built_in)
+    }
+
+    /// The built-in uBlock Origin is unpacked: add it where it is missing.
+    fn built_in_unpacked(&mut self, result: Result<PathBuf, String>) {
+        match result {
+            Ok(folder) => {
+                self.built_in_error = None;
+                self.built_in_path = Some(folder);
+                self.check_built_in();
+            }
+            Err(error) => {
+                self.notice = format!("The built-in ad blocker could not be prepared. {error}");
+                self.built_in_error = Some(error);
+            }
+        }
+    }
+
+    /// Add the built-in uBlock Origin if it is on but not in this window's
+    /// profile: a private window's in-memory profile always starts without it,
+    /// and a normal profile lacks it on first start, after an update to a new
+    /// release, or when WebView2's profile lost it.
+    fn check_built_in(&mut self) {
+        let Some(folder) = self.built_in_path.clone() else {
+            return;
+        };
+        if !self.settings.built_in_blocker || self.built_in_adding {
+            return;
+        }
+        let missing = if self.private {
+            self.built_in_private.is_none()
+        } else {
+            match self.built_in_saved() {
+                None => true,
+                Some(saved) => {
+                    saved.version != rust_browser::bundled::VERSION
+                        || saved.folder != folder.display().to_string()
+                        || (self.extensions_listed
+                            && !self.extensions.iter().any(|e| e.id == saved.id))
+                }
+            }
+        };
+        if !missing {
+            return;
+        }
+        let Some(tab) = self.tabs.active() else {
+            return;
+        };
+        match native_extensions::add(&tab.content.engine.view, &folder, self.proxy.clone()) {
+            Ok(()) => self.built_in_adding = true,
+            Err(message) => self.built_in_error = Some(message),
+        }
+    }
+
+    /// Whether WebView2's answer to adding an extension is about the built-in
+    /// uBlock Origin: it names that folder, or it is a failure while only the
+    /// built-in one was being added.
+    fn is_built_in_reply(
+        &self,
+        result: &Result<(native_extensions::Info, String), String>,
+    ) -> bool {
+        match result {
+            Ok((_, folder)) => self
+                .built_in_path
+                .as_ref()
+                .is_some_and(|path| *folder == path.display().to_string()),
+            Err(_) => self.built_in_adding && self.pending_extension.is_none(),
+        }
+    }
+
+    /// WebView2 answered adding the built-in uBlock Origin.
+    fn built_in_added(&mut self, result: Result<(native_extensions::Info, String), String>) {
+        self.built_in_adding = false;
+        let (info, folder) = match result {
+            Ok(added) => added,
+            Err(message) => {
+                self.notice = format!("The built-in ad blocker could not be turned on. {message}");
+                self.built_in_error = Some(message);
+                return;
+            }
+        };
+        self.built_in_error = None;
+        #[cfg(test)]
+        {
+            self.extension_added = Some(Ok(info.id.clone()));
+        }
+        if self.private {
+            self.built_in_private = Some(info.id);
+            return;
+        }
+        let first = self.built_in_saved().is_none();
+        self.settings.extensions.retain(|e| !e.built_in);
+        self.settings.extensions.insert(
+            0,
+            rust_browser::settings::SavedExtension {
+                id: info.id,
+                name: info.name.clone(),
+                version: rust_browser::bundled::VERSION.into(),
+                folder,
+                blocks: Some(true),
+                disabled: false,
+                built_in: true,
+            },
+        );
+        if first {
+            self.inform(format!(
+                "{}, the ad blocker that comes with Rust Browser, is on. Turn it off in Settings > Extensions.",
+                info.name
+            ));
+        }
+        self.persist();
+        self.refresh_extensions();
+        self.count_blocked_everywhere();
+    }
+
+    /// The built-in ad blocker as Settings and the shield show it.
+    fn built_in_state(&self) -> ui::BuiltInBlocker {
+        let saved = self.built_in_saved();
+        let active = if self.private {
+            self.built_in_private.is_some()
+        } else {
+            saved.is_some_and(|s| self.extensions.iter().any(|e| e.id == s.id && e.enabled))
+        };
+        let detail = if let Some(error) = &self.built_in_error {
+            format!("Not running: {error}")
+        } else if !self.settings.built_in_blocker {
+            "Off.".into()
+        } else if active {
+            format!(
+                "uBlock Origin {} blocks ads in normal and private windows.",
+                rust_browser::bundled::VERSION
+            )
+        } else if saved.is_some() && self.extensions_listed {
+            "Turned off in its row below.".into()
+        } else {
+            "Starting.".into()
+        };
+        ui::BuiltInBlocker {
+            name: "uBlock Origin",
+            enabled: self.settings.built_in_blocker,
+            active,
+            detail,
+            can_update: false,
+        }
+    }
+
+    /// Settings > Extensions: the built-in ad blocker's switch.
+    fn set_built_in_blocker(&mut self, on: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if self.private {
+            return Err("Change the built-in ad blocker in a normal window.".into());
+        }
+        if on {
+            self.settings.built_in_blocker = true;
+            self.built_in_error = None;
+            self.persist();
+            if self.built_in_path.is_some() {
+                self.check_built_in();
+            } else {
+                self.start_built_in_blocker();
+            }
+            return Ok(());
+        }
+        match self.built_in_saved().map(|e| e.id.clone()) {
+            // Removing it turns the switch off (see `extension_reply`).
+            Some(id) => {
+                let tab = self.tabs.active().ok_or("No tab is open.")?;
+                native_extensions::remove(&tab.content.engine.view, id, self.proxy.clone())?;
+            }
+            None => {
+                self.settings.built_in_blocker = false;
+                self.persist();
+            }
+        }
+        Ok(())
+    }
+
     /// The rows shown in Privacy & security > Extensions.
     fn extension_rows(&self) -> Vec<ui::ExtensionRow> {
         self.settings
@@ -880,6 +1134,7 @@ impl Session {
                         .extension_popups
                         .get(&saved.id)
                         .is_some_and(Option::is_some),
+                    built_in: saved.built_in,
                 }
             })
             .collect()
@@ -911,9 +1166,18 @@ impl Session {
                 }
             }
             Reply::Folder(Err(message)) => self.notice = message,
-            #[cfg(test)]
+            Reply::Added(result) if self.is_built_in_reply(&result) => {
+                self.built_in_added(result);
+            }
+            // A private window's copy of an extension added in a normal window.
             Reply::Added(Ok((info, _))) if self.private => {
-                self.extension_added = Some(Ok(info.id));
+                #[cfg(test)]
+                {
+                    self.extension_added = Some(Ok(info.id.clone()));
+                }
+                if !self.extensions.iter().any(|e| e.id == info.id) {
+                    self.extensions.push(info);
+                }
             }
             Reply::Added(Ok((info, folder))) => {
                 #[cfg(test)]
@@ -940,6 +1204,7 @@ impl Session {
                                 .collect(),
                             blocks,
                             disabled: false,
+                            built_in: false,
                         });
                 }
                 self.inform(format!(
@@ -959,8 +1224,22 @@ impl Session {
                 self.notice = message;
             }
             Reply::Listed(Ok(found)) => {
+                // Keep a copy of each extension's on/off state for private windows.
+                let mut changed = false;
+                for saved in &mut self.settings.extensions {
+                    if let Some(live) = found.iter().find(|e| e.id == saved.id)
+                        && saved.disabled == live.enabled
+                    {
+                        saved.disabled = !live.enabled;
+                        changed = true;
+                    }
+                }
                 self.extensions = found;
                 self.extensions_listed = true;
+                if changed {
+                    self.persist();
+                }
+                self.check_built_in();
             }
             Reply::Listed(Err(message)) => self.notice = message,
             Reply::Changed(id, Ok(enabled)) => {
@@ -979,10 +1258,20 @@ impl Session {
             }
             Reply::Changed(_, Err(message)) => self.notice = message,
             Reply::Removed(id, Ok(())) => {
+                let built_in = self.built_in_saved().is_some_and(|e| e.id == id);
                 self.settings.extensions.retain(|e| e.id != id);
                 self.extensions.retain(|e| e.id != id);
-                self.inform("Extension removed.".into());
-                if self.settings.extensions.is_empty() {
+                if built_in {
+                    // Not added again until the switch is turned back on.
+                    self.settings.built_in_blocker = false;
+                    self.inform(
+                        "The built-in ad blocker is off. Turn it back on in Settings > Extensions."
+                            .into(),
+                    );
+                } else {
+                    self.inform("Extension removed.".into());
+                }
+                if !self.counts_blocked() {
                     // Nothing left to count for: stop the engine's network events.
                     self.stop_counting_everywhere();
                 }
@@ -1446,6 +1735,10 @@ impl Session {
             session.clear_toolbar_autofill_once();
             session.refresh_extensions();
         }
+        session.start_built_in_blocker();
+        if private {
+            session.add_private_extensions();
+        }
         if session.sync_vertical_tabs().is_err() {
             session.notice = "The tab column could not be shown; tabs stay at the top.".into();
         }
@@ -1590,6 +1883,9 @@ impl Session {
         launch: impl IntoIterator<Item = String>,
         lock: Option<std::fs::File>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // The built-in uBlock Origin is unpacked once into the normal profile, and
+        // private windows of the profile run that same copy.
+        let built_in_folder = normal_profile.join("built-in");
         // Sweep only dead, recognized leases; live private windows retain their locks.
         let sweep_profile = normal_profile.clone();
         let normal_session = normal_profile.join("session.json");
@@ -1609,11 +1905,16 @@ impl Session {
             .unwrap_or(normal_profile);
         let error_proxy = proxy.clone();
         let (store, snapshot, recovered) = if private {
-            // Private windows read one setting from the normal profile, read-only:
-            // whether tabs go down the side. Nothing else is read, and private
-            // windows never write settings.
+            // Private windows read a few settings from the normal profile,
+            // read-only: whether tabs go down the side, whether the built-in ad
+            // blocker is on, and which extensions to run. Nothing else is read, and
+            // private windows never write settings.
             let mut snapshot = Snapshot::default();
-            snapshot.settings.vertical_tabs = normal_vertical_tabs(&normal_session);
+            (
+                snapshot.settings.vertical_tabs,
+                snapshot.settings.built_in_blocker,
+                snapshot.settings.extensions,
+            ) = normal_private_settings(&normal_session);
             (None, snapshot, false)
         } else {
             let on_error = move || {
@@ -1749,6 +2050,11 @@ impl Session {
             pending_extension: None,
             extensions: Vec::new(),
             extensions_listed: false,
+            built_in_folder,
+            built_in_path: None,
+            built_in_adding: false,
+            built_in_private: None,
+            built_in_error: None,
             extension_popups: std::collections::HashMap::new(),
             popup_tickets: 0,
             #[cfg(test)]
@@ -2847,6 +3153,7 @@ impl Session {
             } else {
                 self.extension_rows()
             },
+            built_in_blocker: self.built_in_state(),
             extension_popup: self.windows[self.current]
                 .extension_popup
                 .as_ref()
@@ -3183,9 +3490,13 @@ impl Session {
                 )
                 .into());
             }
+            Command::SetBuiltInBlocker(on) => self.set_built_in_blocker(on)?,
+            Command::UpdateBuiltInBlocker => {
+                return Err("uBlock Origin updates its own filter lists.".into());
+            }
             Command::SetCountBlocked(on) => {
                 if self.private {
-                    return Err("Private windows never run extensions or count requests.".into());
+                    return Err("Private windows never count blocked requests.".into());
                 }
                 self.settings.count_blocked = on;
                 if on {
@@ -3365,7 +3676,14 @@ impl Session {
                 if self.private {
                     return Err("Add extensions from a normal window; private windows never run extensions.".into());
                 }
-                if self.settings.extensions.len() >= rust_browser::settings::MAX_EXTENSIONS {
+                if self
+                    .settings
+                    .extensions
+                    .iter()
+                    .filter(|e| !e.built_in)
+                    .count()
+                    >= rust_browser::settings::MAX_EXTENSIONS
+                {
                     return Err(format!(
                         "At most {} extensions can be added. Remove one first.",
                         rust_browser::settings::MAX_EXTENSIONS
@@ -4961,6 +5279,7 @@ impl ApplicationHandler<Event> for App {
                 Err(message) => session.notice = message,
             },
             Event::Extension(reply) => session.extension_reply(reply),
+            Event::BuiltInUnpacked(result) => session.built_in_unpacked(result),
             Event::ExtensionPopupTarget(ticket, origin) => {
                 session.extension_popup_target(ticket, origin)
             }
