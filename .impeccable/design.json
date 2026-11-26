@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-17T23:28:29+00:00",
+  "generatedAt": "2026-11-26T00:00:00+00:00",
   "title": "Design System: Rust Browser",
   "extensions": {
     "colorMeta": {
@@ -381,17 +381,13 @@
       }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display",
-        "purpose": "The new-tab question only."
+      "clock": {
+        "displayName": "Clock",
+        "purpose": "The new-tab desk clock only; tabular figures, day period at 0.24em in Dial Grey."
       },
       "headline": {
         "displayName": "Headline",
         "purpose": "Full-panel titles (Settings, Bookmarks, Browsing history, Downloads)."
-      },
-      "display-narrow": {
-        "displayName": "Display narrow",
-        "purpose": "The new-tab question under 700px."
       },
       "headline-column": {
         "displayName": "Headline column",
@@ -403,7 +399,7 @@
       },
       "search-field": {
         "displayName": "Search field",
-        "purpose": "The new-tab search field only."
+        "purpose": "The new-tab search pill only."
       },
       "title": {
         "displayName": "Title",
@@ -411,7 +407,7 @@
       },
       "subtitle": {
         "displayName": "Subtitle",
-        "purpose": "Sub-sections such as Favorites and Recent pages."
+        "purpose": "Sub-sections such as Recent pages."
       },
       "address-origin": {
         "displayName": "Address origin",
@@ -546,12 +542,12 @@
       "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-dialog{width:380px;max-width:100%;padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);box-shadow:var(--shadow);font:13px/1.5 var(--ui)}.ds-dialog-title{margin:0 0 8px;font:600 15px/1.3 var(--display)}.ds-dialog p{margin:4px 0}.ds-muted{color:var(--secondary);font-size:12px}.ds-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.ds-btn,.ds-btn-danger{font:13px/1.4 var(--ui);height:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer}.ds-btn{color:var(--text)}.ds-btn:hover{border-color:var(--secondary)}.ds-btn-danger{color:var(--error)}.ds-btn-danger:hover{border-color:var(--error)}.ds-btn:focus-visible,.ds-btn-danger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
     },
     {
-      "name": "Favourite Card & Private Badge",
+      "name": "Site Tile & Private Badge",
       "kind": "card",
-      "refersTo": "favorite-card",
-      "description": "Single-row favourite tile card with quiet remove button alongside the signal-filled Private window badge.",
-      "html": "<div class=\"ds-row\"><div class=\"ds-fav\"><button class=\"ds-visit\" type=\"button\"><span class=\"ds-tile\">R</span><span>Rust</span></button><button class=\"ds-rem\" type=\"button\" aria-label=\"Remove favorite Rust\">×</button></div><span class=\"ds-private\">Private</span></div>",
-      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--pressed:rgba(233,236,239,.14);--disabled:#5E6772;--shadow:0 6px 18px rgba(0,0,0,.35);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.ds-fav{display:flex;align-items:center;gap:8px;width:220px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}.ds-visit{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:36px;border:0;background:transparent;padding:0;color:var(--text);font:600 13px var(--ui);text-align:left;cursor:pointer}.ds-visit:focus-visible,.ds-rem:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-tile{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--card);font:700 15px/1 var(--ui)}.ds-rem{width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--secondary);font-size:15px;cursor:pointer}.ds-rem:hover{background:var(--hover);color:var(--error)}.ds-private{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent);color:var(--on-accent);font:600 12px var(--ui)}"
+      "refersTo": "site-tile",
+      "description": "New-tab site tiles (a favorite with its hover remove button, and the dashed Add favorite tile) beside the signal-filled Private window badge.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-site\"><button class=\"ds-visit\" type=\"button\"><span class=\"ds-tile\">R</span><span class=\"ds-name\">Rust</span></button><button class=\"ds-rem\" type=\"button\" aria-label=\"Remove favorite Rust\" title=\"Remove favorite\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m7 7 10 10M17 7 7 17\"/></svg></button></div><div class=\"ds-site\"><button class=\"ds-visit\" type=\"button\"><span class=\"ds-tile ds-add\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 6v12M6 12h12\"/></svg></span><span class=\"ds-name\">Add favorite</span></button></div><span class=\"ds-private\">Private</span></div>",
+      "css": ":host{--strip:#131518;--surface:#1E2228;--panel:#191C21;--card:#272C34;--field:#15181C;--text:#E9ECEF;--secondary:#9AA5B1;--line:#3A414B;--field-line:#656E79;--error:#FF9B8F;--accent:#F2C94C;--on-accent:#1E2228;--hover:rgba(233,236,239,.07);--display:'Segoe UI Variable Display','Segoe UI',sans-serif;--ui:'Segoe UI Variable Text','Segoe UI',sans-serif}.ds-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ds-site{position:relative;width:96px}.ds-visit{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;padding:8px 4px 6px;border:0;border-radius:12px;background:transparent;color:var(--text);font:400 12px/1.4 var(--ui);cursor:pointer}.ds-visit:hover{background:var(--hover)}.ds-visit:focus-visible,.ds-rem:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-tile{display:grid;place-items:center;width:56px;height:56px;box-sizing:border-box;border:1px solid var(--line);border-radius:14px;background:var(--card);font:600 22px/1 var(--display)}.ds-add{border:1px dashed var(--field-line);background:transparent;color:var(--secondary)}.ds-add svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}.ds-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-rem{position:absolute;top:2px;right:10px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:11px;background:var(--panel);opacity:0;cursor:pointer}.ds-site:hover .ds-rem,.ds-site:focus-within .ds-rem{opacity:1}.ds-rem svg{width:12px;height:12px;fill:none;stroke:var(--secondary);stroke-width:1.8;stroke-linecap:round}.ds-rem:hover svg{stroke:var(--error)}.ds-private{display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent);color:var(--on-accent);font:600 12px var(--ui)}"
     }
   ],
   "narrative": {
@@ -573,7 +569,12 @@
       },
       {
         "name": "The Theme-Token Rule",
-        "body": "New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; new-tab backgrounds are mixed only from the current theme's own tokens.",
+        "body": "New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.",
+        "section": "colors"
+      },
+      {
+        "name": "The Wallpaper Rule",
+        "body": "The one owner-approved exception (\"Drawn + your own\", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.",
         "section": "colors"
       },
       {
@@ -598,7 +599,7 @@
       }
     ],
     "dos": [
-      "**Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.",
+      "**Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).",
       "**Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.",
       "**Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.",
       "**Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.",

@@ -30,12 +30,13 @@ colors:
   paper-disabled: "#9BA4AE"
   warning-crimson: "#A3192A"
 typography:
-  display:
+  clock:
     fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
-    fontSize: "34px"
+    fontSize: "clamp(64px, 9vw, 104px)"
     fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: "-0.015em"
+    lineHeight: 1
+    letterSpacing: "-0.04em"
+    fontFeature: "\"tnum\""
   headline:
     fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
     fontSize: "28px"
@@ -47,12 +48,6 @@ typography:
     fontSize: "19px"
     fontWeight: 600
     lineHeight: 1.3
-  display-narrow:
-    fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
-    fontSize: "26px"
-    fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: "-0.015em"
   headline-column:
     fontFamily: "'Segoe UI Variable Display', 'Segoe UI', sans-serif"
     fontSize: "22px"
@@ -101,7 +96,11 @@ rounded:
   pill-32: "16px"
   pill-34: "17px"
   location: "18px"
-  search: "24px"
+  pill-22: "11px"
+  pill-40: "20px"
+  pill-52: "26px"
+  tile-hover: "12px"
+  tile: "14px"
 spacing:
   hair: "2px"
   xs: "4px"
@@ -169,11 +168,34 @@ components:
     textColor: "{colors.instrument-white}"
     rounded: "{rounded.lg}"
     padding: "8px"
-  favorite-card:
-    backgroundColor: "{colors.graphite-surface}"
+  newtab-search:
+    backgroundColor: "{colors.graphite-field}"
     textColor: "{colors.instrument-white}"
+    typography: "{typography.search-field}"
+    rounded: "{rounded.pill-52}"
+    padding: "0 60px 0 22px"
+    height: "52px"
+  newtab-search-submit:
+    backgroundColor: "{colors.graphite-card}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.pill-40}"
+    size: "40px"
+  site-tile:
+    backgroundColor: "{colors.graphite-card}"
+    textColor: "{colors.instrument-white}"
+    rounded: "{rounded.tile}"
+    size: "56px"
+  site-tile-remove:
+    backgroundColor: "{colors.graphite-panel}"
+    textColor: "{colors.dial-grey}"
+    rounded: "{rounded.pill-22}"
+    size: "22px"
+  recent-card:
+    backgroundColor: "{colors.graphite-panel}"
+    textColor: "{colors.instrument-white}"
+    typography: "{typography.body}"
     rounded: "{rounded.lg}"
-    padding: "10px 12px"
+    padding: "14px"
   private-label:
     backgroundColor: "{colors.signal-amber}"
     textColor: "{colors.on-signal}"
@@ -244,14 +266,14 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 
 ### Neutral (Dark)
 - **Graphite Strip**: the tab strip and the vertical tab column; the darkest layer.
-- **Graphite Surface**: the toolbar row, the selected tab (which joins it), favourite cards.
-- **Graphite Panel**: dropdowns, the library column, Privacy & security and the new-tab page.
-- **Graphite Card**: default button fill and favourite-tile backing.
+- **Graphite Surface**: the toolbar row and the selected tab (which joins it).
+- **Graphite Panel**: dropdowns, the library column, Privacy & security, the new-tab page and its recent-page cards.
+- **Graphite Card**: default button fill, the new-tab site tiles, the search pill's submit button and the recent card's site chip.
 - **Graphite Field**: the address line and text inputs; slightly darker than the surface so the field reads as a recess.
 - **Instrument White**: primary text.
 - **Dial Grey**: secondary text, inactive tab titles, icons at rest, hover borders.
 - **Hairline**: every 1px border and divider.
-- **Field Hairline** (`--field-line`): the address line's border only, a step brighter than Hairline so the field's edge keeps 3:1 against the toolbar and the field (WCAG 1.4.11). Paper Field Hairline is its Light value; Slate and Plum retint it.
+- **Field Hairline** (`--field-line`): the border of the address line and the new-tab search pill, and the dashed outline of the Add favorite tile, a step brighter than Hairline so the field's edge keeps 3:1 against the toolbar and the field (WCAG 1.4.11). Paper Field Hairline is its Light value; Slate and Plum retint it.
 - **Disabled Grey**: disabled control text.
 - **Warning Coral**: *Not encrypted* / failed connection, notices, settings errors.
 - **Warning Coral** also marks destructive buttons; a notice in it is always a problem.
@@ -265,7 +287,9 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 ### Named Rules
 **The One Signal Rule.** Each theme has exactly one signal colour, and it only ever means *active, focused, in progress, private or waiting for your decision*. It never fills a large area at full strength: its biggest solid uses are the 2px loading bar, the selected tab's 2px top rule and the small private label. The one area use is the new-tab **Glow** background, which mixes 10% of the signal into the surface and only when the user chooses Glow.
 
-**The Theme-Token Rule.** New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; new-tab backgrounds are mixed only from the current theme's own tokens.
+**The Theme-Token Rule.** New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.
+
+**The Wallpaper Rule.** The one owner-approved exception ("Drawn + your own", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.
 
 ## Typography
 
@@ -278,12 +302,14 @@ control. It reads as part of the operating system without copying its controls, 
 no web font is ever loaded (the toolbar's security policy forbids it).
 
 ### Hierarchy
-- **Display** (600, 34px, 1.1, −0.015em): the new-tab question "Where would you like to go?" only. **Display narrow** (26px) replaces it under 700px.
+- **Clock** (600, `clamp(64px, 9vw, 104px)`, 1, −0.04em, tabular figures, Display cut): the new-tab desk clock only, in the text colour. The day period (AM/PM, when the locale has one) follows at 0.24em in Dial Grey after a 0.2em gap, so the time stays the one focal reading.
+- **Greeting** (600, 19px, 1.3, Display cut; the Title values): the line under the clock ("Good morning" and so on), in the text colour.
+- **Date** (400, 13px; the Body values): the weekday and date under the greeting, in Dial Grey.
 - **Headline** (600, 28px, 1.15, −0.01em): full-panel titles. **Headline column** (22px) replaces it in the library column.
 - **Title** (600, 19px, 1.3): section headings on full panels (Background tabs, Appearance, Extensions).
-- **Subtitle** (600, 15px, 1.3): sub-sections (Favorites, Recent pages).
+- **Subtitle** (600, 15px, 1.3): sub-sections (Recent pages, centred over its cards on the new-tab page).
 - **Dropdown heading** (600, 14px, 1.3): the heading of a dropdown (site information, star, shield).
-- **Search field** (400, 17px): the new-tab search field only.
+- **Search field** (400, 17px): the new-tab search pill only.
 - **Address origin** (600, 15.5px, −0.005em, Display cut): the host in the address line; the rest of the URL follows at 15px in Dial Grey.
 - **Body** (400, 13px, 1.4; 1.5 on full panels): every control, menu item and tab title. Library row titles step up to 14px/600.
 - **Label** (400, 12px): secondary text, form labels, the connection word (600), the shield count (600), shortcut lists.
@@ -317,7 +343,7 @@ The same trusted document is also used for two side views, chosen by `data-role`
 **library column** at the right of a live page or the new-tab page (260-640px wide,
 hairline on its left edge, an 8px drag handle, and a fixed 36px top caption strip holding
 the flush window controls whenever `New tab` sits beside it). Full panels (Settings, new tab) are padded
-24px × 32px with content capped at 1040px (Settings: one centred 760px column) and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline so section navigation and Back to page (F7) stay reachable while scrolling. Settings sections are separated by 40px of space, not a rule (a rule doubled the section bar's hairline whenever a section was scrolled to); each explanation is one sentence, with any detail in a quiet disclosure. Its sections are Appearance, Profiles, Search, Background tabs, Privacy & security, Extensions, Clear browsing data and System (Default browser and Diagnostics); the new-tab body is centred at 860px with creation and page-customization forms tucked behind quiet disclosures.
+24px × 32px with content capped at 1040px (Settings: one centred 760px column) and explanatory prose capped at 68ch (`text-wrap: pretty`); panel headers and the Settings section bar stick to the top with an active-section signal underline so section navigation and Back to page (F7) stay reachable while scrolling. Settings sections are separated by 40px of space, not a rule (a rule doubled the section bar's hairline whenever a section was scrolled to); each explanation is one sentence, with any detail in a quiet disclosure. Its sections are Appearance, Profiles, Search, Background tabs, Privacy & security, Extensions, Clear browsing data and System (Default browser and Diagnostics); the new-tab body is a centred 820px column that starts `clamp(16px, 7vh, 88px)` below the toolbar (16px under 700px) and reads top to bottom as a desk clock, not a dashboard: the clock, greeting and date centred; 28px below them the search pill on a 640px measure with a one-line 12px caption beneath; 32px below that the site tiles in centred rows on a 528px measure (at most five 96px tiles per row with 12px gaps); then, 48px down, Recent pages as three cards on the same 640px measure (`auto-fill`, at least 190px each, 12px gaps), reaching the fold. At the foot sit two quiet toggles, Open bookmarks and Customize page; the add-favorite form (672px) and the Customize page tools (a 640px Graphite Panel box, 1px Hairline, 8px radius, holding Theme, Background, Choose picture… and Show recent pages) stay behind quiet disclosures.
 
 Spacing follows a 4px scale (4, 8, 12, 16, 20, 24, 32, 56) with 2px reserved for the
 tight gaps between tabs and toolbar buttons. Under 700px the navigation row wraps and
@@ -343,11 +369,12 @@ as joined to it, and fields sit a step darker as recesses. Edges are 1px hairlin
 ## Shapes
 
 Gently rounded, with the radius following function. Rectangular controls (buttons,
-inputs, menu items) use 6px; dropdowns, favourite cards and tab tops use 10px; the
-favourite tile uses 8px; small badges use 4px. Things the eye scans along (the address
-line, the security badge, the shield, the round navigation buttons and the new-tab
-search) are fully rounded at half their height (`pill-28` to `pill-34`, `location`,
-`search`), which sets them apart from the boxy controls. A new pill uses half its own
+inputs, menu items) use 6px; dropdowns, recent-page cards and tab tops use 10px; the
+56px new-tab site tile uses 14px and its hover area 12px; small badges use 4px. Things
+the eye scans along (the address line, the security badge, the shield, the round
+navigation buttons, the 52px new-tab search pill and its 40px submit button, and a
+site tile's 22px remove button) are fully rounded at half their height (`pill-22` to
+`pill-52`, `location`), which sets them apart from the boxy controls. A new pill uses half its own
 height; add it to the scale rather than rounding to the nearest step. Tabs are cards rounded only at the top so they join the toolbar below.
 Icons are drawn for this project on a 24px grid: 1.8px round-capped strokes, no fills
 except the menu dots, the pin and a saved bookmark's star.
@@ -367,7 +394,7 @@ Calm and exact; they confirm a press with a 1px dip, nothing more.
 - Round (34px circle), transparent, an 18px stroke icon centred. Hover adds the wash. Reload swaps with Stop while loading. Every one has a label and its shortcut in the tooltip.
 
 ### Inputs / Fields
-- **Style:** Graphite Field fill, Hairline border, 6px radius, 32px tall; placeholders use Dial Grey (`--secondary`, `opacity: 1`) so every theme meets 4.5:1 AA contrast; carets and text selection follow the theme signal (`caret-color: var(--accent)`, 28% signal mix). The new-tab search is a 48px pill with 17px text.
+- **Style:** Graphite Field fill, Hairline border, 6px radius, 32px tall; placeholders use Dial Grey (`--secondary`, `opacity: 1`) so every theme meets 4.5:1 AA contrast; carets and text selection follow the theme signal (`caret-color: var(--accent)`, 28% signal mix). The new-tab search is a 52px pill (26px radius) with a Field Hairline border, 17px text and 22px left padding; its submit is a 40px round button (20px radius, Graphite Card, no border, an 18px drawn arrow) set 6px inside the field's right end and named "Search or go" (tooltip "Search or go (Enter)").
 - **Focus:** 2px signal outline; the address line shows a signal border plus a 1px signal ring.
 - **Checkboxes and progress:** native controls tinted with the signal via `accent-color`.
 
@@ -423,7 +450,8 @@ Grey. It has no motion and no close button; it simply goes away.
 - **Permission request:** takes over the site-information dropdown as a modal (`role="dialog"`, `aria-modal="true"`, containing `Tab` / `Shift+Tab` inside the prompt) when a website asks, hiding the static connection details until answered so a misclick never dismisses the request. `#site-panel` itself takes a single 2px signal border (10px radius, 12px padding); a 14px/600 heading in plain words ("meet.example.com wants to use your camera"), the full origin, a Remember checkbox, a calm timeout notice that counts down only in the final 10 seconds, then Don't allow and Allow as two equal default buttons (Allow stays disabled during the initial 500ms double-click guard). Neither is styled as the primary action, so the design never nudges toward granting.
 
 ### Cards / Containers
-- **Favourite card:** Graphite Surface, Hairline border, 10px radius, 10px × 12px padding, no shadow; a single horizontal row with a 32px tile (8px radius, Graphite Card, holding the site's icon or its first letter) and bold title on the left, and a quiet 28px `×` remove button on the right.
+- **Site tile (new-tab page):** a 96px column whose whole face is one quiet button (12px radius, the hover wash, 8px gap): a 56px tile on Graphite Card with a 1px Hairline and 14px radius, holding the saved site icon (a checked PNG data URL, drawn at 28px) or the name's first letter at 600 22px in the Display cut, over the name in 12px text-colour type with an ellipsis. Favorites come first, each with a 22px round remove button (Graphite Panel, a 12px drawn `×` in Dial Grey that turns the error colour on hover) at its top-right that appears on hover or focus (always shown in high contrast) and is named "Remove favorite <title>"; then the sites visited most, never in a private window, for ten tiles in all. The last tile is **Add favorite**: the same tile with a dashed Field Hairline outline, no fill and a Dial Grey plus, which opens the add form; it hides at twelve favorites. With no tiles, one muted centred line says how tiles appear. No shadow.
+- **Recent card (new-tab page):** one button per page, Graphite Panel, 1px Hairline, 10px radius, 14px padding, at least 116px tall, no shadow; a 20px site chip (6px radius, Graphite Card, the host's first letter at 600 11px) and the host in 12px Dial Grey, the page title at 600 clamped to two lines, then the visit time ("Today, 9:41", "Yesterday, …" or the date) in 12px Dial Grey tabular figures at the bottom. Three cards, the latest three different addresses; hidden in private windows and when Show recent pages is off.
 - **Library rows:** a hairline beneath each and a wash on hover. The whole title (14px/600, preceded by the bookmark's `16x16` site icon or letter monogram chip in Bookmarks, with a 12px Dial Grey time or folder and address beneath) is one quiet button that opens the entry; New tab, Edit and Remove follow as quiet Dial Grey buttons on the same line. History is grouped under `h2.day` 13px/600 Dial Grey day headings (Today, Yesterday, then the date).
 - **Info rows** (downloads, extensions, remembered permissions): 12px × 8px padding, the same title and second line, actions at the right.
 
@@ -439,7 +467,7 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests.
+- **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).
 - **Do** keep the signal colour for state: selected, focused, loading, private, a saved bookmark, a pending permission decision.
 - **Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.
 - **Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.

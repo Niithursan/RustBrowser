@@ -454,7 +454,11 @@ later at the median. The cost of turning extension support on at all, compared w
 Before and after screenshots of the toolbar view, light and dark, 100% and 150%, on
 the new-tab page and above a website: `docs/screenshots/v0.20/` (captured with the
 `layout_screenshots` tool). The 150% images are DevTools-emulated scale on this
-machine, not a second monitor. Drawing tabs into the Windows title bar was not
+machine, not a second monitor. The new-tab page (after v0.22.2) is captured by the
+`newtab_screenshots` tool in every theme with every background, at the top and
+scrolled to the end, with recorded visits, two favorites and an optional picture
+(`RUST_BROWSER_SHOTS_PICTURE`); its finish review measured secondary text at 4.55:1
+or more over the drawn wallpapers and 7.7:1 or more over a photo in the Light theme. Drawing tabs into the Windows title bar was not
 attempted (see README, Layout).
 
 ### Not tested here
