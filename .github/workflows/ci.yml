@@ -59,6 +59,64 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
       - run: cargo build --locked
+      # The .deb: built here, then installed into a clean Ubuntu container, so
+      # its dependencies are the ones apt resolves, not this runner's.
+      - run: cargo build --locked --release
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --version 3.8.0 --locked
+      - run: cargo deb --locked --no-build
+      - name: Install the .deb on a clean Ubuntu 24.04
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          docker run --rm -v "$PWD:/src:ro" ubuntu:24.04 sh -c "
+            apt-get update -q &&
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q desktop-file-utils /src/target/debian/*.deb &&
+            sh /src/packaging/linux/check-installed.sh '$version'"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-browser-linux-deb
+          path: target/debian/*.deb
+          if-no-files-found: error
+
+  # The Arch package from packaging/linux/arch/PKGBUILD, built from this commit
+  # and installed in the same Arch container. Arch is rolling, so the image is
+  # updated first rather than pinned.
+  arch:
+    name: Arch package
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container: archlinux:base-devel
+    steps:
+      # Before checkout, which needs git for the tags pkgver() reads.
+      - name: Update the image and install git
+        run: pacman -Syu --noconfirm --needed git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # pkgver() describes the commit from the last tag
+      - name: Install the PKGBUILD's dependencies
+        shell: bash
+        run: |
+          . packaging/linux/arch/PKGBUILD
+          pacman -S --noconfirm --needed "${depends[@]}" "${makedepends[@]}" desktop-file-utils
+      - name: Build the package as an ordinary user
+        run: |
+          useradd -m builder
+          git config --system --add safe.directory '*'
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "sh packaging/linux/arch/build-from-checkout.sh /home/builder/pkg"
+      - name: Install and check the package
+        run: |
+          pacman -U --noconfirm /home/builder/pkg/rust-browser-git-*.pkg.tar.zst
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          sh packaging/linux/check-installed.sh "$version"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-browser-arch-package
+          path: /home/builder/pkg/rust-browser-git-*.pkg.tar.zst
+          if-no-files-found: error
 
   windows:
     name: Windows quality and build
@@ -271,7 +329,7 @@ jobs:
   # documentation-only change reports success with both Windows jobs skipped.
   result:
     name: CI result
-    needs: [scope, windows, release, linux]
+    needs: [scope, windows, release, linux, arch]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -286,4 +344,5 @@ jobs:
           WINDOWS: ${{ needs.windows.result }}
           RELEASE: ${{ needs.release.result }}
           LINUX: ${{ needs.linux.result }}
-        run: python3 .github/scripts/ci_scope.py result "$SCOPE" "$FULL" "$WINDOWS" "$RELEASE" "$LINUX"
+          ARCH: ${{ needs.arch.result }}
+        run: python3 .github/scripts/ci_scope.py result "$SCOPE" "$FULL" "$WINDOWS" "$RELEASE" "$LINUX" "$ARCH"
