@@ -1885,6 +1885,87 @@ fn native_address_enter_navigates_without_a_go_button() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// The centre of the first tab's close icon, and whether that point hits the icon
+/// itself (not the button's padding around it).
+const CLOSE_ICON_POINT: &str = r#"(()=>{const icon=document.querySelector('#tabs .tab .close svg');if(!icon)return JSON.stringify(null);const r=icon.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;const hit=document.elementFromPoint(x,y);return JSON.stringify({x,y,tabs:document.querySelectorAll('#tabs .tab').length,onIcon:!!hit&&icon.contains(hit)})})()"#;
+
+/// One left click through Chromium's own mouse input, so pointer capture and click
+/// targeting behave as they do for the user.
+fn click_toolbar(s: &Session, x: f64, y: f64) -> Result<(), String> {
+    for (kind, buttons) in [("mouseMoved", 0), ("mousePressed", 1), ("mouseReleased", 0)] {
+        toolbar_cdp(
+            s,
+            "Input.dispatchMouseEvent",
+            serde_json::json!({ "type": kind, "x": x, "y": y, "button": "left",
+                "buttons": buttons, "clickCount": 1 }),
+        )?;
+    }
+    Ok(())
+}
+
+/// Regression: a click on the close icon (rather than the padding around it) let
+/// the tab capture the pointer for dragging, so the click selected the tab and the
+/// user had to click several times before it closed.
+fn close_icon_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    match p.phase {
+        0 => {
+            let first = p.s()?.tabs.items[0].id;
+            p.marks = vec![usize::try_from(first).map_err(|_| "Tab ID too large")?];
+            p.command(el, 0, Command::NewTab)?;
+            p.next();
+        }
+        1 => {
+            if p.s()?.tabs.items.len() == 2 {
+                eval_toolbar(p, CLOSE_ICON_POINT)?;
+                p.next();
+            }
+        }
+        2 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            // Ask again until the toolbar has drawn both tabs.
+            if r.is_null() || r["tabs"] != 2 {
+                eval_toolbar(p, CLOSE_ICON_POINT)?;
+                return Ok(());
+            }
+            if r["onIcon"] != true {
+                return Err(format!("The point is not on the close icon: {r}"));
+            }
+            let (x, y) = (
+                r["x"].as_f64().ok_or("No x")?,
+                r["y"].as_f64().ok_or("No y")?,
+            );
+            click_toolbar(p.s()?, x, y)?;
+            p.next();
+        }
+        3 => {
+            let first = TabId::try_from(p.marks[0]).map_err(|_| "Tab ID too large")?;
+            let waited = p.at.elapsed();
+            let s = p.s()?;
+            if s.tabs.items.len() == 1 && s.tabs.items[0].id != first {
+                p.log
+                    .push("tabs: one click on the close icon closes the tab".into());
+                p.done = true;
+                el.exit();
+            } else if waited > Duration::from_secs(10) {
+                return Err(format!(
+                    "One click on the close icon did not close the tab ({} tabs, first still open: {})",
+                    s.tabs.items.len(),
+                    s.tabs.items.iter().any(|t| t.id == first)
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_one_click_on_the_close_icon_closes_the_tab() {
+    let (root, _) = run("close-icon", close_icon_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Run `script` in the first window's toolbar; the answer lands in `p.result`.
 fn eval_toolbar(p: &mut Probe, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;

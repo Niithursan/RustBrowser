@@ -950,13 +950,13 @@ function renderTabs(s){
     if(dropdown&&menuTabId!==null&&menuTabId!==s.active_id)closeDropdown(false);menuTabId=s.active_id;
     latestTabs=s.tabs;if(dropdown?.panel===byId('tab-menu')&&!s.tabs.some(t=>t.id===tabMenuId))closeDropdown(false);const entering=[];const ids=new Set(s.tabs.map(t=>t.id));for(const [id,node] of tabNodes){if(!ids.has(id)){node.item.remove();tabNodes.delete(id)}}
     for(const tab of s.tabs){let node=tabNodes.get(tab.id);if(!node){
-        const item=document.createElement('div');item.dataset.tabId=String(tab.id);item.style.touchAction='none';item.style.userSelect='none';const select=button('',()=>{}),close=button('',()=>{freezeTabWidths();send('close_tab',tab.id)});close.innerHTML=CLOSE_ICON;select.append(document.createElement('span'));select.className='select';select.setAttribute('role','tab');close.className='close';close.tabIndex=-1;item.onclick=e=>{if(e.target!==close)send('select_tab',tab.id)};
+        const item=document.createElement('div');item.dataset.tabId=String(tab.id);item.style.touchAction='none';item.style.userSelect='none';const select=button('',()=>{}),close=button('',()=>{freezeTabWidths();send('close_tab',tab.id)});close.innerHTML=CLOSE_ICON;select.append(document.createElement('span'));select.className='select';select.setAttribute('role','tab');close.className='close';close.tabIndex=-1;item.onclick=e=>{if(!close.contains(e.target))send('select_tab',tab.id)};
         // Middle-click closes any tab, pinned ones included; mousedown is cancelled so Windows does not start autoscroll.
         item.onmousedown=e=>{if(e.button===1)e.preventDefault()};item.onauxclick=e=>{if(e.button===1){e.preventDefault();freezeTabWidths();send('close_tab',tab.id)}};
         item.oncontextmenu=e=>{e.preventDefault();openTabMenu(tab.id,e.clientX)};
         // A tab reached with the keyboard is scrolled fully into view.
         select.addEventListener('focus',()=>item.scrollIntoView({block:'nearest',inline:'nearest'}));
-        let drag=null,suppressClick=false;item.onpointerdown=e=>{if(e.button===0&&e.target!==close){drag={x:e.clientX,y:e.clientY,moved:false};suppressClick=false;item.setPointerCapture(e.pointerId)}};
+        let drag=null,suppressClick=false;item.onpointerdown=e=>{if(e.button===0&&!close.contains(e.target)){drag={x:e.clientX,y:e.clientY,moved:false};suppressClick=false;item.setPointerCapture(e.pointerId)}};
         item.onpointermove=e=>{
             if(!drag)return;
             if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>6){drag.moved=true;item.style.opacity='.65'}

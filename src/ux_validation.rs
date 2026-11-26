@@ -287,6 +287,14 @@ impl Probe {
                     !t.content.state.loading
                         && t.content.engine.view.url().ok().as_deref() == Some("about:blank")
                 }) {
+                    // Regression: the view still reported the site it was leaving
+                    // when the blank load started, and the tab took that address,
+                    // so the first Home showed the blank page instead.
+                    if s.tabs.active().is_none_or(|t| t.url != navigation::HOME)
+                        || s.effective_panel().is_none()
+                    {
+                        return Err("Home showed the blank page, not the new-tab page".into());
+                    }
                     s.command(Command::Back).map_err(|_| "Native Back failed")?;
                     self.phase = 8;
                 }

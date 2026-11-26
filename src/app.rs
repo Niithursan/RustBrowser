@@ -115,6 +115,22 @@ fn returned_to_new_tab(tab_url: &str, view_url: Option<&str>, forward: bool) -> 
         && !matches!(tab_url, navigation::HOME | "about:blank")
 }
 
+/// The view's address a tab takes after a page event, if any. Home shows the new-tab
+/// page at once, but the view keeps reporting the site it is leaving until its blank
+/// document starts: taking that address would put the hidden blank view in front
+/// under the old address, so a second Home was needed. While `leaving_for_home`, no
+/// address is taken; it ends when the view reports the blank document.
+fn adopted_address(view_url: Option<&str>, leaving_for_home: &mut bool) -> Option<String> {
+    let url = view_url?;
+    if *leaving_for_home {
+        if url == "about:blank" {
+            *leaving_for_home = false;
+        }
+        return None;
+    }
+    (url.len() <= 8192 && navigation::address(url).as_deref() == Ok(url)).then(|| url.to_owned())
+}
+
 fn content_target(url: &str) -> Result<LoadTarget, rust_browser::engine_api::InvalidLocation> {
     if matches!(url, navigation::HOME | "about:blank") {
         Ok(LoadTarget::Blank)
@@ -434,6 +450,8 @@ struct Page {
     state: State,
     lifecycle: Lifecycle,
     opener: Option<TabId>,
+    /// Home was chosen and the view has not reached its blank document yet.
+    leaving_for_home: bool,
 }
 struct Clearing {
     failed: bool,
@@ -1849,6 +1867,7 @@ impl Session {
             state,
             lifecycle: Lifecycle::default(),
             opener: None,
+            leaving_for_home: false,
         })
     }
 
@@ -2359,6 +2378,7 @@ impl Session {
                         },
                         lifecycle: Lifecycle::default(),
                         opener: None,
+                        leaving_for_home: false,
                     };
                 }
                 Err(_) => failed = true,
@@ -3687,6 +3707,7 @@ impl Session {
                 self.panel = None;
                 if let Some(tab) = self.tabs.active_mut() {
                     tab.content.engine.load(&LoadTarget::web(&url)?)?;
+                    tab.content.leaving_for_home = false;
                     tab.url = url.clone();
                     tab.content.state.url = url;
                     tab.content.state.message = "Connecting…".into();
@@ -3713,6 +3734,7 @@ impl Session {
                     tab.content.state.url = tab.url.clone();
                     tab.content.state.failed = false;
                     tab.content.engine.load(&LoadTarget::Blank)?;
+                    tab.content.leaving_for_home = true;
                 }
                 self.activate()?;
                 if self.settings.show_recent && !self.private {
@@ -3773,6 +3795,7 @@ impl Session {
                         _ => return Ok(()),
                     };
                     tab.content.engine.navigate(action)?;
+                    tab.content.leaving_for_home = false;
                     if matches!(other, Command::Stop) {
                         tab.content.state.loading = false;
                         tab.content.state.message = "Stopped.".into();
@@ -3883,10 +3906,8 @@ impl Session {
                 tab.content.state.message = format!("Error: {error}");
             }
         }
-        if let Ok(url) = tab.content.engine.view.url()
-            && url.len() <= 8192
-            && navigation::address(&url).as_deref() == Ok(url.as_str())
-        {
+        let view_url = tab.content.engine.view.url().ok();
+        if let Some(url) = adopted_address(view_url.as_deref(), &mut tab.content.leaving_for_home) {
             tab.url = url.clone();
             tab.content.state.url = url;
         }
@@ -4363,6 +4384,25 @@ mod tests {
             true
         ));
         assert!(!returned_to_new_tab(page, None, true));
+    }
+    #[test]
+    fn home_keeps_the_new_tab_page_while_the_old_site_is_still_reported() {
+        let page = "https://example.com/";
+        let mut leaving = false;
+        assert_eq!(adopted_address(Some(page), &mut leaving), Some(page.into()));
+        assert_eq!(adopted_address(Some("about:blank"), &mut leaving), None);
+        assert_eq!(adopted_address(None, &mut leaving), None);
+        // After Home: the view still reports the site it is leaving (regression:
+        // the first Home showed the hidden blank view under the old address).
+        leaving = true;
+        assert_eq!(adopted_address(Some(page), &mut leaving), None);
+        assert!(leaving);
+        assert_eq!(adopted_address(None, &mut leaving), None);
+        assert!(leaving);
+        // The blank document arrived: later loads (Back, links) are taken again.
+        assert_eq!(adopted_address(Some("about:blank"), &mut leaving), None);
+        assert!(!leaving);
+        assert_eq!(adopted_address(Some(page), &mut leaving), Some(page.into()));
     }
     #[test]
     fn the_unsaved_window_notice_names_each_window() {
