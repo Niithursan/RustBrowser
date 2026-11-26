@@ -72,6 +72,18 @@ fn plain_directory(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+/// A lease folder younger than this is never swept: it may be one that a
+/// starting private window has made but not yet locked.
+pub const SWEEP_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Nanoseconds since the Unix epoch, as lease folder names record them.
+fn now_nanos() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
 pub struct PrivateLease {
     pub path: PathBuf,
     lock: Option<File>,
@@ -84,10 +96,7 @@ impl PrivateLease {
         plain_directory(&root)?;
         let root = root.canonicalize()?;
         for attempt in 0..100 {
-            let nonce = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
+            let nonce = now_nanos();
             let path = root.join(format!(
                 "private-{nonce:032x}-{:08x}-{attempt:02x}",
                 std::process::id()
@@ -113,8 +122,19 @@ impl PrivateLease {
             "Could not allocate isolated private storage.",
         ))
     }
-    /// Only recognized immediate child directories; live leases and reparse points stay untouched.
+    /// Only recognized immediate child directories; live leases, leases made
+    /// within `SWEEP_GRACE` and reparse points stay untouched.
     pub fn sweep(normal: &Path) -> io::Result<usize> {
+        Self::sweep_at(normal, now_nanos())
+    }
+
+    /// `sweep`, at `now` (nanoseconds since the Unix epoch). A lease is made
+    /// in steps (its folder, then its lock file, then the lock), so a sweep
+    /// in another process, or this one's own at start, could otherwise find a
+    /// lease between those steps, lock it first and remove a window's folder
+    /// as it opens. Its name records when it was made; a lease made after
+    /// `now` (the clock went back) counts as new.
+    pub fn sweep_at(normal: &Path, now: u128) -> io::Result<usize> {
         let root = normal.join("private-contexts");
         if !root.exists() {
             return Ok(0);
@@ -130,6 +150,12 @@ impl PrivateLease {
                 continue;
             };
             if rest.len() != 44 || !rest.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                continue;
+            }
+            let made = rest
+                .get(..32)
+                .and_then(|hex| u128::from_str_radix(hex, 16).ok());
+            if made.is_none_or(|made| now.saturating_sub(made) < SWEEP_GRACE.as_nanos()) {
                 continue;
             }
             let path = entry.path();
