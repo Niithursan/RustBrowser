@@ -3341,6 +3341,20 @@ impl Session {
                 }
                 crate::native_clipboard::write_text(&text)?;
             }
+            Command::Suggest(text) => {
+                // Typing goes on if the library is busy: that keystroke simply
+                // gets no list. The answer goes to this window's toolbar.
+                if text.len() <= rust_browser::suggestions::MAX_TEXT {
+                    let _ = self.library.submit(library_worker::Job {
+                        revision: 0,
+                        action: Action::Suggest {
+                            text,
+                            window: u64::from(self.window.id()),
+                        },
+                        filter: Filter::default(),
+                    });
+                }
+            }
             Command::PasteAddress => {
                 let text = navigation::paste_text(&crate::native_clipboard::read_text()?);
                 self.toolbar.evaluate_script(&format!(
@@ -5207,6 +5221,11 @@ impl ApplicationHandler<Event> for App {
                     if clear.request.history || clear.request.cookies || clear.request.cache || clear.request.permissions {
                         clear.results.push(if success {"WebView2 confirmed clearing the selected engine data."}else{"WebView2 reported a clearing failure; some engine data may remain."}.into());
                     }
+                }
+            }
+            Event::Library(library_worker::Reply { suggestions: Some(found), .. }) => {
+                if session.select_window(WindowId::from(found.window)) {
+                    let _ = session.toolbar.evaluate_script(&crate::ui::suggestions_script(&found));
                 }
             }
             Event::Library(reply) => {

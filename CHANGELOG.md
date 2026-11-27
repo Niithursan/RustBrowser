@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Address suggestions:** the address field completes a site you have visited as you type, with the added part selected, and a list under it shows what Enter does (open, search) and up to six matching pages from your history and bookmarks, ranked by how often and how recently you visited them. Up, Down, Enter, Escape and clicks work as in other browsers. Suggestions come only from the local library; nothing typed leaves the device before Enter.
+- **Fix (Linux):** history saves each page's title. A visit was saved when the page finished loading, with the tab's title at that moment, which was often empty or still the previous page's ("New tab").
 - **Fix (Linux):** the address field shows its highlight ring and a blinking caret when you click it or press Ctrl+L, as on Windows, and so do the new-tab search field and other fields in the browser's own pages. GTK never learned that the browser's views had the keyboard, so WebKit drew them all as if their window were in the background.
 - **Linux packages:** the source now builds an Ubuntu/Debian package (`.deb`, with cargo-deb) and an Arch Linux package (`packaging/linux/arch/PKGBUILD`, `rust-browser-git`, built from the latest main). Both install `/usr/bin/rust-browser`, a launcher with New window and New private window actions, and the browser's icon, and depend on the distribution's own WebKitGTK. CI builds both, installs each in a clean Ubuntu 24.04 or Arch container and checks it; they are not attached to releases yet.
 - **Linux default browser:** when the browser was installed from a package, Make default browser uses the package's launcher instead of writing a second one; other copies now also get the browser's icon and a window class that matches the launcher.

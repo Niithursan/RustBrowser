@@ -19,4 +19,5 @@ pub mod profiles;
 pub mod security;
 pub mod settings;
 pub mod storage;
+pub mod suggestions;
 pub mod tabs;

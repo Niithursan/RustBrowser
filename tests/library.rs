@@ -612,3 +612,48 @@ fn schema_v4_migrates_to_v5_and_updates_bookmark_icons_for_matching_site() {
         BarItem::Link { icon: i, .. } if i == icon
     ));
 }
+
+#[test]
+fn address_suggestions_come_from_history_and_bookmarks() {
+    let profile = Profile::new();
+    let (mut db, _) = Database::open(&profile.db()).unwrap();
+    let now = 1_800_000_000;
+    for (i, url) in [
+        "https://www.youtube.com/watch",
+        "https://www.youtube.com/watch",
+        "https://www.youtube.com/",
+        "https://example.com/you",
+    ]
+    .iter()
+    .enumerate()
+    {
+        db.apply(visit(&format!("v{i}"), url, now - 60)).unwrap();
+    }
+    db.apply(Action::SaveBookmark {
+        id: None,
+        title: "Your bank".into(),
+        url: "https://bank.example/".into(),
+        folder: None,
+    })
+    .unwrap();
+    let found = db.suggest("you", now).unwrap();
+    assert_eq!(found.text, "you");
+    let inline = found.inline.expect("an inline completion");
+    assert_eq!(
+        (inline.text.as_str(), inline.url.as_str()),
+        ("youtube.com", "https://www.youtube.com/")
+    );
+    let urls: Vec<_> = found.items.iter().map(|s| s.url.as_str()).collect();
+    // Visited twice, then the bookmark found by its name, then the rest.
+    assert_eq!(urls[0], "https://www.youtube.com/watch");
+    assert!(urls.contains(&"https://bank.example/") && urls.contains(&"https://example.com/you"));
+    assert!(
+        found
+            .items
+            .iter()
+            .any(|s| s.bookmarked && s.title == "Your bank")
+    );
+    // Text is data, never SQL, and empty text finds nothing.
+    assert!(db.suggest("%' OR 1=1 --", now).unwrap().items.is_empty());
+    assert!(db.suggest("", now).unwrap().items.is_empty());
+}
