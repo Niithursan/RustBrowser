@@ -149,6 +149,16 @@
   the toolbar as `data:` URLs. The toolbar's content security policy gains only
   `img-src data:`; it still loads nothing from the network and runs only its own
   inline code. A test pins the exact policy.
+- New-tab wallpapers (after v0.22.2) keep that policy. The drawn wallpapers are SVG
+  `data:` URLs in the toolbar's own CSS; a test checks each refers to nothing outside
+  itself (no `href`, no address but the SVG namespace, only its own `#` fragments)
+  and that no other CSS `url(` exists. **Your picture** is a file the user chose:
+  `wallpaper::read` refuses anything over 6 MB before reading it all and anything
+  whose first bytes are not PNG, JPEG or WebP (an SVG or HTML file named `.png` is
+  refused), the copy is written whole to `newtab-image` in the profile folder and
+  renamed into place, and the toolbar accepts it only as a
+  `data:image/(png|jpeg|webp);base64,` URL. A private window can show the saved
+  picture but cannot choose one. Nothing is downloaded.
 
 ### First release
 

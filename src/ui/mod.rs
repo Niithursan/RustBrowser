@@ -72,6 +72,11 @@ pub enum Command {
     SetVerticalTabs(bool),
     /// The new-tab page's background.
     SetNewtabBackground(rust_browser::settings::Background),
+    /// Choose a picture for the new-tab page in a file picker; it becomes the
+    /// background once checked and copied into the profile.
+    ChooseWallpaper,
+    /// The new-tab page shows the user's picture: send it (`wallpaper::script`).
+    RequestWallpaper,
     /// Whether the shield counts requests extensions block.
     SetCountBlocked(bool),
     /// Turn the ad blocker that comes with Rust Browser on or off.
@@ -751,7 +756,38 @@ mod tests {
         );
         // Icons are inline SVG elements, never fetched or embedded as images.
         assert!(!HTML.contains("<img src=\"http"));
-        assert!(!HTML.contains("url("));
+        // The only CSS images are the drawn new-tab wallpapers, inline SVG that
+        // refers to nothing outside itself, and the user's own picture, set from
+        // a data: URL that `setWallpaper` checks first.
+        let svg_start = "url(\"data:image/svg+xml,";
+        let mut wallpapers = 0;
+        for (at, _) in HTML.match_indices(svg_start) {
+            let rest = &HTML[at + svg_start.len()..];
+            let svg = &rest[..rest.find('"').expect("closed data URL")];
+            // No link of any kind; the one address is the SVG namespace.
+            assert!(!svg.contains("href"), "{at}");
+            assert_eq!(svg.matches("http").count(), 1, "{at}");
+            assert_eq!(svg.matches("http://www.w3.org/2000/svg").count(), 1);
+            // Its own fragment references (gradients, filters) only.
+            assert!(
+                svg.split("url(").skip(1).all(|r| r.starts_with("%23")),
+                "{at}"
+            );
+            wallpapers += 1;
+        }
+        // Four drawn wallpapers, each in a dark and a light rendition.
+        assert_eq!(wallpapers, 8);
+        for (index, rest) in HTML.split("url(").enumerate().skip(1) {
+            assert!(
+                rest.starts_with("\"data:image/svg+xml,")
+                    || rest.starts_with("%23")
+                    || rest.starts_with("\"'+url+'\")"),
+                "unexpected url( {index}"
+            );
+        }
+        assert!(
+            HTML.contains(r"/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/]+=*$/.test(url)")
+        );
     }
     #[test]
     fn every_toolbar_control_has_an_accessible_name() {

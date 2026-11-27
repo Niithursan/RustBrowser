@@ -93,8 +93,10 @@ pub fn valid_site(host: &str) -> bool {
         })
 }
 
-/// New-tab page backgrounds. Each is drawn by the page from the current theme's
-/// colours; no image is stored or downloaded.
+/// New-tab page backgrounds. The first four are drawn from the current theme's
+/// colours; the drawn wallpapers (Aurora to Contours) are inline pictures under
+/// a wash of the theme; `Image` is the user's own picture (`wallpaper`).
+/// Nothing is downloaded.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Background {
@@ -104,6 +106,16 @@ pub enum Background {
     Glow,
     /// From the panel colour to the card colour, corner to corner.
     Panels,
+    /// Ribbons of green and violet light over a night sky.
+    Aurora,
+    /// Layered sand dunes in low sun.
+    Dunes,
+    /// A sun low over hills at the horizon.
+    Horizon,
+    /// Contour lines of a map.
+    Contours,
+    /// The picture the user chose, saved in the profile (`wallpaper::FILE`).
+    Image,
     /// The theme's surface colour (also used for names a later version adds;
     /// serde needs this catch-all to be the last variant).
     #[default]

@@ -21,3 +21,4 @@ pub mod settings;
 pub mod storage;
 pub mod suggestions;
 pub mod tabs;
+pub mod wallpaper;

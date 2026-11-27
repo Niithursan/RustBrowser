@@ -524,20 +524,29 @@ turn off **Let inactive tabs sleep** to resume sleeping tabs and
 disable automation, or change the delay. Pinning also protects a tab. Performance
 preferences are separate from permission and privacy decisions.
 
-Home and new tabs show bundled local UI with search, up to twelve named HTTP(S)
-favorites, Dark/Slate/Plum/Light themes and quick access to bookmarks. Recent history is
-**off by default**; enabling it displays up to six eligible cached library entries.
-It follows history recording/filtering rules and is unavailable in private windows.
+Home and new tabs show bundled local UI: a large clock with a greeting and the date,
+the search field, then a row of site tiles, recent pages and quick access to bookmarks.
+The tiles are your favorites (up to twelve named HTTP(S) sites) followed by the sites
+you visited most in the last 90 days, ten tiles in all; a private window shows only
+its favorites. Recent pages are **off by default**; turned on, the three latest
+different pages show as cards with their site and time. They follow the history
+recording rules and are unavailable in private windows.
 Each favourite is a tile with its site's icon, saved when a tab shows the favourite's
 own page (another page of the same site only fills a missing icon), or the first
-letter of its title. Icons are PNG images of at most 8 KiB kept with the favourite;
+letter of its title; a most-visited site uses a bookmark's icon from that site, or
+its first letter. Icons are PNG images of at most 8 KiB kept with the favourite;
 a larger icon is not kept and the tile shows the letter. The page's **Background**
-choice (Plain, Dusk, Glow, Panels), **Theme**, and **Show recent history** open under
-**Customize page**, and **Add favorite** opens the form to save a site. Theme and
-background can also be changed in Menu (⋮) → Settings → Appearance.
+(Plain, Dusk, Glow, Panels; the drawn wallpapers Aurora, Dunes, Horizon and Contours,
+each in a dark and a light version that follows the theme; or **Your picture**),
+**Theme** and **Show recent pages** open under **Customize page**, and the **+** tile
+(Add favorite) opens the form to save a site. **Choose picture…** takes a PNG, JPEG
+or WebP of at most 6 MB from your computer; it is checked by its contents and copied
+into the profile folder as `newtab-image`, and a private window can show it but not
+change it. Theme and background can also be changed in Menu (⋮) → Settings → Appearance.
 Favorite titles/URLs and themes are saved in normal settings independently of session
 URL retention. Private favorites, themes, pins and tab order last only for that window
-and never read the normal session. No background image is fetched.
+and never read the normal session. No background image is fetched: the wallpapers are
+drawn by the page itself and your picture is read from the profile folder.
 
 The local page lives in the trusted toolbar view, separately from the ordinary content
 view. Its internal `rust-browser:new-tab` marker is never accepted as a website URL;

@@ -138,6 +138,21 @@ pub struct Data {
     pub menu: Option<FolderMenu>,
     /// The bookmark for the current page, if it has one.
     pub page_bookmark: Option<Bookmark>,
+    /// The most visited sites of the last 90 days, for the new-tab page's tiles.
+    pub top_sites: Vec<TopSite>,
+}
+
+/// Most sites the new-tab page shows from history.
+pub const TOP_SITES: usize = 10;
+
+/// A site the new-tab page offers as a tile: its address (scheme, host and
+/// port), a name and, when a bookmark on that site has one, its icon.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TopSite {
+    pub url: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
 }
 
 /// One folder's contents for a dropdown: subfolders, then links (oldest first).
@@ -990,6 +1005,88 @@ impl Database {
         Ok(rank(text, &candidates, now))
     }
 
+    /// The sites visited most in the 90 days before `now`, most first (ties: the
+    /// latest visit first), with the title of their front page when it was
+    /// visited (otherwise the host without `www.`) and a bookmark's icon.
+    pub fn top_sites(&self, now: i64) -> Result<Vec<TopSite>> {
+        struct Site {
+            url: String,
+            host: String,
+            visits: u32,
+            last: i64,
+            title: Option<String>,
+        }
+        let mut sites: Vec<Site> = Vec::new();
+        let mut index_of: HashMap<String, usize> = HashMap::new();
+        let mut statement = self.connection.prepare(
+            "SELECT url, title, visited_at FROM visits WHERE visited_at >= ?1 ORDER BY visited_at DESC LIMIT 10000",
+        )?;
+        let rows = statement.query_map([now - 90 * 86_400], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (url, title, at) = row?;
+            let Ok(parsed) = url::Url::parse(&url) else {
+                continue;
+            };
+            let (Some(host), "http" | "https") = (parsed.host_str(), parsed.scheme()) else {
+                continue;
+            };
+            let origin = parsed.origin().ascii_serialization() + "/";
+            let front = parsed.path() == "/";
+            let index = match index_of.get(&origin) {
+                Some(index) => *index,
+                None => {
+                    index_of.insert(origin.clone(), sites.len());
+                    sites.push(Site {
+                        url: origin,
+                        host: host.strip_prefix("www.").unwrap_or(host).to_string(),
+                        visits: 0,
+                        last: at,
+                        title: None,
+                    });
+                    sites.len() - 1
+                }
+            };
+            let site = &mut sites[index];
+            site.visits += 1;
+            // Rows come newest first, so the first front-page title is the latest.
+            if front && site.title.is_none() && !title.trim().is_empty() {
+                site.title = Some(title);
+            }
+        }
+        sites.sort_by(|a, b| b.visits.cmp(&a.visits).then(b.last.cmp(&a.last)));
+        sites.truncate(TOP_SITES);
+        let mut icons = self
+            .connection
+            .prepare("SELECT url, icon FROM bookmarks WHERE icon != '' ORDER BY id LIMIT 5000")?;
+        let icons: Vec<(String, String)> = icons
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(sites
+            .into_iter()
+            .map(|site| {
+                let icon = icons
+                    .iter()
+                    .find(|(url, _)| {
+                        url::Url::parse(url)
+                            .is_ok_and(|u| u.origin().ascii_serialization() + "/" == site.url)
+                    })
+                    .map(|(_, icon)| icon.clone())
+                    .unwrap_or_default();
+                TopSite {
+                    title: site.title.unwrap_or(site.host),
+                    url: site.url,
+                    icon,
+                }
+            })
+            .collect())
+    }
+
     pub fn query(&self, filter: &Filter) -> Result<Data> {
         if filter.query.len() > 512
             || filter
@@ -1063,6 +1160,7 @@ impl Database {
             bar,
             menu,
             page_bookmark,
+            top_sites: self.top_sites(now())?,
         })
     }
 }
