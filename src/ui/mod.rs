@@ -605,7 +605,7 @@ mod tests {
     fn profile_colors_stay_clear_of_signal_and_error_colors() {
         let dark = tokens(":root");
         let mut meaning = Vec::new();
-        for theme in ["dark", "slate", "plum", "light"] {
+        for theme in ["dark", "black", "slate", "plum", "light"] {
             let mut palette = dark.clone();
             palette.extend(tokens(&format!("body[data-theme={theme}]")));
             for name in ["--accent", "--error"] {
@@ -635,11 +635,66 @@ mod tests {
         }
     }
 
+    /// Black is Dark with every surface pure black for OLED screens, and neutral
+    /// grey edges, since a graphite tint shows on true black.
+    #[test]
+    fn black_has_pure_black_surfaces_and_neutral_hairlines() {
+        let black = tokens("body[data-theme=black]");
+        for surface in ["--strip", "--surface", "--panel", "--card", "--field"] {
+            assert_eq!(
+                black.get(surface).map(String::as_str),
+                Some("#000"),
+                "{surface}"
+            );
+        }
+        assert_eq!(black.get("--line").map(String::as_str), Some("#333333"));
+        assert_eq!(
+            black.get("--field-line").map(String::as_str),
+            Some("#6B6B6B")
+        );
+        // Text, warnings and the amber signal come from Dark.
+        for inherited in [
+            "--text",
+            "--secondary",
+            "--error",
+            "--accent",
+            "--on-accent",
+        ] {
+            assert!(
+                !black.contains_key(inherited),
+                "Black redefines {inherited}"
+            );
+        }
+    }
+
+    /// Settings and the new-tab page offer the same themes, Black next to Dark.
+    #[test]
+    fn both_theme_menus_list_black_after_dark() {
+        for menu in ["<select id=\"settings-theme\"", "<select id=\"home-theme\""] {
+            let options = HTML
+                .split(menu)
+                .nth(1)
+                .and_then(|rest| rest.split("</select>").next())
+                .unwrap_or_else(|| panic!("{menu} missing"));
+            let values: Vec<_> = options
+                .split("<option value=\"")
+                .skip(1)
+                .filter_map(|o| o.split('"').next())
+                .collect();
+            assert_eq!(
+                values,
+                ["dark", "black", "slate", "plum", "light"],
+                "{menu}"
+            );
+            assert!(options.contains("<option value=\"black\">Black</option>"));
+        }
+    }
+
     #[test]
     fn every_theme_meets_wcag_contrast_for_text_and_focus_indicators() {
         assert!(HTML.contains("input::placeholder{color:var(--secondary);opacity:1}"));
         let dark = tokens(":root");
-        for theme in ["dark", "slate", "plum", "light"] {
+        for theme in ["dark", "black", "slate", "plum", "light"] {
             let mut palette = dark.clone();
             palette.extend(tokens(&format!("body[data-theme={theme}]")));
             let token = |name: &str| {
@@ -703,7 +758,7 @@ mod tests {
         );
         assert!(HTML.contains("border:1px solid var(--field-line);border-radius:18px"));
         let dark = tokens(":root");
-        for theme in ["dark", "slate", "plum", "light"] {
+        for theme in ["dark", "black", "slate", "plum", "light"] {
             let mut palette = dark.clone();
             palette.extend(tokens(&format!("body[data-theme={theme}]")));
             let token = |name: &str| palette[name].clone();

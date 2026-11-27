@@ -15,6 +15,9 @@ colors:
   warning-coral: "#FF9B8F"
   signal-amber: "#F2C94C"
   on-signal: "#1E2228"
+  black-surface: "#000000"
+  black-hairline: "#333333"
+  black-field-hairline: "#6B6B6B"
   harbour-blue: "#7CC4E4"
   lilac: "#E3B5FF"
   cobalt: "#2446B8"
@@ -249,20 +252,21 @@ Density is compact and desktop-first: 32px controls, 13px text, 4px spacing step
 Cool graphite neutrals with one saturated signal per theme; the Light theme inverts to
 cool paper and ink with a cobalt signal.
 
-The browser ships four themes. **Dark** (the default) defines every token; **Slate**
-and **Plum** retint only the five surfaces, the hairline and the signal, inheriting
-text, disabled and warning colours from Dark; **Light** redefines the full set. Theme
-values live on `:root` and `body[data-theme=…]` in `src/ui/toolbar.html`, and their
+The browser ships five themes. **Dark** (the default) defines every token. **Slate**
+and **Plum** retint only the five surfaces, the hairline, the field hairline and the
+signal; **Black** retints the same surfaces and both hairlines but keeps Dark's amber
+signal. All three inherit text, disabled and warning colours from Dark; **Light**
+redefines the full set. Theme values live on `:root` and `body[data-theme=…]` in `src/ui/toolbar.html`, and their
 names are read by the `ui::tests` contrast checks, so they must stay stable.
 
 ### Primary (the signal, one per theme)
-- **Signal Amber** (Dark): selected-tab top rule, focus rings, loading bar, saved-bookmark
+- **Signal Amber** (Dark and Black): selected-tab top rule, focus rings, loading bar, saved-bookmark
   star, checkbox and progress accent, the private-window label, the
   permission-request border, and the Glow new-tab background tint.
 - **Harbour Blue** (Slate): the same roles in the Slate theme.
 - **Lilac** (Plum): the same roles in the Plum theme.
 - **Cobalt** (Light): the same roles in the Light theme, with white text on it.
-- **On Signal** (Dark/Slate/Plum: graphite surface; Light: white): text set on a signal fill.
+- **On Signal** (Dark/Black/Slate/Plum: graphite surface; Light: white): text set on a signal fill.
 
 ### Neutral (Dark)
 - **Graphite Strip**: the tab strip and the vertical tab column; the darkest layer.
@@ -279,6 +283,11 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 - **Warning Coral** also marks destructive buttons; a notice in it is always a problem.
 - Hover and pressed states are translucent washes of the text colour (7% and 14% on dark, 6% and 12% on light), not separate hues. The menu backdrop over a full panel is a 45% black scrim (28% ink on Light).
 
+### Neutral (Black)
+- **Black Surface** (`#000`): all five layers (strip, surface, panel, card and field), so an OLED screen lights only text, icons and edges. Edges carry the layering: the strip meets the toolbar, and dropdowns, tiles and cards stand out, by their hairlines alone.
+- **Black Hairline** (`#333333`) and **Black Field Hairline** (`#6B6B6B`, 3.9:1 on black): neutral grey, since Dark's graphite tint shows on true black.
+- The Dusk and Panels new-tab backgrounds blend two of these layers, so in Black they look like Plain; Glow and the wallpapers still show.
+
 ### Neutral (Light)
 - **Paper Strip / Paper Surface / Paper Panel / Paper Card / Paper Field**: the same five layers, from greyest to white.
 - **Ink** and **Ink Secondary**: primary and secondary text.
@@ -287,9 +296,9 @@ names are read by the `ui::tests` contrast checks, so they must stay stable.
 ### Named Rules
 **The One Signal Rule.** Each theme has exactly one signal colour, and it only ever means *active, focused, in progress, private or waiting for your decision*. It never fills a large area at full strength: its biggest solid uses are the 2px loading bar, the selected tab's 2px top rule and the small private label. The one area use is the new-tab **Glow** background, which mixes 10% of the signal into the surface and only when the user chooses Glow.
 
-**The Theme-Token Rule.** New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.
+**The Theme-Token Rule.** New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all five themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.
 
-**The Wallpaper Rule.** The one owner-approved exception ("Drawn + your own", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.
+**The Wallpaper Rule.** The one owner-approved exception ("Drawn + your own", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Black, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.
 
 ## Typography
 
@@ -467,7 +476,7 @@ Under `forced-colors`, every colour yields to system colours: icons stroke in Bu
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).
+- **Do** use the theme variables for every colour so Dark, Black, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).
 - **Do** keep the signal colour for state: selected, focused, loading, private, a saved bookmark, a pending permission decision.
 - **Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.
 - **Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.

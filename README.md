@@ -318,7 +318,7 @@ tooltip of the address field.
 Tab and bookmark icons come from WebView2 or imported bookmark HTML files as validated
 raster `data:image/...` payloads checked by the browser (bookmarks without a saved icon
 show a crisp letter monogram chip until visited or re-imported); the toolbar never loads
-anything from a website. All chrome icons are drawn for this project. The four themes,
+anything from a website. All chrome icons are drawn for this project. The five themes (Dark, Black, Slate, Plum, Light),
 Windows high contrast and reduced motion are supported as before. The tab strip merges
 into the top of the window with Minimize, Maximize/Restore and Close buttons flush at
 the top-right edge (`#tabrow`, `#nav` in vertical-tabs mode, or `#library-caption` when
