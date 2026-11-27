@@ -97,6 +97,31 @@ pub fn error_script(message: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// The picker draws in the Default profile's theme, Black included, with the
+    /// toolbar's pure black surfaces and neutral hairline.
+    #[test]
+    fn the_picker_is_drawn_in_black_when_the_default_profile_uses_it() {
+        let html = page_with(&Registry::default(), rust_browser::settings::Theme::Black);
+        assert!(html.contains("\"theme\":\"black\""));
+        let block = html
+            .split("body[data-theme=black]{")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("the picker has Black's colours");
+        let mut declarations: Vec<_> = block.split(';').collect();
+        declarations.sort_unstable();
+        assert_eq!(
+            declarations,
+            [
+                "--card:#000",
+                "--line:#333333",
+                "--panel:#000",
+                "--strip:#000",
+                "--surface:#000"
+            ]
+        );
+    }
+
     #[test]
     fn profile_names_cannot_escape_the_picker_script() {
         let mut registry = Registry::default();

@@ -569,12 +569,12 @@
       },
       {
         "name": "The Theme-Token Rule",
-        "body": "New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all four themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.",
+        "body": "New surfaces use the theme variables (`--surface`, `--panel`, `--accent`, …), never literal colours, so all five themes and high contrast work without extra code. Website colours never enter the chrome; the new-tab backgrounds Plain, Dusk, Glow and Panels are mixed only from the current theme's own tokens.",
         "section": "colors"
       },
       {
         "name": "The Wallpaper Rule",
-        "body": "The one owner-approved exception (\"Drawn + your own\", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.",
+        "body": "The one owner-approved exception (\"Drawn + your own\", 2026-11-26) to the Theme-Token Rule is the new-tab wallpapers, the only chrome surfaces that carry literal colours. The four drawn wallpapers (Aurora, Dunes, Horizon, Contours) are inline SVG data URLs, each with a dark rendition for Dark, Black, Slate and Plum and a light one for Light; **Your picture** is the user's own PNG, JPEG or WebP from the profile, set as a checked `data:` URL. Every wallpaper sits under washes of `--panel`: a linear wash from 12% at the top to 58% (40% to 72% on Your picture) and a radial hero wash behind the clock, search and caption (62%; 82% on Your picture). On Your picture the date, the clock's day period, the caption and the tile names switch from Dial Grey to the text colour. Together these keep secondary text at 4.5:1 or better (measured: Dark Aurora lowest at 4.55:1, Your picture on Light 7.7:1 and up). High contrast replaces every background with Canvas, and the signal colour never appears in a wallpaper.",
         "section": "colors"
       },
       {
@@ -599,7 +599,7 @@
       }
     ],
     "dos": [
-      "**Do** use the theme variables for every colour so Dark, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).",
+      "**Do** use the theme variables for every colour so Dark, Black, Slate, Plum, Light and high contrast all work, and keep their names stable for the contrast tests (the new-tab wallpapers are the one exception; see the Wallpaper Rule).",
       "**Do** keep the signal colour for state: selected, focused, loading, private, active shield, a pending permission decision.",
       "**Do** ask before anything destructive in the browser's confirmation dialog, with Cancel focused and a button that names the action.",
       "**Do** keep permission choices equal in weight, and let only Allow grant: closing or waiting answers Don't allow.",

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Black theme:** a fifth theme for OLED screens, in Settings > Appearance and the new-tab page's Customize page. Every surface of the browser's own interface is pure black, with neutral grey edges and Dark's text and amber signal; the Windows title bar and the profile picker follow it. Websites look as before. In Black, the Dusk and Panels new-tab backgrounds look like Plain.
+
 ## 0.23.0 (published 2026-11-27)
 
 - **Release:** the first release with Linux packages. The release workflow (now named Release) builds the Ubuntu/Debian `.deb` and the Arch Linux package from the approved tag beside the Windows Setup and ZIP, installs each in a clean Ubuntu 24.04 or Arch container and checks it, and attaches all nine files (`rust-browser-v0.23.0-linux-amd64.deb`, `rust-browser-v0.23.0-arch-x86_64.pkg.tar.zst` and their `.sha256` files beside the five Windows files) only when published by hand. The installer's upgrade check now starts from the published v0.22.2 (`b4536e7`) instead of v0.21.0. Release notes: `release-notes/v0.23.0.md`.

@@ -2030,8 +2030,9 @@ fn layout_screenshots() {
 fn newtab_screenshot_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     use rust_browser::settings::{Background, Theme};
     use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
-    const THEMES: [(&str, Theme); 4] = [
+    const THEMES: [(&str, Theme); 5] = [
         ("dark", Theme::Dark),
+        ("black", Theme::Black),
         ("slate", Theme::Slate),
         ("plum", Theme::Plum),
         ("light", Theme::Light),

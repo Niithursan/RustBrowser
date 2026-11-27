@@ -211,6 +211,8 @@ impl Default for Settings {
 pub enum Theme {
     #[default]
     Dark,
+    /// Dark with pure black surfaces, for OLED screens.
+    Black,
     Light,
     Slate,
     Plum,
@@ -316,6 +318,15 @@ mod tests {
         // Older files have no list; an empty one is not written.
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(!json.contains("shield_paused_sites"));
+    }
+
+    #[test]
+    fn black_is_saved_as_black_and_new_profiles_start_in_dark() {
+        let black: Settings = serde_json::from_str(r#"{"theme":"black"}"#).unwrap();
+        assert_eq!(black.theme, Theme::Black);
+        let json = serde_json::to_string(&black).unwrap();
+        assert!(json.contains(r#""theme":"black""#), "{json}");
+        assert_eq!(Settings::default().theme, Theme::Dark);
     }
 
     #[test]

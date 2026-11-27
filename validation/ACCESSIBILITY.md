@@ -11,9 +11,9 @@ Environment: Windows 11 Pro 10.0.26200 x64, WebView2 157.0.4341.42, Rust 1.99.1,
 
 | Behaviour | Test | Result |
 | --- | --- | --- |
-| Text, secondary and error colours reach 4.5:1 on every chrome surface; accent focus rings and the active-tab bar reach 3:1 (WCAG 1.4.3 / 1.4.11 ratios) in Dark, Slate, Plum and Light | `ui::tests::every_theme_meets_wcag_contrast_for_text_and_focus_indicators` parses the shipped CSS tokens | Pass. Lowest text ratio 5.84:1 (Slate secondary), lowest accent ratio 6.31:1 (Slate) |
-| Native caption text reaches 4.5:1 contrast in all four themes | `native_window::tests::caption_text_meets_normal_text_contrast_in_each_theme` checks the native caption palette | Pass |
-| Native caption and border colors match each toolbar theme | `native_window::tests::caption_palette_matches_each_toolbar_theme` checks Dark, Light, Slate and Plum | Pass |
+| Text, secondary and error colours reach 4.5:1 on every chrome surface; accent focus rings and the active-tab bar reach 3:1 (WCAG 1.4.3 / 1.4.11 ratios) in Dark, Black, Slate, Plum and Light | `ui::tests::every_theme_meets_wcag_contrast_for_text_and_focus_indicators` parses the shipped CSS tokens | Pass. Lowest text ratio 5.84:1 (Slate secondary), lowest accent ratio 6.31:1 (Slate) |
+| Native caption text reaches 4.5:1 contrast in all five themes | `native_window::tests::caption_text_meets_normal_text_contrast_in_each_theme` checks the native caption palette | Pass |
+| Native caption and border colors match each toolbar theme | `native_window::tests::caption_palette_matches_each_toolbar_theme` checks Dark, Black, Light, Slate and Plum | Pass |
 | Navigation failures are announced through an assertive `role="alert"` region, once per new failure | Native daily fixture, untrusted-TLS phase | Pass, mutation-checked |
 | Active tab has a non-colour cue (inset accent bar plus bold label) | Native daily fixture, 640 px window | Pass, mutation-checked |
 | Chrome does not overflow horizontally at 640 px with 150% CSS zoom (text-scaling proxy) | Native daily fixture compares the chrome's own scroll and client widths | Pass, mutation-checked with a zoom-only overflow (an earlier version compared mismatched coordinate spaces and could not fail; corrected) |

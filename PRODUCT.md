@@ -38,7 +38,7 @@ Why someone would choose it over Chrome, Edge or Firefox (confirmed by the owner
    in private windows; the toolbar never loads anything from a website.
 2. **Light and fast.** Minimal chrome, efficient memory use, no unnecessary
    background activity, no unnecessary webview recreation.
-3. **Customisable.** Four themes (Dark, Slate, Plum, Light), tabs down the side,
+3. **Customisable.** Five themes (Dark, Black, Slate, Plum, Light), tabs down the side,
    bookmarks bar, new-tab backgrounds (Plain, Dusk, Glow, Panels), favourites,
    resizable library column.
 
@@ -129,5 +129,5 @@ Servo is a possible future engine (v0.6+ experiments), not a current capability.
 
 Windows high contrast, reduced motion, screen-reader announcement of navigation
 errors, items named in list actions, keyboard access to every action, and contrast
-checked across all four themes. Known gaps are tracked in
+checked across all five themes. Known gaps are tracked in
 `validation/ACCESSIBILITY.md`.

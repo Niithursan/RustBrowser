@@ -7,6 +7,7 @@ use winit::{
 fn colors(theme: Theme) -> ([u8; 3], [u8; 3]) {
     match theme {
         Theme::Dark => ([0x13, 0x15, 0x18], [0xE9, 0xEC, 0xEF]),
+        Theme::Black => ([0x00, 0x00, 0x00], [0xE9, 0xEC, 0xEF]),
         Theme::Light => ([0xD9, 0xDE, 0xE3], [0x1B, 0x24, 0x30]),
         Theme::Slate => ([0x14, 0x1C, 0x23], [0xE9, 0xEC, 0xEF]),
         Theme::Plum => ([0x1B, 0x14, 0x20], [0xE9, 0xEC, 0xEF]),
@@ -204,11 +205,21 @@ mod tests {
             colors(Theme::Plum),
             ([0x1B, 0x14, 0x20], [0xE9, 0xEC, 0xEF])
         );
+        assert_eq!(
+            colors(Theme::Black),
+            ([0x00, 0x00, 0x00], [0xE9, 0xEC, 0xEF])
+        );
     }
 
     #[test]
     fn caption_text_meets_normal_text_contrast_in_each_theme() {
-        for theme in [Theme::Dark, Theme::Light, Theme::Slate, Theme::Plum] {
+        for theme in [
+            Theme::Dark,
+            Theme::Black,
+            Theme::Light,
+            Theme::Slate,
+            Theme::Plum,
+        ] {
             let (background, foreground) = colors(theme);
             let background = luminance(background);
             let foreground = luminance(foreground);
