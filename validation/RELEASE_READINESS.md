@@ -6,6 +6,25 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.23.0 release candidate (2026-11-27)
+
+The owner asked on 2026-11-27, once `main` was green (CI 46037780516 and Dependency security 46037780604 on `6c4ddcc`, PR #86's merge commit), for new release candidates for Windows, Linux and Arch. The candidate is `docs/release-v0.23.0` from `6c4ddcc`: version 0.23.0 (new features since 0.22.2: Linux, the built-in ad blocker, Linux packages, address suggestions, the new-tab redesign), `release-notes/v0.23.0.md`, and a release workflow (renamed Release) that also builds, installs and checks the `.deb` and the Arch package from the approved tag and attaches them, nine files in all, only when published by hand.
+
+| # | Status |
+| --- | --- |
+| A1 | Local checks on this branch are listed in the pull request; the native suites and installer lifecycle run in its CI, and the release workflow repeats everything on the tag. The new linux and arch release jobs run for the first time on the tag: they repeat CI's Linux and Arch jobs (which pass on `main`) plus the tag check, which was tested against real tags in a scratch clone |
+| A2 | No known open data-loss, profile-corruption or crash defect |
+| A3 | Pending CI: the installer upgrade now starts from the published v0.22.2 (`b4536e7`); library schema 5 and the session format are unchanged since 0.22.2 |
+| A4, A5 | Not run for this candidate (public-site survey, 30-minute soak) |
+| A6 | Owner checklist: items 1 to 4, 12 to 14, 28, 30 and 43 to 47 (new: built-in blocker, address suggestions, new-tab page, the `.deb` on Ubuntu, the Arch package) on this candidate |
+| A7 | Section B dispositions unchanged; unsigned builds and no updater remain accepted risks, and the Linux packages are unsigned and come from no package repository |
+| A8 | README, CHANGELOG, RELEASING, `packaging/linux/README.md` and `release-notes/v0.23.0.md` describe this candidate |
+| A9 | To be recorded from the tag run |
+
+Known CI flakes on 2026-11-27, not reproduced locally: the owner-build launch in the Windows release-package job (`tests/owner_build.ps1:58`, no window and saved session in 20 s; 3 failures across PRs #84 and #85, each passing on re-run) and `native_shield_panel_fits_a_narrow_window` (no extension added after 20 s, once on `main`). A tag run that fails in either is re-run, not published from a partial run.
+
+The `v0.23.0` tag goes on this pull request's merge commit. Tagging and publishing remain the owner's decisions (see RELEASING.md). Nothing has been tagged or published.
+
 ## v0.22.2 published (2026-11-23)
 
 - Tag `v0.22.2` on `b4536e7` (PR #75's merge commit, after #74 and #73; CI 45268005193 and Dependency security 45268005088 passed on it). CI on #74's merge commit `a57caea` (run 45260713013) had failed on `native_imported_bookmarks_show_on_the_bookmarks_bar`, fixed in #75, so the tag went on the next commit.

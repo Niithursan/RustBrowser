@@ -1,6 +1,6 @@
 [package]
 name = "rust-browser"
-version = "0.22.2"
+version = "0.23.0"
 edition = "2024"
 description = "An experimental web browser for Windows and Linux built with Wry and winit"
 license = "MIT"

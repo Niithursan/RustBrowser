@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.23.0 (release candidate, not published)
 
+- **Release:** the first release with Linux packages. The release workflow (now named Release) builds the Ubuntu/Debian `.deb` and the Arch Linux package from the approved tag beside the Windows Setup and ZIP, installs each in a clean Ubuntu 24.04 or Arch container and checks it, and attaches all nine files (`rust-browser-v0.23.0-linux-amd64.deb`, `rust-browser-v0.23.0-arch-x86_64.pkg.tar.zst` and their `.sha256` files beside the five Windows files) only when published by hand. The installer's upgrade check now starts from the published v0.22.2 (`b4536e7`) instead of v0.21.0. Release notes: `release-notes/v0.23.0.md`.
 - **Fix:** what you type in the address field stays while the suggestion list is open. On Windows, opening the list briefly took the keyboard from the toolbar, which ended editing, so a background update such as a page title could put the page's address back over your text.
 - **New-tab page:** a large clock with a greeting and the date above the search, a centred row of site tiles (your favorites, then the sites you visit most, ten in all), recent pages as cards, and new backgrounds: four drawn wallpapers (Aurora, Dunes, Horizon, Contours) in a dark and a light version for the themes, and **Your picture**, a PNG, JPEG or WebP of up to 6 MB chosen with Choose picture… and kept in the profile folder. Nothing is downloaded. The search button now sits inside the search field.
 - **Address suggestions:** the address field completes a site you have visited as you type, with the added part selected, and a list under it shows what Enter does (open, search) and up to six matching pages from your history and bookmarks, ranked by how often and how recently you visited them. Up, Down, Enter, Escape and clicks work as in other browsers. Suggestions come only from the local library; nothing typed leaves the device before Enter.
