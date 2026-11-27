@@ -1,122 +1,231 @@
-# Rust Browser 0.23.0
+# Rust Browser
 
-A browser for Windows and Linux with tabs and private windows, using Rust, **winit
-0.30** and **Wry 0.57**. On Windows websites render in the installed Chromium-based
-Microsoft WebView2 Runtime, and on Linux in the distribution's WebKitGTK. This is an early application shell, not an independent Rust web
-engine or a daily-use replacement for Firefox/Chrome yet.
+A web browser for Windows and Linux written in Rust. It has tabs, several windows,
+private windows, separate profiles, bookmarks, history, downloads and a built-in ad
+blocker. Websites are shown by the system's web engine: Microsoft WebView2 on
+Windows and WebKitGTK on Linux, through [Wry](https://github.com/tauri-apps/wry)
+and [winit](https://github.com/rust-windowing/winit).
 
-v0.23.0, published on 2026-11-27, is the latest release and the first with Linux
-packages (a `.deb` for Ubuntu and Debian and a package for Arch Linux) beside the
-Windows Setup and portable ZIP (v0.21.0 was the first release); download releases
-from the
-[Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
-[Install a release](#install-a-release)). v0.23 blocks ads out of the box: uBlock
-Origin comes with it on Windows, in normal and private windows, and hBlock's domain
-list on Linux (see [Extensions and ad blocking](#extensions-and-ad-blocking)). It
-also completes addresses as you type and has a new new-tab page with a clock, site
-tiles and wallpapers.
+Rust Browser is young. It is meant for everyday browsing, but it is not yet a
+replacement for Firefox or Chrome: read [Known limitations](#known-limitations)
+before relying on it.
 
-v0.19 can save passwords and fill in forms using WebView2's own features. Both
-are off until you turn them on in Menu (⋮) → Settings → Privacy & security, and private
-windows never save either. **Form autofill is now off by default**: WebView2
-turned it on by itself before this version. Bookmarks can be imported from an
-exported bookmarks HTML file (Firefox, Chrome or Edge). Passwords cannot be
-imported. See [Passwords and autofill](#passwords-and-autofill) and
-[Importing bookmarks](#importing-bookmarks). This is not a release candidate.
+**Latest release: [v0.23.0](https://github.com/Niithursan/RustBrowser/releases/latest)**
+(2026-11-27), the first with Linux packages. What changed in each version is in
+[CHANGELOG.md](CHANGELOG.md).
 
-v0.18 opens several normal windows on one profile: Ctrl+N or Menu (⋮) → New
-window, up to 8 at a time. Links from other apps go to the window you used last,
-which comes to the front. Closing a window closes only that window; the browser
-exits when the last one closes, and every open window returns at the next start,
-also after a crash. Private windows are unchanged. See
-[Windows](#windows) below and the
-[design record](https://github.com/Niithursan/RustBrowser/blob/main/MULTI_WINDOW_PROPOSAL.md).
-This is not a release candidate.
+## Download
 
-v0.17 can be chosen as the Windows default browser: links from other apps open in
-it, and starting it again while it runs hands the link to the open window instead
-of showing "already running". The address field has Cut, Copy, Paste and Select
-all.
+Download Rust Browser only from this repository's
+[Releases page](https://github.com/Niithursan/RustBrowser/releases). Each release
+has these files, each with a `.sha256` file to check it against:
 
-v0.16 adds native find, per-tab zoom with a live percentage/reset, and print
-preview through keyboard shortcuts and More. Toolbar recovery ignores stale
-view events, limits its terminal alert to once per window and gives a reported
-hang a bounded health check before recovery. It does not detect every hang.
-See [v0.16 evidence and limits](https://github.com/Niithursan/RustBrowser/blob/main/validation/V016.md).
-This is not a release candidate.
+| System | File |
+| --- | --- |
+| Windows 10 or 11, x64 | `rust-browser-v<version>-windows-x64-setup.exe` (Setup), or `rust-browser-v<version>-windows-x64.zip` (portable) |
+| Ubuntu 24.04 or newer, Debian 13 or newer (x86-64) | `rust-browser-v<version>-linux-amd64.deb` |
+| Arch Linux (x86-64) | `rust-browser-v<version>-arch-x86_64.pkg.tar.zst` |
 
-v0.15 prepares release criteria; it does not declare a release candidate. The
-toolbar now recovers if its separate WebView2 process or renderer fails, and Setup
-can repair the tested interrupted installations. Native keyboard/layout coverage,
-public-site survey containment and CI minute controls are extended. Profile path,
-session format 1, SQLite schema 3 and the WebView2 production engine stay unchanged.
-See the [readiness record](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_READINESS.md),
-[proposed criteria](https://github.com/Niithursan/RustBrowser/blob/main/validation/RELEASE_CRITERIA.md)
-and [owner checklist](https://github.com/Niithursan/RustBrowser/blob/main/validation/OWNER_CHECKLIST.md).
+The builds are **not signed**, and there is no automatic updater: to update,
+install the newer release the same way. Files attached to CI runs are test builds,
+not releases.
 
-Post-merge qualification prioritizes Windows 11 x64 and investigates an opt-in
-[static CRT build](https://github.com/Niithursan/RustBrowser/blob/main/validation/STATIC_CRT.md).
-Production linking and prerequisite checks remain unchanged. Owner acceptance uses
-a validation-identity installer plus a hash-checked disposable-profile launcher;
-the normal review installer and its shortcuts are not isolated acceptance launchers.
-Technical qualification does not authorize declaring, tagging or publishing an RC.
-Windows 10 validation and human acceptance checks remain outstanding.
+### Windows
 
-v0.14 is a reliability release found by browsing real websites through the
-production session. Closing a tab or the window no longer crashes the WebView2
-engine on pages that triggered it (reproduced with the Microsoft sign-in page), and
-if the engine process ends for any reason the open tabs are rebuilt and reloaded
-instead of the browser becoming unusable. Server error pages (404, 429, 500),
-unreachable sites, downloads and blocked app links now report what actually
-happened. Ctrl+Shift+T, Ctrl+1–9, Ctrl+PageUp/PageDown, Ctrl+F4 and Alt+Home were
-added. Evidence, measurements and limits: [VALIDATION.md](VALIDATION.md) and the
-[website compatibility record](https://github.com/Niithursan/RustBrowser/blob/main/validation/COMPATIBILITY.md).
+You need the **Microsoft Edge WebView2 Runtime** (already on most Windows 11 PCs)
+and the **Microsoft Visual C++ v14 Redistributable (x64)**. Setup checks that both
+are present; it does not install them.
 
-v0.13 adds an unsigned **per-user Windows installer**, Start Menu and optional
-desktop shortcuts, Apps & Features removal, upgrade/profile-preservation checks,
-application icons and a manual artifact verifier. Portable ZIPs remain supported.
-No automatic updater, runtime installation or default-browser/protocol registration
-is added. Follow [installation and recovery](INSTALL_WINDOWS.md) and
-[update authentication limits](https://github.com/Niithursan/RustBrowser/blob/main/packaging/windows/UPDATE_SECURITY.md). `--version`
-prints the version without opening a profile. This work publishes no release.
+1. Download the Setup file and its `.sha256` file.
+2. Check the download in PowerShell, in the folder where you saved both. The two
+   values must be the same:
 
-v0.12 redesigns the toolbar: the address line shows a plain connection word and
-the site's host emphasised, tabs are text with a coloured rule under the active
-one, and tab and library actions sat behind a More button (also reachable by
-keyboard shortcuts; since v0.20 this is the Menu (⋮) button). It adds Windows high-contrast support, announces
-navigation errors to screen readers, names list actions by their item, extends the
-controlled compatibility suite to service workers and Cache Storage, fixes false
-errors after rapid successive navigations, and makes CI faster
-([CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI.md)). Accessibility evidence and gaps: [ACCESSIBILITY.md](https://github.com/Niithursan/RustBrowser/blob/main/validation/ACCESSIBILITY.md).
+   ```powershell
+   (Get-FileHash .\rust-browser-v0.23.0-windows-x64-setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+   Get-Content .\rust-browser-v0.23.0-windows-x64-setup.exe.sha256
+   ```
 
-v0.11 adds bounded local application diagnostics, improved navigation/Stop
-feedback, AltGr-safe shortcuts, a light theme and a controlled modern-site
-regression suite. The version intentionally jumps from 0.8.0 because v0.9
-and v0.10 were research milestones. Existing profile locations and storage
-schemas remain unchanged. See [Windows installation and upgrades](INSTALL_WINDOWS.md)
-and [the daily-driver acceptance record](https://github.com/Niithursan/RustBrowser/blob/main/validation/DAILY_DRIVER.md).
+3. Run Setup. It installs for your Windows user only and needs no administrator
+   rights. Windows SmartScreen warns that the publisher is unknown, because the build
+   is unsigned: choose **More info**, then **Run anyway**, but only after the check
+   above matched.
 
-## Install a release
+Installing a newer Setup over an older version keeps your profiles, bookmarks,
+history, open tabs and settings. The portable ZIP needs no installation: extract it
+and run `rust-browser.exe`. Upgrading, uninstalling and the portable copy are covered
+in [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md). Only Windows 11 has been tested.
 
-The first release is
-[v0.21.0](https://github.com/Niithursan/RustBrowser/releases/tag/v0.21.0). Download
-`rust-browser-v<version>-windows-x64-setup.exe` and its `.sha256` file from the
-[Releases page](https://github.com/Niithursan/RustBrowser/releases), check the
-SHA-256 as the release notes show, and run Setup (per user, no administrator rights).
-Builds are unsigned, so Windows SmartScreen warns about an unknown publisher. You
-need the Microsoft WebView2 Runtime and the x64 Visual C++ v14 Redistributable; see
-[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md).
+### Ubuntu and Debian
 
-From v0.23.0, a release also carries
-`rust-browser-v<version>-linux-amd64.deb` for Ubuntu and Debian and
-`rust-browser-v<version>-arch-x86_64.pkg.tar.zst` for Arch Linux, each with a
-`.sha256` file; its release notes give the install commands. The `.deb` is built on
-Ubuntu 24.04 and needs glibc 2.39 or newer, so it installs on Ubuntu 24.04 or newer
-and Debian 13 (trixie) or newer, but not on Debian 12 (bookworm) or Ubuntu 22.04:
-apt refuses it there, because it depends on `libc6 (>= 2.39)`. On those, build the package
-from source instead (see [Linux (from source)](#linux-from-source)); that needs
-WebKitGTK 2.40 or newer and has not been tested on them. The steps below are for
-building from source.
+```bash
+sha256sum -c rust-browser-v0.23.0-linux-amd64.deb.sha256   # must print OK
+sudo apt install ./rust-browser-v0.23.0-linux-amd64.deb
+```
+
+apt also installs WebKitGTK and the other libraries the browser needs. Rust Browser
+then appears in your applications. Remove it with `sudo apt remove rust-browser`.
+
+The `.deb` is built on Ubuntu 24.04 and depends on `libc6 (>= 2.39)`, so it does not
+install on Debian 12 (bookworm) or Ubuntu 22.04. On those, build it from source
+instead (see [Build from source](#build-from-source)); that needs WebKitGTK 2.40 or
+newer and has not been tested there.
+
+### Arch Linux
+
+```bash
+sha256sum -c rust-browser-v0.23.0-arch-x86_64.pkg.tar.zst.sha256   # must print OK
+sudo pacman -Syu
+sudo pacman -U rust-browser-v0.23.0-arch-x86_64.pkg.tar.zst
+```
+
+Update the system first: the package is built against the Arch libraries of its
+release day. It installs as `rust-browser-git`, the same name as the package
+[`packaging/linux/arch/PKGBUILD`](https://github.com/Niithursan/RustBrowser/blob/main/packaging/linux/arch/PKGBUILD) builds, so either
+replaces the other. Remove it with `sudo pacman -R rust-browser-git`. If a later Arch
+update breaks it, build the package again from the PKGBUILD.
+
+### Where your data is kept
+
+| System | Folder |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\RustBrowser\v0.1` (other profiles in its `profiles` folder) |
+| Linux | `~/.local/share/rust-browser/v0.1` (or `$XDG_DATA_HOME/rust-browser/v0.1`) |
+
+It stays when you upgrade or uninstall. Set `RUST_BROWSER_PROFILE` to use another
+folder.
+
+## What it does
+
+- Tabs (along the top or down the side), pinned and sleeping tabs, and up to 8 normal
+  windows per profile, all restored after a restart or crash.
+- [Profiles](#profiles) for your own roles (personal, work, school), each with its own
+  sign-ins, history, bookmarks, passwords, extensions and settings.
+- [Private windows](#private-browsing) with temporary storage that is removed when
+  they close.
+- A [built-in ad blocker](#extensions-and-ad-blocking), on from the start: uBlock
+  Origin on Windows, and hBlock's list of ad, tracking and malware domains on Linux.
+- An address field that completes sites you have visited and suggests pages from your
+  history and bookmarks; nothing you type leaves the device before Enter.
+- A new-tab page with a clock, site tiles, recent pages and wallpapers, or a picture
+  of your own.
+- [Bookmarks and history](#bookmarks-and-history), a bookmarks bar,
+  [bookmark import](#importing-bookmarks) from Firefox, Chrome or Edge,
+  [downloads](#downloads), find in page, zoom and print.
+- [Saved passwords and form filling](#passwords-and-autofill), off until you turn
+  them on, and [site permissions](#website-permissions) you can review and revoke.
+- Can be set as the default browser on Windows and Linux.
+
+## Known limitations
+
+- Builds are unsigned and there is no automatic updater.
+- Websites are rendered by WebView2 or WebKitGTK, not by an engine written in Rust.
+- Each extension can read and change every website you open. On Windows only the
+  panel of an extension that blocks requests opens (from the shield); on Linux
+  extensions cannot run at all, and only their blocking rules are used (see
+  [Linux differences](#linux-differences)).
+- Saved passwords cannot be imported, listed or viewed; they can only be removed all
+  at once with [Clear browsing data](#clear-browsing-data).
+- No sync, reader mode or translation.
+- Tested on one Windows 11 PC and on Ubuntu 24.04; other hardware, languages, screen
+  readers and display setups have had limited testing. Windows 10, Arm computers and
+  other Linux distributions are untested.
+
+Each release's notes list its own known limitations.
+
+## Reporting problems
+
+- **Bugs:** open an issue. Do not include passwords, cookies, personal browsing
+  addresses or profile files.
+- **Security problems:** report them privately: open this repository's **Security**
+  tab and choose **Report a vulnerability**. Please do not use public issues for
+  them. See [SECURITY.md](SECURITY.md).
+
+## Build from source
+
+The source needs Rust (the version in `rust-toolchain.toml`, installed by
+[rustup](https://rustup.rs/)) and Internet access for Cargo's first download.
+
+### On Windows
+
+1. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+   with **Desktop development with C++**, MSVC and a Windows SDK, and Rust's default
+   `x86_64-pc-windows-msvc` toolchain.
+2. Install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+   if it is missing (Microsoft Edge being installed is not a substitute). Restart
+   the terminal after installing tools.
+3. In this folder:
+
+   ```powershell
+   cargo run --locked                                   # debug build
+   cargo run --locked -- https://www.rust-lang.org/     # with a first website
+   cargo build --locked --release                       # .\target\release\rust-browser.exe
+   ```
+
+A release build shows a Windows message if it cannot start; a debug build reports
+to the console. Building Setup and the portable ZIP is described in
+[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) and [RELEASING.md](https://github.com/Niithursan/RustBrowser/blob/main/RELEASING.md).
+
+### On Linux
+
+You need WebKitGTK 2.40 or newer and libsecret 0.19 or newer. On Ubuntu or Debian:
+
+```bash
+sudo apt-get install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libsecret-1-dev
+cargo run --release
+```
+
+To build and install it as a package instead:
+
+```bash
+# Ubuntu or Debian
+cargo install cargo-deb --version 3.8.0 --locked
+cargo build --locked --release && cargo deb --locked --no-build
+sudo apt install ./target/debian/rust-browser_*.deb
+
+# Arch Linux (builds the latest main from GitHub)
+cd packaging/linux/arch && makepkg -si
+```
+
+A `.deb` built this way depends on the library versions of the system that built
+it rather than Ubuntu 24.04's, which is the way to a package for an older release
+such as Debian 12 (untested). The packages are described in
+[packaging/linux/README.md](https://github.com/Niithursan/RustBrowser/blob/main/packaging/linux/README.md).
+
+## Linux differences
+
+Rust Browser has the same toolbar, tabs, windows, library, settings and session
+files on Linux as on Windows. It runs on X11, and on Wayland through XWayland. It
+has been tested on Ubuntu 24.04 (WebKitGTK 2.52) under Xvfb with Openbox and with
+GNOME Keyring, and in a GNOME session in a virtual machine.
+
+In a virtual machine without a graphics card, pages can stay blank. Start the
+browser with `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and, if that is not enough,
+`WEBKIT_DISABLE_COMPOSITING_MODE=1`) to use WebKit's fallback renderer.
+
+What differs from Windows:
+
+- **Built-in ad blocker:** hBlock's list of about 420,000 ad, tracking and malware
+  domains instead of uBlock Origin (see
+  [Extensions and ad blocking](#extensions-and-ad-blocking)).
+- **Extensions and the shield:** Add from folder takes the same unpacked extension
+  (such as uBlock Origin Lite), but WebKitGTK cannot run extensions, so only its
+  declarative blocking rules are used, compiled by WebKit into a content filter.
+  Its scripts, panel and settings pages never run, and rules that replace scripts
+  or hide page elements are left out. There is no blocked-request count. The
+  shield's panel has a switch that turns blocking off for one site.
+- **Passwords and form filling:** saved in your desktop keyring (GNOME Keyring,
+  KWallet or another Secret Service), not by the engine. After you sign in, the
+  key button in the address field offers to save the login. Saved logins and
+  contact details are filled only when you choose them from that button.
+  Without a running keyring nothing is saved.
+- **Sleeping tabs:** WebKitGTK cannot freeze a page, so a sleeping tab's page is
+  closed and loads again, where it was, when you select it.
+- **Default browser:** Settings > System > Make default browser makes the browser
+  the default for web links. An installed package's launcher is used as it is;
+  a browser run from elsewhere first adds a launcher and its icon to your
+  applications. On Windows that button opens Windows Settings instead.
+- **Not tested:** camera and microphone requests (no devices in the test
+  container).
 
 ## Layout
 
@@ -219,116 +328,6 @@ maximize, system context menu and Narrator. Drag any edge or corner of a restore
 window to resize it: the left, right and bottom edges use Windows' own invisible
 resize borders just outside the window, like other apps, and the top edge uses a
 thin strip at the top of the tab strip.
-
-## Setup on Windows
-
-1. Use Windows 10/11, preferably x64.
-2. Install [Rust stable with rustup](https://rustup.rs/). Choose the default
-   `x86_64-pc-windows-msvc` toolchain.
-3. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-   with **Desktop development with C++**, MSVC and a Windows SDK.
-4. Install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
-   if it is missing. Microsoft Edge being installed is not a substitute for checking
-   the Runtime. Use a current Evergreen Runtime: v0.4 requires native profile,
-   permission and external-scheme controls. This project does not bundle or install it.
-5. Restart your terminal after installing tools. Internet access is needed for
-   Cargo's first dependency download and for browsing.
-
-Open this folder in VS Code or PowerShell:
-
-```powershell
-cargo build --locked
-cargo run --locked
-# Optional initial website:
-cargo run --locked -- https://www.rust-lang.org/
-```
-
-For an optimized executable:
-
-```powershell
-cargo build --release --locked
-.\target\release\rust-browser.exe
-```
-
-**Where builds come from.** Official builds are published only on this
-repository's [Releases page](https://github.com/Niithursan/RustBrowser/releases);
-none has been published yet. Executables and packages attached to CI runs are
-unsigned test builds for review, not releases. Every build is unsigned, so Windows
-shows an unknown-publisher warning. Do not install Rust Browser from anywhere else.
-
-**Reporting a vulnerability.** Report it privately: on GitHub open this
-repository's **Security** tab and choose **Report a vulnerability**. Please do not
-use public issues for security problems. See SECURITY.md.
-
-CI stores an x64 Windows executable as a build artifact and tests portable
-packaging. Approved version tags produce package/checksum Actions artifacts;
-publishing a GitHub Release requires an explicit manual workflow action.
-The executable is unsigned and has no installer. It still requires WebView2
-Runtime and the matching x64 Visual C++ v14 Runtime; neither is bundled. See
-[Microsoft's prerequisite downloads](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
-Release startup failures use a Windows message when the loader can start the app; debug builds keep
-console feedback. See [installation, package contents and removal](INSTALL_WINDOWS.md).
-
-## Linux (from source)
-
-Rust Browser also runs on Linux. v0.23.0 is the first release with Linux packages
-(see [Install a release](#install-a-release)). The source builds the same Ubuntu/Debian
-package (`.deb`) and Arch Linux package, each installing the browser, its launcher
-and its icon; see `packaging/linux/README.md` in the source. It uses WebKitGTK
-through Wry, with the same toolbar, tabs, library, settings and session files as
-on Windows. It runs on X11, and on Wayland through XWayland. Tested on Ubuntu
-24.04 (WebKitGTK 2.52) under Xvfb with Openbox and with GNOME Keyring, and in a
-GNOME session in a virtual machine.
-
-Requirements: WebKitGTK 2.40 or newer and libsecret 0.19 or newer. To run it
-from the source on Ubuntu or Debian:
-
-```bash
-sudo apt-get install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libsecret-1-dev
-cargo run --release
-```
-
-To install it as a package instead:
-
-```bash
-# Ubuntu or Debian
-cargo install cargo-deb --version 3.8.0 --locked
-cargo build --locked --release && cargo deb --locked --no-build
-sudo apt install ./target/debian/rust-browser_*.deb
-
-# Arch Linux (builds the latest main)
-cd packaging/linux/arch && makepkg -si
-```
-
-In a virtual machine without a graphics card, pages can stay blank. Start the
-browser with `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and, if that is not enough,
-`WEBKIT_DISABLE_COMPOSITING_MODE=1`) to use WebKit's fallback renderer.
-
-Data lives in `$XDG_DATA_HOME/rust-browser/v0.1` (`~/.local/share/rust-browser/v0.1`),
-or in `RUST_BROWSER_PROFILE` when set. What differs from Windows:
-
-- **Built-in ad blocker:** hBlock's list of about 420,000 ad, tracking and malware
-  domains instead of uBlock Origin (see
-  [Extensions and ad blocking](#extensions-and-ad-blocking)).
-- **Extensions and the shield:** Add from folder takes the same unpacked extension
-  (such as uBlock Origin Lite), but WebKitGTK cannot run extensions, so only its
-  declarative blocking rules are used, compiled by WebKit into a content filter.
-  Its scripts, panel and settings pages never run, and rules that replace scripts
-  or hide page elements are left out. There is no blocked-request count. The
-  shield's panel has a switch that turns blocking off for one site.
-- **Passwords and form filling:** saved in your desktop keyring (GNOME Keyring,
-  KWallet or another Secret Service), not by the engine. After you sign in, the
-  key button in the address field offers to save the login. Saved logins and
-  contact details are filled only when you choose them from that button.
-  Without a running keyring nothing is saved.
-- **Sleeping tabs:** WebKitGTK cannot freeze a page, so a sleeping tab's page is
-  closed and loads again, where it was, when you select it.
-- **Default browser:** Settings > System > Make default browser makes the browser
-  the default for web links. An installed package's launcher is used as it is;
-  a browser run from elsewhere first adds a launcher and its icon to your
-  applications. On Windows that button opens Windows Settings instead.
-- **Not tested:** camera and microphone requests (no devices in the test
-  container).
 
 ## Controls
 
@@ -1012,7 +1011,7 @@ and [destination behavior](https://learn.microsoft.com/en-us/microsoft-edge/webv
 ## Structure and next steps
 
 ```text
-src/main.rs           Entry point and Windows platform gate
+src/main.rs           Entry point; picks the Windows or Linux front end
 src/app.rs            Event loop, session lifetime, layout, profile and state
 src/navigation.rs     URL normalization and scheme policy, with unit tests
 src/tabs.rs           Engine-independent tab IDs, ordering and selection
@@ -1037,13 +1036,18 @@ src/ui/mod.rs         Toolbar commands and serializable view state
 src/ui/toolbar.html   Local accessible toolbar
 ```
 
+The Linux front end is `src/linux.rs` with the other `src/linux_*.rs` files
+(WebKitGTK downloads, permissions, forms and keyring, shield, built-in blocker,
+hand-off, picker and default browser); the toolbar page, library, settings and
+session code are shared. [ARCHITECTURE.md](https://github.com/Niithursan/RustBrowser/blob/main/ARCHITECTURE.md) has the details.
+
 Each tab owns one engine instance with its own navigation state. All content tabs
 share the site's WebView2 context, while the toolbar remains separate. Native events
 carry stable tab IDs, including background callbacks; late events from closed tabs
 are ignored. Switching hides/shows views without recreation. The generic tab model,
 settings, library model and persistence do not depend on WebView2. Native download
 operations stay in the Windows adapter; UI rendering uses plain serializable records.
-Multiple named normal profiles remain future work. Add an engine
+Each profile runs in its own process (see [Profiles](#profiles)). Add an engine
 trait only when a second backend's actual requirements are known. Servo would need
 its own embedding, rendering/input integration and compatibility testing; it cannot
 simply be substituted into Wry. No Servo dependency is included.
@@ -1094,7 +1098,7 @@ measured timings: [CI.md](https://github.com/Niithursan/RustBrowser/blob/main/CI
 Development uses feature branches and pull requests into `main`, with Conventional
 Commits. See [CONTRIBUTING.md](https://github.com/Niithursan/RustBrowser/blob/main/CONTRIBUTING.md) for the workflow and release steps.
 Toolchain version is recorded in `rust-toolchain.toml`; commit `Cargo.lock` updates.
-The private repository is [Niithursan/RustBrowser](https://github.com/Niithursan/RustBrowser).
+The repository is [Niithursan/RustBrowser](https://github.com/Niithursan/RustBrowser).
 
 Manual smoke checklist:
 
