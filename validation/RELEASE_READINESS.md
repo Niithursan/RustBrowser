@@ -6,6 +6,14 @@ are the proposed acceptance baseline; [owner checks](OWNER_CHECKLIST.md) must be
 repeated on the exact next candidate. They remain open for v0.16.
 WebView2 stays production and Servo remains experimental/fixture-only.
 
+## v0.23.0 published (2026-11-27)
+
+- Tag `v0.23.0` on `aaa7786` (PR #87's merge commit; CI 46042177196 and Dependency security 46042177002 passed on it).
+- Tag build: Release run 46043510948 passed (package 15 minutes, linux 5, arch 3; publish skipped). All three jobs passed the tag check. The nine files were downloaded, all four checksums matched, `verify-release.ps1` from a checkout of the tag reported `IntegrityVerified: True` (unsigned, so no pin or publisher authentication), and the metadata names version 0.23.0, source commit `aaa7786` and library schema 5. The `.deb` is `rust-browser 0.23.0-1` (amd64) and the Arch package `rust-browser-git 0.23.0.r0.gaaa7786-1` (x86_64), each with the binary, launcher, icon and documents.
+- Found in the tag build: the `.deb` depends on `libc6 (>= 2.39)`, so it installs on Ubuntu 24.04 or newer and Debian 13 or newer but not on Debian 12 or Ubuntu 22.04. The owner chose to publish as is and to say so in the README (PR #88); the tagged release notes are unchanged.
+- The owner checklist (items 43 to 47) was not recorded before publishing; the owner chose to publish without it.
+- Publish run 46045961398 passed; it rebuilt all three packages from the tag, so the release's files differ from the tag build's artifacts. The release was published at 2026-11-27T18:13:37Z and is Latest, with nine files. Downloaded from the release page, the Setup (`05003219...0b09ba`), the `.deb` (`d1f5cc7b...6ed9c0`) and the Arch package match their `.sha256` files, and the release text is `release-notes/v0.23.0.md` (one trailing blank line aside).
+
 ## v0.23.0 release candidate (2026-11-27)
 
 The owner asked on 2026-11-27, once `main` was green (CI 46037780516 and Dependency security 46037780604 on `6c4ddcc`, PR #86's merge commit), for new release candidates for Windows, Linux and Arch. The candidate is `docs/release-v0.23.0` from `6c4ddcc`: version 0.23.0 (new features since 0.22.2: Linux, the built-in ad blocker, Linux packages, address suggestions, the new-tab redesign), `release-notes/v0.23.0.md`, and a release workflow (renamed Release) that also builds, installs and checks the `.deb` and the Arch package from the approved tag and attaches them, nine files in all, only when published by hand.
