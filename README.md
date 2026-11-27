@@ -80,7 +80,7 @@ sudo pacman -U rust-browser-v0.23.0-arch-x86_64.pkg.tar.zst
 
 Update the system first: the package is built against the Arch libraries of its
 release day. It installs as `rust-browser-git`, the same name as the package
-[`packaging/linux/arch/PKGBUILD`](packaging/linux/arch/PKGBUILD) builds, so either
+[`packaging/linux/arch/PKGBUILD`](https://github.com/Niithursan/RustBrowser/blob/main/packaging/linux/arch/PKGBUILD) builds, so either
 replaces the other. Remove it with `sudo pacman -R rust-browser-git`. If a later Arch
 update breaks it, build the package again from the PKGBUILD.
 
@@ -163,7 +163,7 @@ The source needs Rust (the version in `rust-toolchain.toml`, installed by
 
 A release build shows a Windows message if it cannot start; a debug build reports
 to the console. Building Setup and the portable ZIP is described in
-[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) and [RELEASING.md](RELEASING.md).
+[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) and [RELEASING.md](https://github.com/Niithursan/RustBrowser/blob/main/RELEASING.md).
 
 ### On Linux
 
@@ -189,7 +189,7 @@ cd packaging/linux/arch && makepkg -si
 A `.deb` built this way depends on the library versions of the system that built
 it rather than Ubuntu 24.04's, which is the way to a package for an older release
 such as Debian 12 (untested). The packages are described in
-[packaging/linux/README.md](packaging/linux/README.md).
+[packaging/linux/README.md](https://github.com/Niithursan/RustBrowser/blob/main/packaging/linux/README.md).
 
 ## Linux differences
 
@@ -1039,7 +1039,7 @@ src/ui/toolbar.html   Local accessible toolbar
 The Linux front end is `src/linux.rs` with the other `src/linux_*.rs` files
 (WebKitGTK downloads, permissions, forms and keyring, shield, built-in blocker,
 hand-off, picker and default browser); the toolbar page, library, settings and
-session code are shared. [ARCHITECTURE.md](ARCHITECTURE.md) has the details.
+session code are shared. [ARCHITECTURE.md](https://github.com/Niithursan/RustBrowser/blob/main/ARCHITECTURE.md) has the details.
 
 Each tab owns one engine instance with its own navigation state. All content tabs
 share the site's WebView2 context, while the toolbar remains separate. Native events
