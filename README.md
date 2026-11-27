@@ -391,6 +391,16 @@ Website navigation, redirects, fragments and History API changes
 update the address field. Editing the field pauses updates until focus leaves it.
 Back/forward use WebView2's actual history, rather than a separate Rust URL list.
 
+**Suggestions while typing.** As you type, the address field completes a site you
+have visited before (type `you` and `tube.com` appears selected after it; Enter
+opens that site, and Backspace or Escape removes the completion). A list under the
+field shows what Enter does first (open the site, open the address or search),
+then up to six matching pages from your history and bookmarks, ranked by how often
+and how recently you visited them; bookmarks count extra. Up and Down pick a row,
+Enter or a click opens it, and Escape closes the list. Suggestions come only from
+the library on this device: nothing you type is sent anywhere before you press
+Enter. Private windows have no history, so they only offer the search or address.
+
 Native WebView2 navigation errors are announced to screen readers, and WebView2
 displays its built-in network and certificate error pages. Invalid input and blocked
 schemes show a notice. No certificate validation bypass is installed. An HTTP error

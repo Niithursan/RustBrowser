@@ -44,6 +44,8 @@ pub enum Command {
     CopyText(String),
     /// Address-field menu: insert the clipboard's text at the selection.
     PasteAddress,
+    /// The address field's text changed: look up suggestions for it.
+    Suggest(String),
     DismissNotice,
     ClearDiagnostics {
         confirmed: bool,
@@ -488,6 +490,13 @@ pub fn repeatable(command: &Command) -> bool {
             | Command::ZoomIn
             | Command::ZoomOut
     )
+}
+
+/// The script that gives the toolbar the suggestions for what was typed. The
+/// toolbar shows them only while its text is still the text they are for.
+pub fn suggestions_script(found: &rust_browser::suggestions::Suggestions) -> String {
+    let json = serde_json::to_string(found).unwrap_or_else(|_| "null".into());
+    format!("window.addressSuggestions&&addressSuggestions({json})")
 }
 
 #[cfg(test)]

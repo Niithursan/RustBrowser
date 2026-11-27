@@ -393,7 +393,10 @@ below);
 `native_toolbar_autofill_is_cleared_once_on_upgrade` and
 `native_toolbar_autofill_cleanup_does_not_repeat`;
 `native_address_enter_navigates_without_a_go_button` (a real Enter key event through
-DevTools); unit tests for extension folders and IDs, the toolbar cleanup kind,
+DevTools); `native_address_suggestions_complete_and_list` (visits recorded through
+the library command, `127` typed through DevTools input: the field completes the
+visited site with the added part selected and keeps the keyboard, the list shows
+the site and its pages in rank order, and Down, Down, Enter opens the first page); unit tests for extension folders and IDs, the toolbar cleanup kind,
 favicon checks (PNG only, at most 32 KiB), the exact toolbar content security
 policy, an accessible name on every toolbar button, the tab-strip colour in the WCAG
 contrast checks, re-encoded text, and the release workflow.

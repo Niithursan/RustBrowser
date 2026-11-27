@@ -86,6 +86,14 @@ pub enum Action {
     /// file the user chose; the toolbar cannot send it.
     #[serde(skip)]
     ImportBookmarks(crate::bookmark_import::Parsed),
+    /// Look up address-field suggestions for `text`, answered in
+    /// `Reply::suggestions` for `window`. Built only by the browser; the
+    /// toolbar sends the text in its own command.
+    #[serde(skip)]
+    Suggest {
+        text: String,
+        window: u64,
+    },
     /// Save a validated site icon on matching bookmarks. Built only by the browser
     /// from WebView2's PNG favicon stream; the toolbar cannot send it.
     #[serde(skip)]
@@ -727,6 +735,8 @@ impl Database {
             Action::ImportBookmarks(parsed) => {
                 self.import_bookmarks(&parsed)?;
             }
+            // A lookup, answered by `suggest`; nothing to change.
+            Action::Suggest { .. } => {}
             Action::RemoveVisit { id } => {
                 self.connection
                     .execute("DELETE FROM visits WHERE id=?1", [id])?;
@@ -940,6 +950,59 @@ impl Database {
             parent_id: folder.parent_id,
             items,
         }))
+    }
+
+    /// Address-field suggestions for `text` from history and bookmarks: the
+    /// most visited matches of the first word, ranked by `suggestions::rank`.
+    pub fn suggest(&self, text: &str, now: i64) -> Result<crate::suggestions::Suggestions> {
+        use crate::suggestions::{Candidate, rank, words};
+        let Some(first) = words(text).into_iter().next() else {
+            return Ok(rank(text, &[], now));
+        };
+        let mut candidates: Vec<Candidate> = self
+            .connection
+            .prepare(
+                "SELECT url, max(title), count(*), max(visited_at) FROM visits
+                 WHERE instr(lower(url||' '||title), ?1) > 0
+                 GROUP BY url ORDER BY count(*) DESC, max(visited_at) DESC LIMIT 300",
+            )?
+            .query_map([&first], |r| {
+                Ok(Candidate {
+                    url: r.get(0)?,
+                    title: r.get(1)?,
+                    visits: r.get(2)?,
+                    last: r.get(3)?,
+                    bookmarked: false,
+                })
+            })?
+            .collect::<std::result::Result<_, _>>()?;
+        let bookmarks = self
+            .connection
+            .prepare(
+                "SELECT url, title FROM bookmarks WHERE instr(lower(title||' '||url), ?1) > 0
+                 ORDER BY id LIMIT 100",
+            )?
+            .query_map([&first], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for (url, title) in bookmarks {
+            match candidates.iter_mut().find(|c| c.url == url) {
+                Some(visited) => {
+                    visited.bookmarked = true;
+                    // A bookmark's name is the one the user chose.
+                    visited.title = title;
+                }
+                None => candidates.push(Candidate {
+                    url,
+                    title,
+                    visits: 0,
+                    last: 0,
+                    bookmarked: true,
+                }),
+            }
+        }
+        Ok(rank(text, &candidates, now))
     }
 
     /// The sites visited most in the 90 days before `now`, most first (ties: the

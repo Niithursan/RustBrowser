@@ -2199,6 +2199,136 @@ fn native_address_enter_navigates_without_a_go_button() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// The address field, its selection and the suggestion list, as JSON.
+const SUGGEST_REPORT: &str = "(()=>{const a=document.getElementById('address'),p=document.getElementById('suggest-panel'),rows=[...p.querySelectorAll('[role=option]')];return JSON.stringify({value:a.value,start:a.selectionStart,end:a.selectionEnd,open:!p.hidden,expanded:a.getAttribute('aria-expanded'),rows:rows.map(r=>r.dataset.target),titles:rows.map(r=>r.textContent),focused:document.activeElement===a})})()";
+
+/// One key through Chromium's own keyboard input, as the user presses it.
+fn press_toolbar_key(s: &Session, key: &str, code: i32, text: &str) -> Result<(), String> {
+    for kind in ["rawKeyDown", "char", "keyUp"] {
+        if kind == "char" && text.is_empty() {
+            continue;
+        }
+        toolbar_cdp(
+            s,
+            "Input.dispatchKeyEvent",
+            serde_json::json!({ "type": kind, "key": key, "code": key,
+                "text": if kind == "char" { text } else { "" },
+                "windowsVirtualKeyCode": code }),
+        )?;
+    }
+    Ok(())
+}
+
+/// Typing the start of a visited site completes it inline, with the added part
+/// selected, and lists the matching pages from history under the field; the
+/// arrow keys and Enter open a listed page.
+fn suggest_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
+    let origin = url::Url::parse(&p.url)
+        .map_err(|e| e.to_string())?
+        .origin()
+        .ascii_serialization();
+    let (one, two) = (
+        format!("{origin}/suggest/one"),
+        format!("{origin}/suggest/two"),
+    );
+    match p.phase {
+        0 if p.at.elapsed() > Duration::from_secs(1) => {
+            let now = rust_browser::library::now();
+            // "one" twice, so it lists before "two".
+            for (key, url, title, at) in [
+                ("s1", &one, "Suggestion one", now - 300),
+                ("s2", &one, "Suggestion one", now - 200),
+                ("s3", &two, "Suggestion two", now - 100),
+            ] {
+                p.command(
+                    el,
+                    0,
+                    Command::Library(Action::Record {
+                        key: key.into(),
+                        url: url.clone(),
+                        title: title.into(),
+                        timestamp: at,
+                    }),
+                )?;
+            }
+            // As Ctrl+L: the toolbar takes the keyboard and selects the address.
+            p.command(el, 0, Command::FocusAddress)?;
+            p.next();
+        }
+        1 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            for text in ["1", "2", "7"] {
+                toolbar_cdp(s, "Input.insertText", serde_json::json!({ "text": text }))?;
+            }
+            p.next();
+        }
+        2 if p.at.elapsed() > Duration::from_millis(300) => {
+            eval_toolbar(p, SUGGEST_REPORT)?;
+            p.next();
+        }
+        3 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            let host = origin.trim_start_matches("http://");
+            let ready = r["open"] == true
+                && r["value"] == host
+                && r["rows"].as_array().is_some_and(|rows| rows.len() >= 3);
+            if !ready {
+                if p.at.elapsed() > Duration::from_secs(10) {
+                    return Err(format!("No completion or list for 127: {r}"));
+                }
+                eval_toolbar(p, SUGGEST_REPORT)?;
+                return Ok(());
+            }
+            let rows: Vec<&str> = r["rows"]
+                .as_array()
+                .ok_or("No rows")?
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect();
+            if r["start"] != 3
+                || r["end"].as_u64() != Some(host.len() as u64)
+                || r["expanded"] != "true"
+                || r["focused"] != true
+                || rows[0] != format!("{origin}/")
+                || rows[1] != one
+                || rows[2] != two
+            {
+                return Err(format!("Unexpected completion or list: {r}"));
+            }
+            p.log
+                .push("suggestions: 127 completes to the visited site and lists its pages".into());
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            press_toolbar_key(s, "ArrowDown", 40, "")?;
+            press_toolbar_key(s, "ArrowDown", 40, "")?;
+            press_toolbar_key(s, "Enter", 13, "\r")?;
+            p.next();
+        }
+        4 => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            if s.tabs.items[0].url == one {
+                p.log
+                    .push("suggestions: arrow keys and Enter open a listed page".into());
+                p.done = true;
+                el.exit();
+            } else if p.at.elapsed() > Duration::from_secs(10) {
+                return Err(format!(
+                    "Enter did not open the picked page: {}",
+                    s.tabs.items[0].url
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows/WebView2; opens a real window"]
+fn native_address_suggestions_complete_and_list() {
+    let (root, _) = run("suggest", suggest_steps, |_, _| {});
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// The centre of the first tab's close icon, and whether that point hits the icon
 /// itself (not the button's padding around it).
 const CLOSE_ICON_POINT: &str = r#"(()=>{const icon=document.querySelector('#tabs .tab .close svg');if(!icon)return JSON.stringify(null);const r=icon.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;const hit=document.elementFromPoint(x,y);return JSON.stringify({x,y,tabs:document.querySelectorAll('#tabs .tab').length,onIcon:!!hit&&icon.contains(hit)})})()"#;
