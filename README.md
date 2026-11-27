@@ -260,19 +260,38 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 
 ## Linux (from source)
 
-Rust Browser also runs on Linux, built from source. There is no Linux release,
-package or installer yet. It uses WebKitGTK through Wry, with the same toolbar,
-tabs, library, settings and session files as on Windows. It runs on X11, and on
-Wayland through XWayland. Tested on Ubuntu 24.04 (WebKitGTK 2.52) under Xvfb with
-Openbox and with GNOME Keyring; a full desktop session has not been tested.
+Rust Browser also runs on Linux, built from source. There is no Linux release
+yet, but the source builds an Ubuntu/Debian package (`.deb`) and an Arch Linux
+package, each installing the browser, its launcher and its icon; see
+`packaging/linux/README.md` in the source. It uses WebKitGTK
+through Wry, with the same toolbar, tabs, library, settings and session files as
+on Windows. It runs on X11, and on Wayland through XWayland. Tested on Ubuntu
+24.04 (WebKitGTK 2.52) under Xvfb with Openbox and with GNOME Keyring, and in a
+GNOME session in a virtual machine.
 
-Requirements: WebKitGTK 2.40 or newer and libsecret 0.19 or newer. On Ubuntu or
-Debian:
+Requirements: WebKitGTK 2.40 or newer and libsecret 0.19 or newer. To run it
+from the source on Ubuntu or Debian:
 
 ```bash
 sudo apt-get install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libsecret-1-dev
 cargo run --release
 ```
+
+To install it as a package instead:
+
+```bash
+# Ubuntu or Debian
+cargo install cargo-deb --version 3.8.0 --locked
+cargo build --locked --release && cargo deb --locked --no-build
+sudo apt install ./target/debian/rust-browser_*.deb
+
+# Arch Linux (builds the latest main)
+cd packaging/linux/arch && makepkg -si
+```
+
+In a virtual machine without a graphics card, pages can stay blank. Start the
+browser with `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and, if that is not enough,
+`WEBKIT_DISABLE_COMPOSITING_MODE=1`) to use WebKit's fallback renderer.
 
 Data lives in `$XDG_DATA_HOME/rust-browser/v0.1` (`~/.local/share/rust-browser/v0.1`),
 or in `RUST_BROWSER_PROFILE` when set. What differs from Windows:
@@ -293,9 +312,10 @@ or in `RUST_BROWSER_PROFILE` when set. What differs from Windows:
   Without a running keyring nothing is saved.
 - **Sleeping tabs:** WebKitGTK cannot freeze a page, so a sleeping tab's page is
   closed and loads again, where it was, when you select it.
-- **Default browser:** Settings > System > Make default browser adds a launcher to
-  your applications and makes it the default for web links. On Windows that
-  button opens Windows Settings instead.
+- **Default browser:** Settings > System > Make default browser makes the browser
+  the default for web links. An installed package's launcher is used as it is;
+  a browser run from elsewhere first adds a launcher and its icon to your
+  applications. On Windows that button opens Windows Settings instead.
 - **Not tested:** camera and microphone requests (no devices in the test
   container).
 

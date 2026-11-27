@@ -1,0 +1,54 @@
+# Linux packages
+
+Two packages install the same files and use the distribution's own WebKitGTK,
+so engine security updates come from the distribution:
+
+| Path | Installed as |
+|---|---|
+| the release build | `/usr/bin/rust-browser` |
+| `packaging/linux/rust-browser.desktop` | `/usr/share/applications/rust-browser.desktop` |
+| `packaging/windows/rust-browser.svg` | `/usr/share/icons/hicolor/scalable/apps/rust-browser.svg` |
+
+The launcher is the one Settings > System > Make default browser would write
+for `/usr/bin/rust-browser`; `linux_default::tests` keeps them equal. When the
+installed launcher runs the browser that asks, Make default browser uses it and
+writes nothing to the user's folders.
+
+## Ubuntu and Debian (.deb)
+
+Built with [cargo-deb](https://github.com/kornelski/cargo-deb) from the
+`[package.metadata.deb]` table in `Cargo.toml`:
+
+```bash
+cargo install cargo-deb --version 3.8.0 --locked
+cargo build --locked --release
+cargo deb --locked --no-build
+sudo apt install ./target/debian/rust-browser_*.deb
+```
+
+cargo-deb adds the libraries the program links to (WebKitGTK, GTK, libsoup,
+libsecret) as dependencies; the X11 keyboard and XCB libraries winit loads at
+run time are listed by hand. Remove with `sudo apt remove rust-browser`.
+
+## Arch Linux (PKGBUILD)
+
+`arch/PKGBUILD` is `rust-browser-git`: it builds the latest `main` from GitHub.
+
+```bash
+cd packaging/linux/arch
+makepkg -si
+```
+
+`makepkg` runs the tests too (`--nocheck` skips them). To build the commit you
+have checked out instead, for example a branch under test, run
+`sh packaging/linux/arch/build-from-checkout.sh <output folder> -si`.
+Remove with `sudo pacman -R rust-browser-git`.
+
+## Checks
+
+CI builds both packages on every full run, installs each in a clean container
+(Ubuntu 24.04 and Arch) and runs `check-installed.sh`, which checks the files,
+that every library is present, that the launcher is valid and that
+`rust-browser --version` reports the version in `Cargo.toml`. The packages are
+kept as the run's artifacts (`rust-browser-linux-deb`, `rust-browser-arch-package`).
+They are not attached to releases yet.

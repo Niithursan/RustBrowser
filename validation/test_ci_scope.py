@@ -95,6 +95,19 @@ class DecisionTests(unittest.TestCase):
                      ('success', 'false', 'skipped', 'skipped', 'success')]:
             self.assertFalse(SCOPE.verdict(*case), case)
 
+    def test_verdict_requires_the_arch_package_job_when_given(self):
+        self.assertTrue(SCOPE.verdict('success', 'true', *['success'] * 4))
+        self.assertTrue(SCOPE.verdict('success', 'false', *['skipped'] * 4))
+        for arch in ('failure', 'skipped', 'cancelled'):
+            case = ('success', 'true', 'success', 'success', 'success', arch)
+            self.assertFalse(SCOPE.verdict(*case), case)
+        self.assertFalse(SCOPE.verdict('success', 'false', 'skipped', 'skipped', 'skipped', 'success'))
+
+    def test_result_command_reports_and_judges_every_job(self):
+        self.assertEqual(SCOPE.main(['ci_scope.py', 'result', 'success', 'true', *['success'] * 4]), 0)
+        self.assertEqual(SCOPE.main(['ci_scope.py', 'result', 'success', 'true', 'success', 'success', 'success', 'failure']), 1)
+        self.assertEqual(SCOPE.main(['ci_scope.py', 'result', 'success', 'true', *['success'] * 5]), 2)
+
 
 @unittest.skipUnless(shutil.which('git'), 'git is required')
 class GitDiffTests(unittest.TestCase):

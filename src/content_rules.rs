@@ -12,9 +12,17 @@
 //! skipped rather than loosened, and counted, so nothing is blocked that the
 //! extension would not block.
 //!
-//! WebKit applies a page's domain conditions to the top document, where
-//! Chromium uses the frame that made the request; for ads inside a site's own
-//! frames the result is the same.
+//! Chromium's initiator domains are the site of the frame that makes a
+//! request. For a subresource, WebKit's frame-URL conditions name that frame;
+//! its domain conditions (`if-domain`) name the top document, which would
+//! apply a site's rule inside every frame on its pages and miss its own frames
+//! on other sites. A frame's own document is requested by the page that holds
+//! it, but WebKit's frame URL for it is the frame itself, so it keeps the top
+//! document's domain: the same for frames placed directly in the page.
+//!
+//! A host named by a rule (`||host`, request domains) must be the address's
+//! real host: one named in the user-name part, as in
+//! `https://allowed.test@ads.test/`, does not match.
 use crate::extension_manifest;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -32,6 +40,13 @@ const MAX_TOTAL: u64 = 128 * 1024 * 1024;
 const MAX_RULESETS: usize = 100;
 /// Matches the scheme and any subdomains before a host (`||` in a filter).
 const HOST_ANCHOR: &str = "^[^:]+://+([^/:]*\\.)?";
+/// What follows a whole host name in an address: an optional port, then the
+/// path, query or fragment (WebKit's addresses always have one of them). Unlike
+/// a separator, it is never the `@` or `:` that ends a user name.
+const HOST_END: &str = "(:[0-9]*)?[/?#]";
+/// The rest of a host that a `||` filter names only the start of, up to the
+/// end of the host: no `@`, so the name cannot be in the user-name part.
+const HOST_REST: &str = "[^/?#@]*[/?#]";
 /// One separator character (`^` in a filter): anything but a letter, a digit
 /// or one of `_ - . %`.
 const SEPARATOR: &str = "[^a-zA-Z0-9_.%-]";
@@ -140,9 +155,41 @@ fn domains(list: &[String], narrowing: bool) -> Option<Vec<String>> {
     (!kept.is_empty()).then_some(kept)
 }
 
-/// `domains` for `if-domain`/`unless-domain`.
-fn domain_list(list: &[String], narrowing: bool) -> Option<Vec<String>> {
-    domains(list, narrowing).map(|list| list.into_iter().map(|d| format!("*{d}")).collect())
+/// The address pattern of a host and its subdomains.
+fn host_pattern(domain: &str) -> String {
+    let mut host = HOST_ANCHOR.to_string();
+    for c in domain.chars() {
+        push_literal(&mut host, c);
+    }
+    host.push_str(HOST_END);
+    host
+}
+
+/// A rule's initiator domains, for WebKit: the condition names for
+/// subresources (the requesting frame) and for frame documents (the top
+/// document), and the domains.
+struct Initiators {
+    frame: &'static str,
+    page: &'static str,
+    domains: Vec<String>,
+}
+
+impl Initiators {
+    /// Limit `trigger` to these initiators.
+    fn limit(&self, trigger: &mut serde_json::Map<String, Value>, document: bool) {
+        let (name, list): (&str, Vec<String>) = if document {
+            (
+                self.page,
+                self.domains.iter().map(|d| format!("*{d}")).collect(),
+            )
+        } else {
+            (
+                self.frame,
+                self.domains.iter().map(|d| host_pattern(d)).collect(),
+            )
+        };
+        trigger.insert(name.into(), json!(list));
+    }
 }
 
 /// Escape one character of a filter for WebKit's regular expressions.
@@ -178,6 +225,38 @@ fn url_patterns(filter: &str) -> Option<Vec<String>> {
     if rest.contains('|') {
         return None;
     }
+    // A filter that ends inside the host (`||ads.*.test^`) needs one rule: a
+    // host is always followed by a path, port or query.
+    let lone_host = host && !rest.contains(['/', '^', '?', '#']);
+    let mut rest = rest;
+    if host {
+        // The host name the filter starts with, and what follows it: the end
+        // of the host must be the real one, not a `@` after a user name.
+        let at = rest
+            .find(['/', '^', '*', ':', '?', '#'])
+            .unwrap_or(rest.len());
+        let (name, after) = rest.split_at(at);
+        for c in name.chars() {
+            push_literal(&mut out, c);
+        }
+        rest = after;
+        match after.strip_prefix('^') {
+            _ if name.is_empty() => {}
+            None if after.is_empty() && separator_end => return Some(vec![out + HOST_END]),
+            None if after.is_empty() && !end => return Some(vec![out + HOST_REST]),
+            // `^*`: the end of the host, then anything.
+            Some(next) if next.starts_with('*') => {
+                out.push_str(HOST_END);
+                rest = next;
+            }
+            // Followed by more: a separator that a port cannot come before.
+            Some(next) => {
+                out.push_str("[/?#]");
+                rest = next;
+            }
+            None => {}
+        }
+    }
     for c in rest.chars() {
         match c {
             '*' => out.push_str(".*"),
@@ -193,8 +272,7 @@ fn url_patterns(filter: &str) -> Option<Vec<String>> {
     }
     Some(if !separator_end {
         vec![out]
-    } else if host && !rest.contains('/') {
-        // A host is always followed by a path, port or query.
+    } else if lone_host {
         vec![out + SEPARATOR]
     } else {
         vec![format!("{out}{SEPARATOR}"), out + "$"]
@@ -226,11 +304,7 @@ fn rule_patterns(condition: &Condition) -> Option<Vec<String>> {
     };
     let mut patterns = Vec::new();
     for domain in self::domains(domains, true)? {
-        let mut host = HOST_ANCHOR.to_string();
-        for c in domain.chars() {
-            push_literal(&mut host, c);
-        }
-        host.push_str(SEPARATOR);
+        let host = host_pattern(&domain);
         patterns.extend(tails.iter().map(|tail| format!("{host}{tail}")));
     }
     (!patterns.is_empty()).then_some(patterns)
@@ -317,20 +391,29 @@ fn translate_rule(rule: &Rule, merge: bool) -> Option<Out> {
         }
         Some(_) => return None,
     }
-    match (&c.initiator_domains, &c.excluded_initiator_domains) {
+    let initiators = match (&c.initiator_domains, &c.excluded_initiator_domains) {
         (Some(_), Some(_)) => return None,
-        (Some(list), None) => {
-            base.insert("if-domain".into(), json!(domain_list(list, true)?));
-        }
-        (None, Some(list)) => {
-            base.insert("unless-domain".into(), json!(domain_list(list, false)?));
-        }
-        (None, None) => {}
-    }
+        (Some(list), None) => Some(Initiators {
+            frame: "if-frame-url",
+            page: "if-domain",
+            domains: domains(list, true)?,
+        }),
+        (None, Some(list)) => Some(Initiators {
+            frame: "unless-frame-url",
+            page: "unless-domain",
+            domains: domains(list, false)?,
+        }),
+        (None, None) => None,
+    };
     let patterns = rule_patterns(c)?;
     let (mut kinds, contexts) = type_parts(c)?;
     let blocks_top = action == "block" && contexts.contains(&"top-frame");
-    let merged = merge && action == "block" && contexts == ["child-frame"] && !kinds.is_empty();
+    // Subresources and frame documents name their initiators differently.
+    let merged = merge
+        && action == "block"
+        && contexts == ["child-frame"]
+        && !kinds.is_empty()
+        && initiators.is_none();
     let mut triggers = Vec::new();
     if merged {
         kinds.push("document");
@@ -341,6 +424,9 @@ fn translate_rule(rule: &Rule, merge: bool) -> Option<Out> {
         if !kinds.is_empty() {
             let mut trigger = base.clone();
             trigger.insert("resource-type".into(), json!(kinds));
+            if let Some(initiators) = &initiators {
+                initiators.limit(&mut trigger, false);
+            }
             triggers.push(trigger);
         }
         if !contexts.is_empty() {
@@ -348,6 +434,9 @@ fn translate_rule(rule: &Rule, merge: bool) -> Option<Out> {
             trigger.insert("resource-type".into(), json!(["document"]));
             if contexts.len() == 1 {
                 trigger.insert("load-context".into(), json!(contexts));
+            }
+            if let Some(initiators) = &initiators {
+                initiators.limit(&mut trigger, true);
             }
             triggers.push(trigger);
         }
@@ -526,7 +615,7 @@ mod tests {
     fn filters_become_webkit_patterns() {
         assert_eq!(
             url_patterns("||ads.example.com^").unwrap(),
-            [format!("{HOST_ANCHOR}ads\\.example\\.com{SEPARATOR}")]
+            [format!("{HOST_ANCHOR}ads\\.example\\.com{HOST_END}")]
         );
         assert_eq!(
             url_patterns("||example.com/ad.js^").unwrap(),
@@ -566,10 +655,17 @@ mod tests {
         assert_eq!(rules.len(), 2);
         let sub = &rules[0]["trigger"];
         assert_eq!(sub["resource-type"], json!(["script", "raw"]));
-        assert_eq!(sub["if-domain"], json!(["*news.example", "*shop.test"]));
+        assert_eq!(
+            sub["if-frame-url"],
+            json!([host_pattern("news.example"), host_pattern("shop.test")])
+        );
+        assert!(sub.get("if-domain").is_none());
         assert_eq!(sub["load-type"], json!(["third-party"]));
         assert!(sub.get("load-context").is_none());
         let frame = &rules[1]["trigger"];
+        // A frame's own document: the page holding it, as the top document.
+        assert_eq!(frame["if-domain"], json!(["*news.example", "*shop.test"]));
+        assert!(frame.get("if-frame-url").is_none());
         assert_eq!(frame["resource-type"], json!(["document"]));
         assert_eq!(frame["load-context"], json!(["child-frame"]));
         assert_eq!(rules[0]["action"], json!({"type": "block"}));
@@ -578,7 +674,10 @@ mod tests {
             "condition": {"urlFilter": "/ok.js", "excludedInitiatorDomains": ["a.test"]}}))
         .unwrap();
         assert_eq!(rules[0]["action"], json!({"type": "ignore-previous-rules"}));
-        assert_eq!(rules[0]["trigger"]["unless-domain"], json!(["*a.test"]));
+        assert_eq!(
+            rules[0]["trigger"]["unless-frame-url"],
+            json!([host_pattern("a.test")])
+        );
         assert_eq!(
             rules[0]["trigger"]["resource-type"],
             json!([
@@ -592,6 +691,7 @@ mod tests {
             ])
         );
         assert_eq!(rules[1]["trigger"]["load-context"], json!(["child-frame"]));
+        assert_eq!(rules[1]["trigger"]["unless-domain"], json!(["*a.test"]));
         // The top document only when asked for.
         let rules = one_rule(json!({"id": 3, "action": {"type": "block"},
             "condition": {"requestDomains": ["bad.test"], "resourceTypes": ["main_frame"]}}))
@@ -600,7 +700,40 @@ mod tests {
         assert_eq!(rules[0]["trigger"]["load-context"], json!(["top-frame"]));
         assert_eq!(
             filters(&rules),
-            [format!("{HOST_ANCHOR}bad\\.test{SEPARATOR}")]
+            [format!("{HOST_ANCHOR}bad\\.test{HOST_END}")]
+        );
+    }
+
+    #[test]
+    fn a_named_host_ends_where_the_real_host_ends() {
+        // `https://ok.test@ads.test/` has the host ads.test: what follows a
+        // named host is never the `@` or `:` of a user name.
+        assert_eq!(HOST_END, "(:[0-9]*)?[/?#]");
+        assert!(HOST_REST.starts_with("[^/?#@]"));
+        assert_eq!(
+            host_pattern("ok.test"),
+            format!("{HOST_ANCHOR}ok\\.test{HOST_END}")
+        );
+        assert_eq!(
+            url_patterns("||ok.test").unwrap(),
+            [format!("{HOST_ANCHOR}ok\\.test{HOST_REST}")]
+        );
+        assert_eq!(
+            url_patterns("||ok.test^*/ad.js").unwrap(),
+            [format!("{HOST_ANCHOR}ok\\.test{HOST_END}.*/ad\\.js")]
+        );
+        // Text after the host's separator may end the address.
+        assert_eq!(
+            url_patterns("||ok.test^ads^").unwrap(),
+            [
+                format!("{HOST_ANCHOR}ok\\.test[/?#]ads{SEPARATOR}"),
+                format!("{HOST_ANCHOR}ok\\.test[/?#]ads$"),
+            ]
+        );
+        // A filter that ends inside a host with a wildcard keeps one pattern.
+        assert_eq!(
+            url_patterns("||ads.*.test^").unwrap(),
+            [format!("{HOST_ANCHOR}ads\\..*\\.test{SEPARATOR}")]
         );
     }
 
@@ -613,8 +746,8 @@ mod tests {
         assert_eq!(
             filters(&rules),
             [
-                format!("{HOST_ANCHOR}a\\.test{SEPARATOR}.*/ads/.*"),
-                format!("{HOST_ANCHOR}b\\.test{SEPARATOR}.*/ads/.*"),
+                format!("{HOST_ANCHOR}a\\.test{HOST_END}.*/ads/.*"),
+                format!("{HOST_ANCHOR}b\\.test{HOST_END}.*/ads/.*"),
             ]
         );
     }
@@ -680,6 +813,21 @@ mod tests {
         assert_eq!(rules[3]["trigger"]["load-context"], json!(["child-frame"]));
         assert!(translate(&[json!([])]).is_err());
         assert!(translate(&[json!({"rules": []})]).is_err());
+    }
+
+    #[test]
+    fn blocks_limited_to_initiators_keep_frame_documents_apart() {
+        let set = json!([{"id": 1, "action": {"type": "block"},
+            "condition": {"urlFilter": "ad", "initiatorDomains": ["a.test"]}}]);
+        let rules: Vec<Value> = serde_json::from_str(&translate(&[set]).unwrap().json).unwrap();
+        assert_eq!(rules.len(), 2, "{rules:?}");
+        assert!(!rules.contains(&top_exempt()));
+        assert_eq!(
+            rules[0]["trigger"]["if-frame-url"],
+            json!([host_pattern("a.test")])
+        );
+        assert_eq!(rules[1]["trigger"]["resource-type"], json!(["document"]));
+        assert_eq!(rules[1]["trigger"]["if-domain"], json!(["*a.test"]));
     }
 
     #[test]

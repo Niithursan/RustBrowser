@@ -59,6 +59,33 @@ fn private_leases_isolate_data_and_sweep_only_abandoned_owned_directories() {
 }
 
 #[test]
+fn a_lease_still_being_made_is_not_swept() {
+    // A starting private window has made its folder and lock file but not
+    // yet taken the lock: a sweep at the same moment must leave it.
+    let normal = Profile::new();
+    let made = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let starting = normal
+        .0
+        .join(format!("private-contexts/private-{made:032x}-00000002-00"));
+    fs::create_dir_all(&starting).unwrap();
+    fs::write(starting.join("lease.lock"), b"").unwrap();
+    assert_eq!(PrivateLease::sweep(&normal.0).unwrap(), 0);
+    assert!(starting.exists());
+    // Just inside the grace period, and when the clock went back: kept.
+    let grace = PrivateLease::sweep_at;
+    let limit = privacy::SWEEP_GRACE.as_nanos();
+    assert_eq!(grace(&normal.0, made + limit - 1).unwrap(), 0);
+    assert_eq!(grace(&normal.0, made - 1).unwrap(), 0);
+    assert!(starting.exists());
+    // Once it is older and still unlocked, it was abandoned.
+    assert_eq!(grace(&normal.0, made + limit).unwrap(), 1);
+    assert!(!starting.exists());
+}
+
+#[test]
 fn private_snapshots_never_reach_disk_and_disabled_restoration_strips_urls() {
     let snapshot = Snapshot {
         tabs: vec!["https://example.com/private?token=secret".into()],
