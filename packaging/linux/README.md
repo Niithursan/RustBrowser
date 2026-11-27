@@ -51,4 +51,10 @@ CI builds both packages on every full run, installs each in a clean container
 that every library is present, that the launcher is valid and that
 `rust-browser --version` reports the version in `Cargo.toml`. The packages are
 kept as the run's artifacts (`rust-browser-linux-deb`, `rust-browser-arch-package`).
-They are not attached to releases yet.
+
+The release workflow (`.github/workflows/release.yml`) builds both again from an
+approved release tag (`check-release-tag.sh`), with the same install checks, and
+attaches them to the release as `rust-browser-v<version>-linux-amd64.deb` and
+`rust-browser-v<version>-arch-x86_64.pkg.tar.zst`, each with a `.sha256` file.
+The Arch package keeps the name `rust-browser-git` inside. v0.23.0 is the first
+release to carry them.
