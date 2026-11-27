@@ -95,6 +95,10 @@ struct Probe {
     done: bool,
     log: Vec<String>,
     result: Arc<Mutex<Option<String>>>,
+    /// Counts the scripts asked for, so only the latest one's answer fills
+    /// `result`: an earlier script's answer arriving late (such as a click's
+    /// `null`) must not take the place of the report asked for after it.
+    asked: Arc<std::sync::atomic::AtomicU64>,
     marks: Vec<usize>,
     snapshot: Vec<WindowShape>,
     /// Diagnostics while a phase waits: last trace and longest idle-callback gap.
@@ -103,6 +107,31 @@ struct Probe {
     steps: fn(&mut Probe, &ActiveEventLoop) -> Result<(), String>,
     /// Start a private window instead of a normal one.
     private: bool,
+}
+
+/// Empties `result` for a new script and returns the callback that fills it,
+/// unless another script was asked for (or the answer forgotten) meanwhile.
+/// Takes the two fields, not the probe, so a session borrowed from the probe
+/// can stay in use.
+fn answer_slot(
+    result: &Arc<Mutex<Option<String>>>,
+    asked: &Arc<std::sync::atomic::AtomicU64>,
+) -> impl Fn(String) + Send + 'static {
+    use std::sync::atomic::Ordering;
+    forget_answer(result, asked);
+    let id = asked.load(Ordering::SeqCst);
+    let (result, asked) = (result.clone(), asked.clone());
+    move |value| {
+        if asked.load(Ordering::SeqCst) == id {
+            *result.lock().unwrap() = Some(value);
+        }
+    }
+}
+
+/// Empties `result`; answers to scripts asked for before are then ignored.
+fn forget_answer(result: &Mutex<Option<String>>, asked: &std::sync::atomic::AtomicU64) {
+    asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    *result.lock().unwrap() = None;
 }
 
 impl Probe {
@@ -255,6 +284,7 @@ fn drive_with(
         done: false,
         log: Vec::new(),
         result: Arc::new(Mutex::new(None)),
+        asked: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         marks: Vec::new(),
         snapshot: Vec::new(),
         reply: None,
@@ -1283,15 +1313,14 @@ fn marker(letter: char) -> PathBuf {
 /// `p.result`.
 fn read_markers(p: &mut Probe) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.tabs.items[0]
         .content
         .engine
         .view
         .evaluate_script_with_callback(
             "JSON.stringify([document.documentElement.dataset.rbMarkerA||'',document.documentElement.dataset.rbMarkerB||''])",
-            move |value| *result.lock().unwrap() = Some(value),
+            answer,
         )
         .map_err(|_| "Page script failed".to_string())
 }
@@ -1675,16 +1704,12 @@ fn ad_blocked(p: &mut Probe, el: &ActiveEventLoop, step: u32) -> Result<bool, St
         if !s.windows.iter().all(loaded) || !s.tabs.items[0].url.contains("/article.html") {
             return Ok(false);
         }
-        *p.result.lock().unwrap() = None;
-        let result = p.result.clone();
+        let answer = answer_slot(&p.result, &p.asked);
         s.tabs.items[0]
             .content
             .engine
             .view
-            .evaluate_script_with_callback(
-                "document.documentElement.dataset.ad||''",
-                move |value| *result.lock().unwrap() = Some(value),
-            )
+            .evaluate_script_with_callback("document.documentElement.dataset.ad||''", answer)
             .map_err(|_| "Page script failed".to_string())?;
         p.phase += 1;
         return Ok(false);
@@ -2466,11 +2491,10 @@ fn native_one_click_on_the_close_icon_closes_the_tab() {
 /// Run `script` in the first window's toolbar; the answer lands in `p.result`.
 fn eval_toolbar(p: &mut Probe, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.windows[0]
         .toolbar
-        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .evaluate_script_with_callback(script, answer)
         .map_err(|_| "Toolbar script failed".to_string())
 }
 
@@ -2635,15 +2659,14 @@ fn native_toolbar_polish_states() {
 /// Run `script` in the active tab's page; the answer arrives in `p.result`.
 fn eval_page(p: &mut Probe, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.tabs
         .active()
         .ok_or("No active tab")?
         .content
         .engine
         .view
-        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .evaluate_script_with_callback(script, answer)
         .map_err(|_| "Page script failed".to_string())
 }
 
@@ -2746,7 +2769,7 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
             } else {
                 "document.getElementById('allow-permission').click()"
             };
-            *p.result.lock().unwrap() = None;
+            forget_answer(&p.result, &p.asked);
             let s = p.s()?;
             s.windows[0]
                 .toolbar
@@ -2771,7 +2794,7 @@ fn permission_prompt_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), St
                     let value: String = serde_json::from_str(&text).unwrap_or_default();
                     let expected = if p.phase == 4 { "denied" } else { "granted" };
                     if value == "pending" || value.is_empty() {
-                        *p.result.lock().unwrap() = None;
+                        forget_answer(&p.result, &p.asked);
                         return Ok(());
                     }
                     if value != expected || p.s()?.panel.is_some() {
@@ -3333,14 +3356,13 @@ fn named(
 /// Run `script` in the first window's library view; the answer lands in `p.result`.
 fn eval_library(p: &mut Probe, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.windows[0]
         .library_view
         .as_ref()
         .ok_or("No library view")?
         .view
-        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .evaluate_script_with_callback(script, answer)
         .map_err(|_| "Library script failed".to_string())
 }
 
@@ -3813,14 +3835,13 @@ const POPUP_BLOCKER: &str = "Rust Browser test popup blocker";
 /// Run `script` in the first window's extension popup; the answer lands in `p.result`.
 fn eval_extension_popup(p: &mut Probe, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.windows[0]
         .extension_popup
         .as_ref()
         .and_then(|popup| popup.view.as_ref())
         .ok_or("No popup view")?
-        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .evaluate_script_with_callback(script, answer)
         .map_err(|_| "Popup script failed".to_string())
 }
 
@@ -4153,14 +4174,13 @@ fn native_shield_cost_probe() {
 /// Run `script` in window `index`'s tab column; the answer lands in `p.result`.
 fn eval_tabs_column(p: &mut Probe, index: usize, script: &str) -> Result<(), String> {
     let s = p.app.session.as_mut().ok_or("No session")?;
-    *p.result.lock().unwrap() = None;
-    let result = p.result.clone();
+    let answer = answer_slot(&p.result, &p.asked);
     s.windows[index]
         .tabs_view
         .as_ref()
         .ok_or("No tab column")?
         .view
-        .evaluate_script_with_callback(script, move |value| *result.lock().unwrap() = Some(value))
+        .evaluate_script_with_callback(script, answer)
         .map_err(|_| "Tab column script failed".to_string())
 }
 
@@ -4838,15 +4858,14 @@ fn shield_frame_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String>
                 .is_some_and(|s| s.windows.iter().all(loaded)) =>
         {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            *p.result.lock().unwrap() = None;
-            let result = p.result.clone();
+            let answer = answer_slot(&p.result, &p.asked);
             s.tabs.items[0]
                 .content
                 .engine
                 .view
                 .evaluate_script_with_callback(
                     "document.documentElement.dataset.frame||'none'",
-                    move |v| *result.lock().unwrap() = Some(v),
+                    answer,
                 )
                 .map_err(|_| "eval")?;
             p.next();
