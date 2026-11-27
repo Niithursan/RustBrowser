@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fix:** what you type in the address field stays while the suggestion list is open. On Windows, opening the list briefly took the keyboard from the toolbar, which ended editing, so a background update such as a page title could put the page's address back over your text.
 - **New-tab page:** a large clock with a greeting and the date above the search, a centred row of site tiles (your favorites, then the sites you visit most, ten in all), recent pages as cards, and new backgrounds: four drawn wallpapers (Aurora, Dunes, Horizon, Contours) in a dark and a light version for the themes, and **Your picture**, a PNG, JPEG or WebP of up to 6 MB chosen with Choose picture… and kept in the profile folder. Nothing is downloaded. The search button now sits inside the search field.
 - **Address suggestions:** the address field completes a site you have visited as you type, with the added part selected, and a list under it shows what Enter does (open, search) and up to six matching pages from your history and bookmarks, ranked by how often and how recently you visited them. Up, Down, Enter, Escape and clicks work as in other browsers. Suggestions come only from the local library; nothing typed leaves the device before Enter.
 - **Fix (Linux):** history saves each page's title. A visit was saved when the page finished loading, with the tab's title at that moment, which was often empty or still the previous page's ("New tab").

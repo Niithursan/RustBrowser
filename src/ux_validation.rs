@@ -240,20 +240,38 @@ impl Probe {
                     if value != "[false,false,\"plum\",true]" {
                         return Err(format!("Local new-tab UI was not rendered: {value}"));
                     }
-                    self.eval(true, "(()=>{editing=false;const a=document.getElementById('address');a.focus();a.value='draft survives background titles';a.dispatchEvent(new Event('input'));return true})()")?;
+                    self.eval(true, "(()=>{editing=false;const a=document.getElementById('address');window.draftBlurs=[];a.addEventListener('blur',()=>draftBlurs.push(editing));a.focus();a.value='draft survives background titles';a.dispatchEvent(new Event('input'));return true})()")?;
                     self.phase = 9;
                 }
             }
+            // Typing opens the suggestion list, and opening a dropdown on
+            // Windows briefly takes focus from the whole toolbar document. The
+            // draft must survive a render after that, so wait for the list. The
+            // blur listener added above runs after the toolbar's own, so it
+            // records whether that blur ended editing, which a render would
+            // show only if it came before focus returned.
             9 if value.is_some() => {
+                self.eval(true, "!document.getElementById('suggest-panel').hidden")?;
+                self.phase = 15;
+            }
+            15 if value.as_deref().is_some_and(|v| v != "true") => {
+                self.eval(true, "!document.getElementById('suggest-panel').hidden")?;
+            }
+            15 if value.is_some() => {
                 s.notice = "Synthetic background update".into();
                 s.render();
-                self.eval(true, "document.getElementById('address').value")?;
+                self.eval(
+                    true,
+                    "(draftBlurs.every(Boolean)?'':'editing ended: ')+document.getElementById('address').value",
+                )?;
                 self.phase = 10;
             }
             10 => {
                 if let Some(value) = value {
                     if value != "\"draft survives background titles\"" {
-                        return Err("Background render overwrote address draft".into());
+                        return Err(format!(
+                            "Background render overwrote address draft: {value}"
+                        ));
                     }
                     s.command(Command::Navigate(FIXTURE_URL.into()))
                         .map_err(|_| "New-tab search navigation failed")?;
