@@ -46,16 +46,46 @@ function Run-Owned([string]$Program,[string[]]$Arguments){
  $null=$p.Handle
  try{if(-not $p.WaitForExit(60000)){throw 'Owned installer operation timed out'};$p.WaitForExit();if($p.ExitCode -ne 0){throw "Owned installer failed: $($p.ExitCode)"}}finally{$p.Dispose()}
 }
+# A start takes about a second on a desktop, but a cold WebView2 start on a CI
+# runner has run past 20 seconds; the budget only has to catch a hang. Every
+# launch reports its timings, so the margin shows in the log.
+$startupSeconds=60
+# What a failed launch looked like: which launch, the window and saved session,
+# the profile's top-level entries and the browser's local diagnostics record
+# (event codes and times only, from this disposable profile).
+function Owner-LaunchState([Diagnostics.Process]$Process,$Launched,[string]$Label,[Diagnostics.Stopwatch]$Clock){
+ $Process.Refresh()
+ $state="$Label launch after $([math]::Round($Clock.Elapsed.TotalSeconds,1)) s: exited=$($Process.HasExited)"
+ if($Process.HasExited){$state+=" (exit code $($Process.ExitCode))"}else{$state+=", window=$($Process.MainWindowHandle -ne 0)"}
+ $state+=", session.json=$(Test-Path -LiteralPath (Join-Path $Launched.profile 'session.json'))"
+ $entries=@(Get-ChildItem -LiteralPath $Launched.profile -Force -ErrorAction SilentlyContinue | ForEach-Object Name | Sort-Object)
+ $state+=", profile: [$($entries -join ', ')]"
+ $journal=Join-Path $Launched.profile 'local-diagnostics/journal.json'
+ if(Test-Path -LiteralPath $journal){$state+=", diagnostics: $((Get-Content -LiteralPath $journal -Raw).Trim())"}
+ $state
+}
 function Launch-And-Close([switch]$Installed){
+ $label=if($Installed){'Installed'}else{'Portable'}
  $launched=& $launcher -Installed:$Installed
  if($env:RUST_BROWSER_PROFILE -cne $prior){throw 'Owner launch changed the caller profile environment'}
  $p=Get-Process -Id $launched.process_id -ErrorAction Stop
+ $null=$p.Handle # keeps the exit code readable after the process ends
  try{
   $expected=if($Installed){Join-Path $bundle.root 'application/rust-browser.exe'}else{Join-Path $bundle.root 'portable/rust-browser.exe'}
   $clock=[Diagnostics.Stopwatch]::StartNew()
-  Assert-OwnerProcessImage $p $expected $clock
-  do{$p.Refresh();if($p.HasExited){throw 'Owner browser exited before showing a window'};if($p.MainWindowHandle -ne 0 -and (Test-Path -LiteralPath (Join-Path $launched.profile 'session.json'))){break};Start-Sleep -Milliseconds 100}while($clock.Elapsed.TotalSeconds -lt 20)
-  if($p.MainWindowHandle -eq 0 -or -not(Test-Path -LiteralPath (Join-Path $launched.profile 'session.json'))){throw 'No owner window and persisted disposable session'}
+  Assert-OwnerProcessImage $p $expected $clock $startupSeconds
+  $session=Join-Path $launched.profile 'session.json'
+  $window=$null;$saved=$null
+  do{
+   $p.Refresh()
+   if($p.HasExited){throw "Owner browser exited before showing a window and saving its session. $(Owner-LaunchState $p $launched $label $clock)"}
+   if($null -eq $window -and $p.MainWindowHandle -ne 0){$window=$clock.Elapsed.TotalSeconds}
+   if($null -eq $saved -and (Test-Path -LiteralPath $session)){$saved=$clock.Elapsed.TotalSeconds}
+   if($null -ne $window -and $null -ne $saved){break}
+   Start-Sleep -Milliseconds 100
+  }while($clock.Elapsed.TotalSeconds -lt $startupSeconds)
+  if($null -eq $window -or $null -eq $saved){throw "No owner window and persisted disposable session within $startupSeconds s. $(Owner-LaunchState $p $launched $label $clock)"}
+  "$label owner launch: window after $([math]::Round($window,1)) s, session saved after $([math]::Round($saved,1)) s"
   if(-not $p.CloseMainWindow() -or -not $p.WaitForExit(20000)){throw 'Owner browser did not close normally'}
  }finally{
   if(-not $p.HasExited -and $p.Path -ieq $expected){Stop-Process -InputObject $p}
