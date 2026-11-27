@@ -885,7 +885,7 @@ for(const action of ['back','forward','reload','stop','home'])document.getElemen
 document.getElementById('new').onclick=()=>send('new_tab');
 document.getElementById('search').onchange=e=>send('set_search_engine',e.target.value);
 document.getElementById('nav').onsubmit=e=>{e.preventDefault();editing=false;const target=window.suggestTarget?suggestTarget():input.value;send('navigate',target)};
-input.onfocus=()=>editing=true;input.oninput=()=>{editing=true;updateAddressView()};input.onblur=e=>{if(e.relatedTarget&&byId('address-menu').contains(e.relatedTarget))return;editing=false;updateAddressView()};
+input.onfocus=()=>editing=true;input.oninput=()=>{editing=true;updateAddressView()};input.onblur=e=>{if(e.relatedTarget&&byId('address-menu').contains(e.relatedTarget))return;if(!document.hasFocus()&&dropdown&&dropdown.panel===byId('suggest-panel'))return;editing=false;updateAddressView()};
 // Show the host emphasised and the rest muted while the field is not focused. URL.host
 // drops embedded credentials and keeps punycode, so the real host is what is emphasised.
 function splitOrigin(host,hostname){
@@ -910,7 +910,7 @@ function openDropdown(anchor,panel,focus,at){
     dropdown={anchor,panel,at};anchor.setAttribute('aria-expanded','true');panel.hidden=false;byId('menu-backdrop').hidden=false;placeDropdown();
     (focus||dropdownFocus(panel))?.focus({preventScroll:true});
 }
-function hideDropdown(){const {anchor,panel}=dropdown;dropdown=null;if(anchor.isConnected)anchor.setAttribute('aria-expanded','false');panel.hidden=true;byId('shortcut-list').hidden=true;byId('show-shortcuts').setAttribute('aria-expanded','false');if(panel===byId('site-panel'))answerPermission('deny',false);if(panel===byId('find-panel'))send('close_find');if(panel===byId('address-menu')&&document.activeElement!==input){editing=false;updateAddressView()}}
+function hideDropdown(){const {anchor,panel}=dropdown;dropdown=null;if(anchor.isConnected)anchor.setAttribute('aria-expanded','false');panel.hidden=true;byId('shortcut-list').hidden=true;byId('show-shortcuts').setAttribute('aria-expanded','false');if(panel===byId('site-panel'))answerPermission('deny',false);if(panel===byId('find-panel'))send('close_find');if(panel===byId('address-menu')&&document.activeElement!==input||panel===byId('suggest-panel')&&(document.activeElement!==input||!document.hasFocus())){editing=false;updateAddressView()}}
 function closeDropdown(returnFocus){if(!dropdown)return;const anchor=dropdown.anchor;hideDropdown();byId('menu-backdrop').hidden=true;menuArea='';send('set_menu_open',false);if(returnFocus&&anchor.isConnected)anchor.focus()}
 function toggleDropdown(anchor,panel){if(dropdown&&dropdown.anchor===anchor)closeDropdown(false);else openDropdown(anchor,panel)}
 // Under the button, left-aligned, or right-aligned when it would leave the window.

@@ -2221,7 +2221,8 @@ fn press_toolbar_key(s: &Session, key: &str, code: i32, text: &str) -> Result<()
 
 /// Typing the start of a visited site completes it inline, with the added part
 /// selected, and lists the matching pages from history under the field; the
-/// arrow keys and Enter open a listed page.
+/// arrow keys and Enter open a listed page; with the list open, a press on the
+/// page closes it and the field shows the page's address again.
 fn suggest_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
     let origin = url::Url::parse(&p.url)
         .map_err(|e| e.to_string())?
@@ -2305,17 +2306,69 @@ fn suggest_steps(p: &mut Probe, el: &ActiveEventLoop) -> Result<(), String> {
         }
         4 => {
             let s = p.app.session.as_mut().ok_or("No session")?;
-            if s.tabs.items[0].url == one {
+            if s.tabs.items[0].url == one && !s.tabs.items[0].content.state.loading {
                 p.log
                     .push("suggestions: arrow keys and Enter open a listed page".into());
-                p.done = true;
-                el.exit();
+                p.command(el, 0, Command::FocusAddress)?;
+                p.next();
             } else if p.at.elapsed() > Duration::from_secs(10) {
                 return Err(format!(
                     "Enter did not open the picked page: {}",
                     s.tabs.items[0].url
                 ));
             }
+        }
+        5 if p.at.elapsed() > Duration::from_millis(500) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            toolbar_cdp(
+                s,
+                "Input.insertText",
+                serde_json::json!({ "text": "a draft" }),
+            )?;
+            eval_toolbar(p, SUGGEST_REPORT)?;
+            p.next();
+        }
+        // With the list open, a press on the page closes it and ends editing,
+        // so the field shows the page's address again.
+        6 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            if r["open"] != true || r["value"] != "a draft" {
+                if p.at.elapsed() > Duration::from_secs(10) {
+                    return Err(format!("No list for a typed draft: {r}"));
+                }
+                eval_toolbar(p, SUGGEST_REPORT)?;
+                return Ok(());
+            }
+            p.next();
+        }
+        // After `MENU_FOCUS_GRACE`, as a real press would be.
+        7 if p.at.elapsed() > Duration::from_millis(700) => {
+            let s = p.app.session.as_mut().ok_or("No session")?;
+            s.tabs.items[0]
+                .content
+                .engine
+                .view
+                .focus()
+                .map_err(|e| e.to_string())?;
+            p.next();
+        }
+        8 if p.at.elapsed() > Duration::from_millis(300) => {
+            eval_toolbar(p, SUGGEST_REPORT)?;
+            p.next();
+        }
+        9 => {
+            let Some(r) = answer(p)? else { return Ok(()) };
+            if r["open"] != false || r["value"] != one.as_str() {
+                if p.at.elapsed() > Duration::from_secs(10) {
+                    return Err(format!("A press on the page kept the draft: {r}"));
+                }
+                eval_toolbar(p, SUGGEST_REPORT)?;
+                return Ok(());
+            }
+            p.log
+                .push("suggestions: a press on the page closes the list and ends editing".into());
+            p.done = true;
+            el.exit();
         }
         _ => {}
     }
