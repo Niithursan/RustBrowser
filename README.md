@@ -1,19 +1,20 @@
-# Rust Browser 0.22.2
+# Rust Browser 0.23.0
 
-A Windows browser with tabs and private windows, using Rust, **winit 0.30** and
-**Wry 0.57 / Microsoft WebView2**. Websites render in the installed Chromium-based
-WebView2 Runtime. This is an early application shell, not an independent Rust web
+A browser for Windows and Linux with tabs and private windows, using Rust, **winit
+0.30** and **Wry 0.57**. On Windows websites render in the installed Chromium-based
+Microsoft WebView2 Runtime, and on Linux in the distribution's WebKitGTK. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
 
-v0.22.2 is the latest published release (v0.21.0 was the first);
-download releases from the [Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
-[Install a release](#install-a-release)). It brings a new layout: tabs are cards
-with the page's icon, the toolbar has icon buttons, a bookmark star in the address
-line and one Menu (⋮) holding every other action. You can add browser extensions
-from a folder; in v0.22.2 extensions never run in private windows. This is not a
-release candidate. Built from source, Rust Browser now blocks ads out of the box:
-uBlock Origin comes with it on Windows, in normal and private windows, and hBlock's
-domain list on Linux (see [Extensions and ad blocking](#extensions-and-ad-blocking)).
+v0.23.0 is a release candidate, not yet published: the first release with Linux
+packages (a `.deb` for Ubuntu and Debian and a package for Arch Linux) beside the
+Windows Setup and portable ZIP. v0.22.2 is the latest published release (v0.21.0
+was the first); download releases from the
+[Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
+[Install a release](#install-a-release)). v0.23 blocks ads out of the box: uBlock
+Origin comes with it on Windows, in normal and private windows, and hBlock's domain
+list on Linux (see [Extensions and ad blocking](#extensions-and-ad-blocking)). It
+also completes addresses as you type and has a new new-tab page with a clock, site
+tiles and wallpapers.
 
 v0.19 can save passwords and fill in forms using WebView2's own features. Both
 are off until you turn them on in Menu (⋮) → Settings → Privacy & security, and private
@@ -104,8 +105,13 @@ The first release is
 SHA-256 as the release notes show, and run Setup (per user, no administrator rights).
 Builds are unsigned, so Windows SmartScreen warns about an unknown publisher. You
 need the Microsoft WebView2 Runtime and the x64 Visual C++ v14 Redistributable; see
-[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md). The steps below are for building from
-source instead.
+[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md).
+
+From v0.23.0, once it is published, a release also carries
+`rust-browser-v<version>-linux-amd64.deb` for Ubuntu and Debian and
+`rust-browser-v<version>-arch-x86_64.pkg.tar.zst` for Arch Linux, each with a
+`.sha256` file; its release notes give the install commands. The steps below are for
+building from source instead.
 
 ## Layout
 
@@ -260,10 +266,11 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 
 ## Linux (from source)
 
-Rust Browser also runs on Linux, built from source. There is no Linux release
-yet, but the source builds an Ubuntu/Debian package (`.deb`) and an Arch Linux
-package, each installing the browser, its launcher and its icon; see
-`packaging/linux/README.md` in the source. It uses WebKitGTK
+Rust Browser also runs on Linux. No published release has Linux packages yet;
+v0.23.0, a release candidate, is the first to attach them (see
+[Install a release](#install-a-release)). The source builds the same Ubuntu/Debian
+package (`.deb`) and Arch Linux package, each installing the browser, its launcher
+and its icon; see `packaging/linux/README.md` in the source. It uses WebKitGTK
 through Wry, with the same toolbar, tabs, library, settings and session files as
 on Windows. It runs on X11, and on Wayland through XWayland. Tested on Ubuntu
 24.04 (WebKitGTK 2.52) under Xvfb with Openbox and with GNOME Keyring, and in a

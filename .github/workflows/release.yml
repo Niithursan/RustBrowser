@@ -1,4 +1,4 @@
-name: Windows release
+name: Release
 on:
   push:
     tags: ['v*']
@@ -121,9 +121,108 @@ jobs:
             ${{ steps.packages.outputs.installer_checksum }}
             ${{ steps.packages.outputs.metadata }}
           if-no-files-found: error
+  # The Ubuntu/Debian package, built uncached from the tag like the Windows
+  # package and installed into a clean Ubuntu 24.04 container before upload.
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
+      - name: Validate release tag and ancestry
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: sh packaging/linux/check-release-tag.sh "$RELEASE_TAG"
+      - name: Install WebKitGTK and GTK development files
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libsecret-1-dev
+      - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --all-targets --all-features
+      - run: cargo build --locked --release
+      - run: cargo install cargo-deb --version 3.8.0 --locked
+      - run: cargo deb --locked --no-build
+      - name: Install the .deb on a clean Ubuntu 24.04
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          docker run --rm -v "$PWD:/src:ro" ubuntu:24.04 sh -c "
+            apt-get update -q &&
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q desktop-file-utils /src/target/debian/*.deb &&
+            sh /src/packaging/linux/check-installed.sh '$version'"
+      - name: Name the package for the release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -- target/debian/*.deb
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo 'Expected exactly one .deb' >&2; exit 1; fi
+          mkdir release
+          name="rust-browser-$RELEASE_TAG-linux-amd64.deb"
+          cp "$1" "release/$name"
+          (cd release && sha256sum "$name" > "$name.sha256")
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-release-package
+          path: release/*
+          if-no-files-found: error
+  # The Arch package from packaging/linux/arch/PKGBUILD, built from the tag
+  # commit and installed in the same Arch container before upload. Arch is
+  # rolling, so the image is updated first rather than pinned.
+  arch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container: archlinux:base-devel
+    steps:
+      # Before checkout, which needs git for the tags pkgver() reads.
+      - name: Update the image and install git
+        run: pacman -Syu --noconfirm --needed git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
+      - name: Validate release tag and ancestry
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          git config --system --add safe.directory '*'
+          sh packaging/linux/check-release-tag.sh "$RELEASE_TAG"
+      - name: Install the PKGBUILD's dependencies
+        shell: bash
+        run: |
+          . packaging/linux/arch/PKGBUILD
+          pacman -S --noconfirm --needed "${depends[@]}" "${makedepends[@]}" desktop-file-utils
+      - name: Build the package as an ordinary user
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "sh packaging/linux/arch/build-from-checkout.sh /home/builder/pkg"
+      - name: Install and check the package
+        run: |
+          pacman -U --noconfirm /home/builder/pkg/rust-browser-git-*.pkg.tar.zst
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          sh packaging/linux/check-installed.sh "$version"
+      - name: Name the package for the release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -- /home/builder/pkg/rust-browser-git-*.pkg.tar.zst
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo 'Expected exactly one Arch package' >&2; exit 1; fi
+          mkdir release
+          name="rust-browser-$RELEASE_TAG-arch-x86_64.pkg.tar.zst"
+          cp "$1" "release/$name"
+          (cd release && sha256sum "$name" > "$name.sha256")
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arch-release-package
+          path: release/*
+          if-no-files-found: error
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: package
+    needs: [package, linux, arch]
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -142,17 +241,21 @@ jobs:
           RELEASE_TAG: ${{ needs.package.outputs.release_tag }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          gh run download "$env:RUN_ID" --name windows-release-package --dir package
-          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the validated package' }
+          foreach ($artifact in @('windows-release-package', 'linux-release-package', 'arch-release-package')) {
+            gh run download "$env:RUN_ID" --name $artifact --dir package
+            if ($LASTEXITCODE -ne 0) { throw "Could not retrieve the validated $artifact" }
+          }
           $prefix = "rust-browser-$env:RELEASE_TAG-windows-x64"
-          $names = @("$prefix.zip", "$prefix.zip.sha256", "$prefix-setup.exe", "$prefix-setup.exe.sha256", "$prefix-release.json")
+          $deb = "rust-browser-$env:RELEASE_TAG-linux-amd64.deb"
+          $arch = "rust-browser-$env:RELEASE_TAG-arch-x86_64.pkg.tar.zst"
+          $names = @("$prefix.zip", "$prefix.zip.sha256", "$prefix-setup.exe", "$prefix-setup.exe.sha256", "$prefix-release.json", $deb, "$deb.sha256", $arch, "$arch.sha256")
           $actualNames = ((Get-ChildItem package -File).Name | Sort-Object) -join '|'
           if ($actualNames -cne (($names | Sort-Object) -join '|')) { throw 'Unexpected release artifact set' }
           $metadata = Join-Path package "$prefix-release.json"
           .\packaging\windows\verify-release.ps1 -MetadataPath $metadata -ArtifactDirectory package -CurrentVersion '0.0.0'
           $record = Get-Content -LiteralPath $metadata -Raw | ConvertFrom-Json
           if ($record.source_commit -cne (git rev-parse HEAD)) { throw 'Package source commit mismatch' }
-          foreach ($name in @("$prefix.zip", "$prefix-setup.exe")) {
+          foreach ($name in @("$prefix.zip", "$prefix-setup.exe", $deb, $arch)) {
             $hash = (Get-FileHash -LiteralPath (Join-Path package $name)).Hash.ToLowerInvariant()
             if ((Get-Content -LiteralPath (Join-Path package "$name.sha256") -Raw).Trim() -cne "$hash  $name") { throw 'Release artifact checksum mismatch' }
           }

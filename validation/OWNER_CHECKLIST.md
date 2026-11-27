@@ -1,4 +1,4 @@
-# Owner checklist (about 130 minutes)
+# Owner checklist (about 155 minutes)
 
 Checks only a person can do. Automated tests cover the rest (see
 [VALIDATION.md](../VALIDATION.md)). Do them on the build under review, note
@@ -527,12 +527,79 @@ Do this with uBlock Origin Lite added (item 28).
 current page; it closes on a click elsewhere, a second shield click, Escape and a tab
 switch; right-click shows the shield's details dropdown.
 
+## 43. The built-in ad blocker on Windows (3 minutes)
+
+Do this in a fresh test profile, without adding an extension yourself.
+
+1. Open a news site and click the shield.
+2. Open a private window, open the same site and click the shield there.
+3. Turn the built-in blocker off in Settings > Extensions, restart the browser with the
+   same launcher, and check Settings > Extensions again.
+
+**Pass:** uBlock Origin's own panel opens under the shield and shows requests blocked
+on the page, in the normal and the private window; after it is turned off it stays
+off after the restart.
+
+## 44. Address suggestions (3 minutes)
+
+1. Visit two pages of one site, then open a new tab.
+2. Type the first letters of the site's name, without `www.`.
+3. Press Down, then Enter. In another new tab, type a few letters, then click the page.
+
+**Pass:** the site is completed in the field with the added part selected, and a list
+under it shows what Enter does and the matching pages; Down and Enter open the picked
+page; what you type stays while the list is open; clicking the page closes the list
+and the field shows the page's address.
+
+## 45. The new-tab page (4 minutes)
+
+1. Open a new tab, then Customize, and try each drawn wallpaper with the light and the
+   dark theme.
+2. Choose **Your picture** with a PNG or JPEG of your own (not over 6 MB), then
+   restart with the same launcher.
+3. Make the window narrow.
+
+**Pass:** the clock, greeting and date sit above the search; the site tiles and
+recent cards fit without overlapping; each wallpaper suits both themes; your picture
+is still there after the restart; nothing is cut off in the narrow window.
+
+## 46. The .deb on Ubuntu (8 minutes)
+
+Use the existing Ubuntu VM; do not create a new VM for this.
+
+1. Copy `rust-browser-v<version>-linux-amd64.deb` and its `.sha256` file into the VM,
+   run `sha256sum -c` on the `.sha256` file, then
+   `sudo apt install ./rust-browser-v<version>-linux-amd64.deb`.
+2. Check that `rust-browser --version` prints the candidate's version, then open Rust
+   Browser from the applications menu.
+3. Load a news site and a video site, click the shield, save a login on a test site,
+   then make it the default browser in Settings > System and open a link from another
+   app.
+4. Remove it with `sudo apt remove rust-browser`.
+
+**Pass:** apt installs it with its dependencies; the launcher has the browser's icon
+and New window and New private window; pages and video play (if pages stay blank in
+the VM, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and note it); the shield's
+per-site switch is there; the login is offered for saving and filled from the key
+button; the link opens in the browser; removing it leaves no launcher behind.
+
+## 47. The Arch package (5 minutes, only with an Arch Linux machine)
+
+1. On an up-to-date Arch Linux, run `sha256sum -c` on the package's `.sha256` file,
+   then `sudo pacman -U rust-browser-v<version>-arch-x86_64.pkg.tar.zst`.
+2. Check `rust-browser --version`, open it from the applications menu and load a page.
+3. Remove it with `sudo pacman -R rust-browser-git`.
+
+**Pass:** pacman installs it as `rust-browser-git`, the version matches, the browser
+opens from its launcher and shows pages; removing it leaves no launcher behind. Mark
+it not tested if no Arch machine is available.
+
 ## Reporting
 
 Report every item as pass, fail or not tested, with the exact version/commit
-and executable SHA-256 from the bundle's `owner.json`. For the v0.22.0 candidate,
-items 1, 2, 3, 4, 12 to 14, 28, 30, 33 and 36 to 42 matter most (the v0.21.0
-candidate passed every item on bundle `o-656195c3`). The historical 2026-11-10 report covered only items 1 to 8
+and executable SHA-256 from the bundle's `owner.json`. For the v0.23.0 candidate,
+items 1 to 4, 12 to 14, 28, 30 and 43 to 47 matter most (the v0.22.0 candidate's
+checks passed; the v0.21.0 candidate passed every item on bundle `o-656195c3`). The historical 2026-11-10 report covered only items 1 to 8
 on bundle o-d8ee96f5, not the new items or a later candidate.
 For a failure, include one sentence about what happened. Share only screenshots
 without credentials, private messages, meeting links or other sensitive data.
