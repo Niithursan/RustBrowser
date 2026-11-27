@@ -307,6 +307,21 @@ Development alternates between Antigravity and Claude Code on the same working t
 - **Single instruction source:** Antigravity loads `AGENTS.md` directly; Claude Code loads `CLAUDE.md`, which imports `@AGENTS.md`. Put all repository rules and state updates in `AGENTS.md` so both agents stay synchronized.
 - **Session handoff check:** At the start of a session after switching agents, inspect `git status`, `git branch -vv`, `gh pr list`, `AGENTS.md`, and `DEVELOPMENT_CHECKPOINT.md` (fetching `origin` when needed) rather than assuming local branches match remote PR heads.
 - **Shared skills and artifacts:** UI design and audit skills (`impeccable` with its five `impeccable-*` subagents, and `hallmark`) are installed in `~/.claude/` for Claude Code and in `~/.gemini/config/plugins/rust-browser-skills/` for Antigravity. Both read and update the same repository files (`PRODUCT.md`, `DESIGN.md`, `.impeccable/`, and `docs/hallmark/`) and share `%USERPROFILE%\.impeccable`. Keep agent-local state (`.claude/`, `.impeccable/config.local.json`, `.impeccable/hook.*.json`) untracked.
+- **Engineering skills:** Matt Pocock's skills (`mattpocock-skills` plugin, such as `tdd`, `diagnosing-bugs`, `triage`, `to-spec`, `to-tickets`, `code-review`) are installed for Claude Code only, as a user-scope plugin. They read the repository configuration under "Agent skills" below and in `docs/agents/`.
+
+### Agent skills
+
+#### Issue tracker
+
+Issues live in GitHub Issues for `Niithursan/RustBrowser`, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+#### Triage labels
+
+The five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` and `wontfix`. See `docs/agents/triage-labels.md`.
+
+#### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repository root, created only when a term or decision is settled. See `docs/agents/domain.md`.
 
 ## 12. Definition of Done
 
