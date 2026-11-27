@@ -5,10 +5,10 @@ A browser for Windows and Linux with tabs and private windows, using Rust, **win
 Microsoft WebView2 Runtime, and on Linux in the distribution's WebKitGTK. This is an early application shell, not an independent Rust web
 engine or a daily-use replacement for Firefox/Chrome yet.
 
-v0.23.0 is a release candidate, not yet published: the first release with Linux
+v0.23.0, published on 2026-11-27, is the latest release and the first with Linux
 packages (a `.deb` for Ubuntu and Debian and a package for Arch Linux) beside the
-Windows Setup and portable ZIP. v0.22.2 is the latest published release (v0.21.0
-was the first); download releases from the
+Windows Setup and portable ZIP (v0.21.0 was the first release); download releases
+from the
 [Releases page](https://github.com/Niithursan/RustBrowser/releases) (see
 [Install a release](#install-a-release)). v0.23 blocks ads out of the box: uBlock
 Origin comes with it on Windows, in normal and private windows, and hBlock's domain
@@ -107,7 +107,7 @@ Builds are unsigned, so Windows SmartScreen warns about an unknown publisher. Yo
 need the Microsoft WebView2 Runtime and the x64 Visual C++ v14 Redistributable; see
 [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md).
 
-From v0.23.0, once it is published, a release also carries
+From v0.23.0, a release also carries
 `rust-browser-v<version>-linux-amd64.deb` for Ubuntu and Debian and
 `rust-browser-v<version>-arch-x86_64.pkg.tar.zst` for Arch Linux, each with a
 `.sha256` file; its release notes give the install commands. The `.deb` is built on
@@ -271,9 +271,8 @@ console feedback. See [installation, package contents and removal](INSTALL_WINDO
 
 ## Linux (from source)
 
-Rust Browser also runs on Linux. No published release has Linux packages yet;
-v0.23.0, a release candidate, is the first to attach them (see
-[Install a release](#install-a-release)). The source builds the same Ubuntu/Debian
+Rust Browser also runs on Linux. v0.23.0 is the first release with Linux packages
+(see [Install a release](#install-a-release)). The source builds the same Ubuntu/Debian
 package (`.deb`) and Arch Linux package, each installing the browser, its launcher
 and its icon; see `packaging/linux/README.md` in the source. It uses WebKitGTK
 through Wry, with the same toolbar, tabs, library, settings and session files as
