@@ -28,7 +28,10 @@ sudo apt install ./target/debian/rust-browser_*.deb
 
 cargo-deb adds the libraries the program links to (WebKitGTK, GTK, libsoup,
 libsecret) as dependencies; the X11 keyboard and XCB libraries winit loads at
-run time are listed by hand. Remove with `sudo apt remove rust-browser`.
+run time are listed by hand. Those dependencies take their minimum versions from
+the system that builds the package: the release's `.deb` is built on Ubuntu 24.04,
+so it needs `libc6 (>= 2.39)` and does not install on Debian 12 or Ubuntu 22.04. A
+`.deb` built on the system that will run it does not have that limit. Remove with `sudo apt remove rust-browser`.
 
 ## Arch Linux (PKGBUILD)
 

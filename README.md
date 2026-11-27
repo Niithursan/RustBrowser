@@ -110,8 +110,13 @@ need the Microsoft WebView2 Runtime and the x64 Visual C++ v14 Redistributable; 
 From v0.23.0, once it is published, a release also carries
 `rust-browser-v<version>-linux-amd64.deb` for Ubuntu and Debian and
 `rust-browser-v<version>-arch-x86_64.pkg.tar.zst` for Arch Linux, each with a
-`.sha256` file; its release notes give the install commands. The steps below are for
-building from source instead.
+`.sha256` file; its release notes give the install commands. The `.deb` is built on
+Ubuntu 24.04 and needs glibc 2.39 or newer, so it installs on Ubuntu 24.04 or newer
+and Debian 13 (trixie) or newer, but not on Debian 12 (bookworm) or Ubuntu 22.04:
+apt refuses it there, because it depends on `libc6 (>= 2.39)`. On those, build the package
+from source instead (see [Linux (from source)](#linux-from-source)); that needs
+WebKitGTK 2.40 or newer and has not been tested on them. The steps below are for
+building from source.
 
 ## Layout
 
