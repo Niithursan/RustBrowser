@@ -2679,6 +2679,7 @@ impl Browser {
                 let _ = view.focus();
             }
         }
+        activate(&view.webview());
     }
 
     /// Save every window: the most recently focused one in the format 1 fields,
@@ -4084,11 +4085,77 @@ fn repeated(held: &Cell<Option<u16>>, keycode: u16) -> bool {
     held.replace(Some(keycode)) == Some(keycode)
 }
 
+thread_local! {
+    /// The GTK window of the view that last took the keyboard (see `activate`).
+    static ACTIVE: RefCell<Option<gtk::glib::WeakRef<gtk::Window>>> = const { RefCell::new(None) };
+}
+
+/// Tell `engine`'s GTK window that it has the keyboard, and the window of the
+/// view that had it that it lost it. wry puts each view in a GTK window around a
+/// plain X window, for which GTK receives no focus events, so without this every
+/// view counts as one in a background window: WebKit then matches no `:focus`
+/// or `:focus-within` styles (the address field's ring) and hides the caret.
+fn activate(engine: &webkit2gtk::WebView) {
+    use gtk::glib::{Cast, ObjectExt};
+    let Some(window) = engine
+        .toplevel()
+        .and_then(|top| top.downcast::<gtk::Window>().ok())
+    else {
+        return;
+    };
+    let previous = ACTIVE.with(|active| active.replace(Some(window.downgrade())));
+    match previous.and_then(|weak| weak.upgrade()) {
+        Some(previous) if previous == window => {}
+        Some(previous) => {
+            focus_change(&previous, false);
+            focus_change(&window, true);
+        }
+        None => focus_change(&window, true),
+    }
+}
+
+/// The browser window gained or lost the keyboard: the view that last had it
+/// follows, so a page in a window behind another app shows no caret.
+fn window_focused(focused: bool) {
+    if let Some(window) = ACTIVE.with(|active| active.borrow().as_ref().and_then(|w| w.upgrade())) {
+        focus_change(&window, focused);
+    }
+}
+
+/// Send `window` a GDK focus-change event, as GTK would for a window the
+/// window manager focuses: GTK's handler sets the window's active state.
+fn focus_change(window: &gtk::Window, focused: bool) {
+    use gtk::{
+        gdk,
+        glib::translate::{ToGlibPtr, ToGlibPtrMut},
+    };
+    let Some(gdk_window) = window.window() else {
+        return;
+    };
+    let mut event = gdk::Event::new(gdk::EventType::FocusChange);
+    // SAFETY: the event was created as a FocusChange event, so its storage is a
+    // GdkEventFocus. Its window gets a new reference, which freeing the event
+    // releases, as gdk_event_free documents.
+    unsafe {
+        let focus = ToGlibPtrMut::<*mut gdk::ffi::GdkEvent>::to_glib_none_mut(&mut event).0
+            as *mut gdk::ffi::GdkEventFocus;
+        (*focus).window = ToGlibPtr::<*mut gdk::ffi::GdkWindow>::to_glib_full(&gdk_window);
+        (*focus).send_event = 1;
+        (*focus).in_ = i16::from(focused);
+    }
+    window.send_focus_change(&event);
+}
+
 /// The browser's shortcuts on a view, as Windows registers them on every
 /// WebView2 controller: they run before the page sees the key. Escape also
 /// reaches the page (fullscreen, selects and dialogs), and Ctrl+wheel zooms.
 fn shortcuts(widget: &webkit2gtk::WebView, proxy: EventLoopProxy<Event>, source: Source) {
     use gtk::{gdk::ModifierType, glib::Propagation, prelude::WidgetExt};
+    // A click takes the keyboard to the view clicked (see `activate`).
+    widget.connect_button_press_event(|widget, _| {
+        activate(widget);
+        Propagation::Proceed
+    });
     let held = Rc::new(Cell::new(None));
     let released = Rc::clone(&held);
     let keys = proxy.clone();
@@ -4714,7 +4781,9 @@ impl ApplicationHandler<Event> for App {
                 let result = browser.close_window(el);
                 self.after(el, result);
             }
+            WindowEvent::Focused(false) => window_focused(false),
             WindowEvent::Focused(true) => {
+                window_focused(true);
                 browser.focused(id);
                 browser.persist();
                 self.after(el, Ok(()));
@@ -4879,6 +4948,35 @@ pub fn run(mut launch: Launch) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "needs a display (run under Xvfb)"]
+    fn the_view_that_takes_the_keyboard_is_in_the_only_active_window() {
+        use gtk::prelude::{ContainerExt, GtkWindowExt};
+        gtk::init().expect("a display");
+        let view = || {
+            let window = gtk::Window::new(gtk::WindowType::Toplevel);
+            let engine = webkit2gtk::WebView::new();
+            window.add(&engine);
+            window.show_all();
+            (window, engine)
+        };
+        let (first, first_view) = view();
+        let (second, second_view) = view();
+        activate(&first_view);
+        assert!(first.is_active() && !second.is_active());
+        activate(&second_view);
+        assert!(!first.is_active() && second.is_active());
+        // Taking it again changes nothing.
+        activate(&second_view);
+        assert!(!first.is_active() && second.is_active());
+        // The browser window behind another app: no view is active, and the
+        // last one is again when the window comes back.
+        window_focused(false);
+        assert!(!first.is_active() && !second.is_active());
+        window_focused(true);
+        assert!(!first.is_active() && second.is_active());
+    }
 
     #[test]
     fn clearing_asks_webkit_for_exactly_the_chosen_kinds() {
